@@ -9,6 +9,7 @@ help:
 	@echo "  run          - Run the imposter server"
 	@echo "  test         - Run all unit tests"
 	@echo "  test-verbose - Run tests with verbose output"
+	@echo "  test-ci      - Run all tests for CI (includes coverage)"
 	@echo "  test-rapid   - Run property-based tests with rapid"
 	@echo "  test-rapid-long - Run extended property tests"
 	@echo "  test-coverage- Run tests with coverage report"
@@ -41,8 +42,9 @@ test-rapid:
 	@echo "Running property-based tests with rapid..."
 	go test -rapid.checks=1000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute|TestFind"
 
-# Run extended rapid tests
-test-rapid-long:
+# Run all tests for CI
+test-ci: test-coverage test-rapid lint
+	@echo "All CI checks completed successfully!"
 	@echo "Running extended property-based tests..."
 	go test -rapid.checks=10000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute"
 
@@ -59,13 +61,10 @@ tag:
 	@echo "  v0.2.0 - Minor release (new features)"
 	@echo "  v1.0.0 - Major release (breaking changes)"
 
-# Run tests with coverage
+# Run tests with coverage report
 test-coverage:
 	@echo "Running tests with coverage..."
-	go test -cover ./...
-	@echo ""
-	@echo "Detailed coverage report:"
-	go test -coverprofile=coverage.out ./...
+	go test -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
@@ -95,16 +94,17 @@ deps:
 fmt:
 	@echo "Formatting code..."
 	go fmt ./...
-	@if which golangci-lint > /dev/null 2>&1; then \
+	@if which gofumpt > /dev/null 2>&1; then \
 		echo "Running gofumpt..."; \
-		golangci-lint fmt; \
+		gofumpt -l -w .; \
 	else \
-		echo "golangci-lint not found, skipping. Run 'make install-tools' to install."; \
+		echo "gofumpt not found, skipping. Run 'make install-tools' to install."; \
 	fi
 
 # Install development tools
 install-tools:
 	@echo "Installing development tools..."
+	go install mvdan.cc/gofumpt@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 # Lint code (basic checks)
