@@ -28,7 +28,7 @@ jobs:
       run: go test -v -race ./...
 
     - name: Run property-based tests
-      run: go test -rapid.checks=5000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute"
+      run: go test ./internal/domain -run "TestMatch|TestParse|TestSubstitute" -args -rapid.checks=5000
 
   release:
     name: Build and Release
