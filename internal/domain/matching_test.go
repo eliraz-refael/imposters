@@ -246,11 +246,11 @@ func TestMatchRoute(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		method      string
-		path        string
-		wantMatch   bool
-		wantParams  map[string]string
+		name       string
+		method     string
+		path       string
+		wantMatch  bool
+		wantParams map[string]string
 	}{
 		{
 			name:       "exact match",
@@ -306,12 +306,12 @@ func TestFindBestMatch(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		method     string
-		path       string
-		wantFound  bool
+		name        string
+		method      string
+		path        string
+		wantFound   bool
 		wantRouteID string
-		wantParams map[string]string
+		wantParams  map[string]string
 	}{
 		{
 			name:        "find exact match",

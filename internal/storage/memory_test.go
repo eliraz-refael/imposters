@@ -1,10 +1,10 @@
 package storage
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
-	"fmt"
 
 	"imposters/internal/domain"
 )
@@ -343,10 +343,10 @@ func TestRouteStore_GetByMethodAndPath(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		method     string
-		path       string
-		wantCount  int
+		name         string
+		method       string
+		path         string
+		wantCount    int
 		wantRouteIDs []string
 	}{
 		{

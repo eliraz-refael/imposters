@@ -31,7 +31,7 @@ func TestParseRoute(t *testing.T) {
 				Path:   "/users/{id}",
 				Method: "post",
 				Response: Response{
-					Status: 201,
+					Status:  201,
 					Headers: map[string]string{"Content-Type": "application/json"},
 					Body:    map[string]any{"message": "created"},
 				},

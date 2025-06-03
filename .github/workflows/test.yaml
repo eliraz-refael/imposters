@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   test:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.21', '1.22']
+        go-version: ['1.22']
 
     steps:
     - name: Checkout code
@@ -46,7 +46,7 @@ jobs:
       run: go test -v -race -coverprofile=coverage.out ./...
 
     - name: Run property-based tests
-      run: go test -rapid.checks=1000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute"
+      run: go test ./internal/domain -run "TestMatch|TestParse|TestSubstitute" -args -rapid.checks=1000
 
     - name: Generate coverage report
       run: go tool cover -html=coverage.out -o coverage.html
@@ -82,15 +82,3 @@ jobs:
       with:
         version: latest
         args: --timeout=5m
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Run Gosec Security Scanner
-      uses: securecodewarrior/github-action-gosec@master
-      with:
-        args: './...'

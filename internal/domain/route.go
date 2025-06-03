@@ -9,19 +9,19 @@ import (
 
 // Route represents a mock API route configuration
 type Route struct {
-	ID        string            `json:"id,omitempty"`
-	Path      string            `json:"path"`
-	Method    string            `json:"method"`
-	Response  Response          `json:"response"`
-	Delay     *int              `json:"delay,omitempty"`
-	CreatedAt time.Time         `json:"createdAt,omitempty"`
+	ID        string    `json:"id,omitempty"`
+	Path      string    `json:"path"`
+	Method    string    `json:"method"`
+	Response  Response  `json:"response"`
+	Delay     *int      `json:"delay,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
 }
 
 // Response represents the mock response configuration
 type Response struct {
-	Status  int                    `json:"status"`
-	Headers map[string]string      `json:"headers,omitempty"`
-	Body    interface{}            `json:"body"`
+	Status  int               `json:"status"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    interface{}       `json:"body"`
 }
 
 // ParseRoute validates and normalizes a route with defaults

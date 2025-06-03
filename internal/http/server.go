@@ -58,8 +58,8 @@ func (s *Server) setupMiddleware() {
 	// Custom recovery middleware
 	s.engine.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
 		s.logger.WithFields(map[string]interface{}{
-			"error": recovered,
-			"path":  c.Request.URL.Path,
+			"error":  recovered,
+			"path":   c.Request.URL.Path,
 			"method": c.Request.Method,
 		}).Error("Panic recovered")
 		c.JSON(500, gin.H{"error": "Internal server error"})
@@ -143,15 +143,4 @@ func (s *Server) GetRouteCount() int {
 // GetUptime returns how long the server has been running
 func (s *Server) GetUptime() time.Duration {
 	return time.Since(s.startTime)
-}
-
-// Health check endpoint (could be useful for monitoring)
-func (s *Server) healthHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "healthy",
-			"uptime": s.GetUptime().String(),
-			"routes": s.GetRouteCount(),
-		})
-	}
 }
