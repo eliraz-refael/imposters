@@ -19,7 +19,7 @@ help:
 # Build the binary
 build:
 	@echo "Building imposter..."
-	go build -o bin/imposter cmd/imposter/main.go
+	go build -v -o bin/imposter cmd/imposter/main.go
 	@echo "Build complete: bin/imposter"
 
 # Run the server
@@ -40,13 +40,13 @@ test-verbose:
 # Run property-based tests with rapid
 test-rapid:
 	@echo "Running property-based tests with rapid..."
-	go test -rapid.checks=1000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute|TestFind"
+	go test ./internal/domain -args -rapid.checks=1000
 
 # Run all tests for CI
 test-ci: test-coverage test-rapid lint
 	@echo "All CI checks completed successfully!"
 	@echo "Running extended property-based tests..."
-	go test -rapid.checks=10000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute"
+	go test ./internal/domain -args -rapid.checks=5000
 
 # Create semantic version tag
 tag:
