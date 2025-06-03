@@ -32,7 +32,7 @@ jobs:
           ${{ runner.os }}-go-1.24-
 
     - name: Download dependencies
-      run: go mod download
+      run: make deps
 
     - name: Verify dependencies
       run: go mod verify
@@ -41,10 +41,10 @@ jobs:
       run: go vet ./...
 
     - name: Run tests
-      run: go test -v -race -coverprofile=coverage.out ./...
+      run: make test-coverage
 
     - name: Run property-based tests
-      run: go test ./internal/domain -run "TestMatch|TestParse|TestSubstitute" -args -rapid.checks=1000
+      run: make test-rapid
 
     - name: Generate coverage report
       run: go tool cover -html=coverage.out -o coverage.html
@@ -57,7 +57,7 @@ jobs:
         name: codecov-umbrella
 
     - name: Build binary
-      run: go build -v -o bin/imposter cmd/imposter/main.go
+      run: make build
 
     - name: Test binary execution
       run: |
