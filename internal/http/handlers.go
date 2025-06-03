@@ -44,8 +44,8 @@ func (s *Server) addRouteHandler() gin.HandlerFunc {
 		existing := s.store.GetByMethodAndPath(route.Method, route.Path)
 		if len(existing) > 0 {
 			s.logger.WithFields(map[string]interface{}{
-				"method": route.Method,
-				"path":   route.Path,
+				"method":         route.Method,
+				"path":           route.Path,
 				"existing_count": len(existing),
 			}).Warn("Route pattern already exists")
 			// Note: We allow duplicates but warn about them
