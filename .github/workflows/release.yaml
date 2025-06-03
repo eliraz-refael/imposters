@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test Before Release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22'
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test -v -race ./...
+
+    - name: Run property-based tests
+      run: go test -rapid.checks=5000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute"
+
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22'
+
+    - name: Get version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
+      run: |
+        # Create build directory
+        mkdir -p dist
+
+        # Set binary name based on OS
+        BINARY_NAME="imposter"
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          BINARY_NAME="imposter.exe"
+        fi
+
+        # Build with version info
+        go build \
+          -ldflags="-X main.version=${{ steps.version.outputs.VERSION }} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.gitCommit=$(git rev-parse --short HEAD)" \
+          -o dist/${BINARY_NAME} \
+          cmd/imposter/main.go
+
+        # Create archive
+        ARCHIVE_NAME="imposter-${{ steps.version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          zip -j dist/${ARCHIVE_NAME}.zip dist/${BINARY_NAME}
+        else
+          tar -czf dist/${ARCHIVE_NAME}.tar.gz -C dist ${BINARY_NAME}
+        fi
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: imposter-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/*
+
+  publish:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: dist
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get the previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+
+        # Generate changelog
+        if [ -n "$PREV_TAG" ]; then
+          echo "## Changes since $PREV_TAG" > CHANGELOG.md
+          git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD >> CHANGELOG.md
+        else
+          echo "## Initial Release" > CHANGELOG.md
+          echo "- Initial release of Imposter Mock Server" >> CHANGELOG.md
+          echo "- HTTP server with admin endpoints for route management" >> CHANGELOG.md
+          echo "- Path parameter substitution and response customization" >> CHANGELOG.md
+          echo "- Property-based testing with rapid" >> CHANGELOG.md
+          echo "- Comprehensive unit test coverage" >> CHANGELOG.md
+        fi
+
+        # Output for GitHub
+        {
+          echo 'CHANGELOG<<EOF'
+          cat CHANGELOG.md
+          echo EOF
+        } >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        body: ${{ steps.changelog.outputs.CHANGELOG }}
+        files: dist/**/imposter-*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -44,7 +44,20 @@ test-rapid:
 # Run extended rapid tests
 test-rapid-long:
 	@echo "Running extended property-based tests..."
-	go test -rapid.checks=10000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute|TestFind"
+	go test -rapid.checks=10000 ./internal/domain -run "TestMatch|TestParse|TestSubstitute"
+
+# Create semantic version tag
+tag:
+	@echo "Current version: $(VERSION)"
+	@echo "To create a new release:"
+	@echo "  git tag v0.1.0    # Create tag"
+	@echo "  git push origin v0.1.0  # Push tag to trigger release"
+	@echo ""
+	@echo "Version scheme:"
+	@echo "  v0.1.0 - Initial release"
+	@echo "  v0.1.1 - Patch release (bug fixes)"
+	@echo "  v0.2.0 - Minor release (new features)"
+	@echo "  v1.0.0 - Major release (breaking changes)"
 
 # Run tests with coverage
 test-coverage:
