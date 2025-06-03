@@ -95,11 +95,29 @@ deps:
 fmt:
 	@echo "Formatting code..."
 	go fmt ./...
+	@if which golangci-lint > /dev/null 2>&1; then \
+		echo "Running gofumpt..."; \
+		golangci-lint fmt; \
+	else \
+		echo "golangci-lint not found, skipping. Run 'make install-tools' to install."; \
+	fi
 
-# Lint code (requires golangci-lint)
+# Install development tools
+install-tools:
+	@echo "Installing development tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+# Lint code (basic checks)
 lint:
-	@echo "Linting code..."
+	@echo "Running basic linters..."
+	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Run 'make install-tools' first." && exit 1)
 	golangci-lint run
+
+# Lint code (strict - enable all linters)
+lint-strict:
+	@echo "Running strict linters..."
+	@which golangci-lint > /dev/null || (echo "golangci-lint not found. Run 'make install-tools' first." && exit 1)
+	golangci-lint run --enable-all --disable=gochecknoglobals,gochecknoinits,testpackage
 
 # Run all checks (test, fmt, lint)
 check: fmt test lint

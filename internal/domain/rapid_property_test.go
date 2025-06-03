@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"pgregory.net/rapid"
 )
 
@@ -190,7 +192,7 @@ func TestMatchRouteCaseInsensitive(t *testing.T) {
 		methods := []string{
 			strings.ToUpper(method),
 			strings.ToLower(method),
-			strings.Title(method),
+			cases.Title(language.English).String(method), // Replace deprecated strings.Title
 		}
 
 		var results []bool

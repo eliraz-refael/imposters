@@ -144,14 +144,3 @@ func (s *Server) GetRouteCount() int {
 func (s *Server) GetUptime() time.Duration {
 	return time.Since(s.startTime)
 }
-
-// Health check endpoint (could be useful for monitoring)
-func (s *Server) healthHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "healthy",
-			"uptime": s.GetUptime().String(),
-			"routes": s.GetRouteCount(),
-		})
-	}
-}
