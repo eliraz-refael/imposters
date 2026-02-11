@@ -1,12 +1,5 @@
 import { makeWebHandler } from "./server/AdminServer.js"
 
-declare const Bun: {
-  serve(options: {
-    readonly port: number
-    readonly fetch: (request: Request) => Promise<Response>
-  }): { readonly port: number; stop(closeActive: boolean): void }
-}
-
 const port = Number(process.env.ADMIN_PORT ?? 2525)
 const { handler, dispose } = makeWebHandler()
 const server = Bun.serve({ port, fetch: handler })

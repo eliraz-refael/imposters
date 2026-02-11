@@ -8,6 +8,7 @@ import { NonEmptyString } from "../schemas/common.js"
 import { AppConfig } from "../services/AppConfig.js"
 import { PortAllocator } from "../services/PortAllocator.js"
 import { Uuid } from "../services/Uuid.js"
+import { ImposterServer } from "../server/ImposterServer.js"
 import { AdminApi } from "./AdminApi.js"
 import { ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors.js"
 import { buildPaginationMeta, toImposterResponse } from "./Conversions.js"
@@ -90,14 +91,25 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
       Effect.gen(function*() {
         const repo = yield* ImposterRepository
         const allocator = yield* PortAllocator
+        const imposterServer = yield* ImposterServer
 
         const existing = yield* repo.get(path.id).pipe(
           Effect.catchTag("ImposterNotFoundError", (e) =>
             Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })))
         )
 
+        const wasRunning = yield* imposterServer.isRunning(path.id)
+        const wantsRunning = payload.status === "running"
+        const wantsStopped = payload.status === "stopped"
+        const portChanging = payload.port !== undefined && payload.port !== existing.config.port
+
+        // If port is changing while running, stop first
+        if (portChanging && wasRunning) {
+          yield* imposterServer.stop(path.id)
+        }
+
         let newPort: number | undefined
-        if (payload.port !== undefined && payload.port !== existing.config.port) {
+        if (portChanging) {
           newPort = yield* allocator.allocate(payload.port).pipe(
             Effect.catchTags({
               PortAllocatorError: (e) =>
@@ -108,7 +120,7 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           )
         }
 
-        const updated = yield* repo.update(path.id, (r) => ({
+        yield* repo.update(path.id, (r) => ({
           ...r,
           config: ImposterConfig({
             ...r.config,
@@ -128,13 +140,39 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           yield* allocator.release(existing.config.port)
         }
 
-        return yield* toImposterResponse(updated)
+        // Handle start/stop transitions
+        if (wantsRunning && !wasRunning) {
+          yield* imposterServer.start(path.id).pipe(
+            Effect.catchTag("ImposterServerError", (e) =>
+              Effect.fail(new ApiServiceError({ message: e.reason }))),
+            Effect.catchTag("ImposterNotFoundError", (e) =>
+              Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })))
+          )
+        } else if (wantsStopped && wasRunning && !portChanging) {
+          yield* imposterServer.stop(path.id)
+        } else if (portChanging && wasRunning) {
+          // Port changed while running — restart
+          yield* imposterServer.start(path.id).pipe(
+            Effect.catchTag("ImposterServerError", (e) =>
+              Effect.fail(new ApiServiceError({ message: e.reason }))),
+            Effect.catchTag("ImposterNotFoundError", (e) =>
+              Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })))
+          )
+        }
+
+        // Re-read to get final status
+        const final = yield* repo.get(path.id).pipe(
+          Effect.catchTag("ImposterNotFoundError", (e) =>
+            Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })))
+        )
+        return yield* toImposterResponse(final)
       })
     )
     .handle("deleteImposter", ({ path, urlParams }) =>
       Effect.gen(function*() {
         const repo = yield* ImposterRepository
         const allocator = yield* PortAllocator
+        const imposterServer = yield* ImposterServer
 
         const existing = yield* repo.get(path.id).pipe(
           Effect.catchTag("ImposterNotFoundError", (e) =>
@@ -147,6 +185,12 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
               message: `Imposter is ${existing.config.status}, use force=true to delete`
             })
           )
+        }
+
+        // Stop if running
+        const running = yield* imposterServer.isRunning(path.id)
+        if (running) {
+          yield* imposterServer.stop(path.id)
         }
 
         yield* repo.remove(path.id).pipe(
@@ -168,6 +212,7 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
       Effect.gen(function*() {
         const repo = yield* ImposterRepository
         const uuid = yield* Uuid
+        const imposterServer = yield* ImposterServer
 
         const id = yield* uuid.generateShort
         const stub = {
@@ -177,10 +222,18 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           responseMode: payload.responseMode
         }
 
-        return yield* repo.addStub(path.imposterId, stub).pipe(
+        const result = yield* repo.addStub(path.imposterId, stub).pipe(
           Effect.catchTag("ImposterNotFoundError", (e) =>
             Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })))
         )
+
+        // Hot-reload if running
+        const running = yield* imposterServer.isRunning(path.imposterId)
+        if (running) {
+          yield* imposterServer.updateStubs(path.imposterId)
+        }
+
+        return result
       })
     )
     .handle("listStubs", ({ path }) =>
@@ -195,7 +248,9 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
     .handle("updateStub", ({ path, payload }) =>
       Effect.gen(function*() {
         const repo = yield* ImposterRepository
-        return yield* repo.updateStub(path.imposterId, path.stubId, (s) => ({
+        const imposterServer = yield* ImposterServer
+
+        const result = yield* repo.updateStub(path.imposterId, path.stubId, (s) => ({
           ...s,
           ...(payload.predicates !== undefined ? { predicates: payload.predicates } : {}),
           ...(payload.responses !== undefined ? { responses: payload.responses } : {}),
@@ -206,17 +261,35 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           Effect.catchTag("StubNotFoundError", (e) =>
             Effect.fail(new ApiNotFoundError({ message: "Stub not found", resourceType: "stub", resourceId: e.stubId })))
         )
+
+        // Hot-reload if running
+        const running = yield* imposterServer.isRunning(path.imposterId)
+        if (running) {
+          yield* imposterServer.updateStubs(path.imposterId)
+        }
+
+        return result
       })
     )
     .handle("deleteStub", ({ path }) =>
       Effect.gen(function*() {
         const repo = yield* ImposterRepository
-        return yield* repo.removeStub(path.imposterId, path.stubId).pipe(
+        const imposterServer = yield* ImposterServer
+
+        const result = yield* repo.removeStub(path.imposterId, path.stubId).pipe(
           Effect.catchTag("ImposterNotFoundError", (e) =>
             Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id }))),
           Effect.catchTag("StubNotFoundError", (e) =>
             Effect.fail(new ApiNotFoundError({ message: "Stub not found", resourceType: "stub", resourceId: e.stubId })))
         )
+
+        // Hot-reload if running
+        const running = yield* imposterServer.isRunning(path.imposterId)
+        if (running) {
+          yield* imposterServer.updateStubs(path.imposterId)
+        }
+
+        return result
       })
     )
 )
