@@ -1,18 +1,11 @@
-import * as Context from "effect/Context"
 import * as Data from "effect/Data"
+import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import { pipe } from "effect/Function"
+import * as Clock from "effect/Clock"
+import * as ParseResult from "effect/ParseResult"
 import * as Schema from "effect/Schema"
-import { Uuid } from "src/services/Uuid.js"
-
-// UUID Service following service patterns
-export interface UuidService {
-  readonly generate: Effect.Effect<string>
-  readonly generateShort: Effect.Effect<string>
-}
-
-export const UuidService = Context.GenericTag<UuidService>("UuidService")
+import { Uuid } from "../services/Uuid.js"
 
 // Schemas for validation
 const ImposterNameSchema = Schema.String.pipe(
@@ -40,7 +33,7 @@ export interface ImposterConfig {
   readonly name: string
   readonly port: number
   readonly status: ImposterStatus
-  readonly createdAt: Date
+  readonly createdAt: DateTime.Utc
 }
 
 export const ImposterConfig = Data.tagged<ImposterConfig>("ImposterConfig")
@@ -56,41 +49,32 @@ export const CreateImposterRequest = Data.tagged<CreateImposterRequest>("CreateI
 export interface ImposterRef {
   readonly _tag: "ImposterRef"
   readonly config: ImposterConfig
-  readonly startTime: Date
+  readonly startTime: DateTime.Utc
   readonly endpointCount: number
 }
 
 export const ImposterRef = Data.tagged<ImposterRef>("ImposterRef")
 
 // Tagged errors
-export interface ImposterError {
-  readonly _tag: "ImposterError"
+export class ImposterError extends Data.TaggedError("ImposterError")<{
   readonly reason: string
   readonly cause?: unknown
-}
+}> {}
 
-export const ImposterError = Data.tagged<ImposterError>("ImposterError")
-
-export interface PortInUseError {
-  readonly _tag: "PortInUseError"
+export class PortInUseError extends Data.TaggedError("PortInUseError")<{
   readonly port: number
-}
+}> {}
 
-export const PortInUseError = Data.tagged<PortInUseError>("PortInUseError")
-
-export interface ImposterNotFoundError {
-  readonly _tag: "ImposterNotFoundError"
+export class ImposterNotFoundError extends Data.TaggedError("ImposterNotFoundError")<{
   readonly id: string
-}
-
-export const ImposterNotFoundError = Data.tagged<ImposterNotFoundError>("ImposterNotFoundError")
+}> {}
 
 /**
  * Parses and validates imposter creation request
  */
 export const parseCreateImposterRequest = (
   input: unknown
-): Effect.Effect<typeof CreateImposterRequestSchema.Type, Schema.ParseError> =>
+): Effect.Effect<typeof CreateImposterRequestSchema.Type, ParseResult.ParseError> =>
   Schema.decodeUnknown(CreateImposterRequestSchema)(input)
 
 /**
@@ -109,7 +93,7 @@ export const createImposterConfig = (
       name,
       port: validatedInput.port ?? 0, // Will be assigned by port allocator if 0
       status: "starting",
-      createdAt: new Date()
+      createdAt: DateTime.unsafeNow()
     })
   })
 
@@ -143,13 +127,15 @@ export const updateImposterPort = (port: number) => (config: ImposterConfig): Im
 /**
  * Calculates imposter uptime using Effect's Duration
  */
-export const calculateUptime = (startTime: Date): Duration.Duration => Duration.millis(Date.now() - startTime.getTime())
+export const calculateUptime = (startTime: DateTime.Utc) =>
+  Effect.map(Clock.currentTimeMillis, (now) =>
+    Duration.millis(now - DateTime.toEpochMillis(startTime)))
 
 /**
  * Creates an ImposterRef from config and runtime info
  */
 export const createImposterRef =
-  (startTime: Date) => (endpointCount: number) => (config: ImposterConfig): ImposterRef =>
+  (startTime: DateTime.Utc) => (endpointCount: number) => (config: ImposterConfig): ImposterRef =>
     ImposterRef({
       config,
       startTime,
@@ -159,27 +145,22 @@ export const createImposterRef =
 /**
  * Extracts imposter summary for API responses
  */
-export const toImposterSummary = (ref: ImposterRef) => ({
-  id: ref.config.id,
-  name: ref.config.name,
-  port: ref.config.port,
-  status: ref.config.status,
-  endpointCount: ref.endpointCount,
-  createdAt: ref.config.createdAt.toISOString(),
-  uptime: pipe(
-    calculateUptime(ref.startTime),
-    Duration.format
-  )
-})
+export const toImposterSummary = (ref: ImposterRef) =>
+  Effect.map(calculateUptime(ref.startTime), (uptime) => ({
+    id: ref.config.id,
+    name: ref.config.name,
+    port: ref.config.port,
+    status: ref.config.status,
+    endpointCount: ref.endpointCount,
+    createdAt: DateTime.formatIso(ref.config.createdAt),
+    uptime: Duration.format(uptime)
+  }))
 
 /**
  * Gets uptime in human readable format
  */
-export const getUptimeFormatted = (ref: ImposterRef): string =>
-  pipe(
-    calculateUptime(ref.startTime),
-    Duration.format
-  )
+export const getUptimeFormatted = (ref: ImposterRef) =>
+  Effect.map(calculateUptime(ref.startTime), Duration.format)
 
 /**
  * Checks if imposter is running

@@ -10,8 +10,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@template/basic/test": path.join(__dirname, "test"),
-      "@template/basic": path.join(__dirname, "src")
+      "imposters/test": path.join(__dirname, "test"),
+      "imposters": path.join(__dirname, "src")
     }
   }
 })

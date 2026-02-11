@@ -1,14 +1,12 @@
-import * as Array from "effect/Array"
 import * as Data from "effect/Data"
+import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Either from "effect/Either"
 import { pipe } from "effect/Function"
 import * as Option from "effect/Option"
-import * as Record from "effect/Record"
+import * as ParseResult from "effect/ParseResult"
 import * as Schema from "effect/Schema"
-import * as String from "effect/String"
-import { Uuid } from "src/services/Uuid.js"
+import { Uuid } from "../services/Uuid.js"
 
 const HttpMethodSchema = Schema.Literal("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
 
@@ -44,7 +42,7 @@ export interface Route {
   readonly method: typeof HttpMethodSchema.Type
   readonly response: Response
   readonly delay: Option.Option<Duration.Duration>
-  readonly createdAt: Date
+  readonly createdAt: DateTime.Utc
 }
 
 export const Route = Data.tagged<Route>("Route")
@@ -74,21 +72,15 @@ export interface CreateRouteRequest {
 export const CreateRouteRequest = Data.tagged<CreateRouteRequest>("CreateRouteRequest")
 
 // Tagged errors
-export interface RouteError {
-  readonly _tag: "RouteError"
+export class RouteError extends Data.TaggedError("RouteError")<{
   readonly reason: string
   readonly field?: string
   readonly value?: unknown
-}
+}> {}
 
-export const RouteError = Data.tagged<RouteError>("RouteError")
-
-export interface RouteNotFoundError {
-  readonly _tag: "RouteNotFoundError"
+export class RouteNotFoundError extends Data.TaggedError("RouteNotFoundError")<{
   readonly id: string
-}
-
-export const RouteNotFoundError = Data.tagged<RouteNotFoundError>("RouteNotFoundError")
+}> {}
 
 // Pure functions following Effect patterns
 
@@ -97,7 +89,8 @@ export const RouteNotFoundError = Data.tagged<RouteNotFoundError>("RouteNotFound
  */
 export const parseCreateRouteRequest = (
   input: unknown
-) => Schema.decodeUnknownEither(CreateRouteRequestSchema)(input)
+): Effect.Effect<typeof CreateRouteRequestSchema.Type, ParseResult.ParseError> =>
+  Schema.decodeUnknown(CreateRouteRequestSchema)(input)
 
 /**
  * Creates a new route from validated input
@@ -125,7 +118,7 @@ export const createRoute = (
         Option.fromNullable,
         Option.map(Duration.millis)
       ),
-      createdAt: new Date()
+      createdAt: DateTime.unsafeNow()
     })
   })
 
@@ -171,61 +164,32 @@ export const updateRoute = (updates: Partial<typeof CreateRouteRequestSchema.Typ
  * Substitutes parameters in a string using Effect's String utilities
  */
 const substituteInString = (params: Record<string, string>) => (str: string): string =>
-  Record.reduce(params, str, (acc, value, key) => String.replace(acc, `{{${key}}}`, value))
+  Object.entries(params).reduce((acc, [key, value]) => acc.replaceAll(`{{${key}}}`, value), str)
 
 /**
  * Recursively substitutes parameters in unknown data structure
  */
-export const substituteParams =
-  (params: Record<string, string>) => (body: unknown): Effect.Effect<unknown, Schema.ParseError> => {
-    const StringSchema = Schema.String
-    const ArraySchema = Schema.Array(Schema.Unknown)
-    const ObjectSchema = Schema.Record(Schema.String, Schema.Unknown)
-
-    return Effect.gen(function*() {
-      // Try string first
-      const stringResult = yield* Schema.decodeUnknownEither(StringSchema)(body)
-      if (Either.isRight(stringResult)) {
-        return substituteInString(params)(stringResult.right)
-      }
-
-      // Try array
-      const arrayResult = yield* Schema.decodeUnknownEither(ArraySchema)(body)
-      if (Either.isRight(arrayResult)) {
-        return yield* pipe(
-          arrayResult.right,
-          Array.map(substituteParams(params)),
-          Effect.all
-        )
-      }
-
-      // Try object
-      const objectResult = yield* Schema.decodeUnknownEither(ObjectSchema)(body)
-      if (Either.isRight(objectResult)) {
-        return yield* pipe(
-          objectResult.right,
-          Record.map(substituteParams(params)),
-          Effect.all
-        )
-      }
-
-      // Return as-is if no substitution needed
-      return body
-    })
+export const substituteParams = (params: Record<string, string>) => (body: unknown): unknown => {
+  if (typeof body === "string") return substituteInString(params)(body)
+  if (Array.isArray(body)) return body.map(substituteParams(params))
+  // TypeScript narrows `typeof body === "object"` to `object | null`, but we've excluded null and Array above.
+  // The cast to Record<string, unknown> is necessary since TS cannot narrow `object` to an indexable type.
+  if (body !== null && typeof body === "object") {
+    return Object.fromEntries(
+      Object.entries(body as Record<string, unknown>).map(([k, v]) => [k, substituteParams(params)(v)])
+    )
   }
+  return body
+}
 
 /**
  * Creates a response with substituted parameters
  */
 export const createResponseWithParams =
-  (params: Record<string, string>) => (response: Response): Effect.Effect<Response, Schema.ParseError> =>
-    Effect.gen(function*() {
-      const substitutedBody = yield* substituteParams(params)(response.body)
-
-      return Response({
-        ...response,
-        body: substitutedBody
-      })
+  (params: Record<string, string>) => (response: Response): Response =>
+    Response({
+      ...response,
+      body: substituteParams(params)(response.body)
     })
 
 /**
@@ -242,7 +206,7 @@ export const toRouteSummary = (route: Route) => ({
     Option.map(Duration.toMillis),
     Option.getOrUndefined
   ),
-  createdAt: route.createdAt.toISOString()
+  createdAt: DateTime.formatIso(route.createdAt)
 })
 
 /**
@@ -287,6 +251,6 @@ export const createMinimalRoute = (path: string) => (method: typeof HttpMethodSc
         body: { message: "OK" }
       }),
       delay: Option.none(),
-      createdAt: new Date()
+      createdAt: DateTime.unsafeNow()
     })
   })
