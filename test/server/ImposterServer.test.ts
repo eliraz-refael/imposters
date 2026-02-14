@@ -9,6 +9,7 @@ import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositori
 import { Stub } from "imposters/schemas/StubSchema.js"
 import { FiberManagerLive } from "imposters/server/FiberManager.js"
 import { ImposterServer, ImposterServerLive } from "imposters/server/ImposterServer.js"
+import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
 
 const makeConfig = (id: string, port: number): ImposterConfig =>
@@ -32,7 +33,7 @@ const makeStub = (id: string, method: string, path: string, status = 200, body?:
   })
 
 const TestLayer = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive))
+  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
 )
 
 const FullLayer = Layer.mergeAll(

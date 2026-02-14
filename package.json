@@ -29,8 +29,10 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@effect/platform": "^0.84.11",
-    "effect": "latest",
+    "@effect/cli": "^0.72.0",
+    "@effect/platform": "^0.94.4",
+    "@effect/platform-node": "^0.104.0",
+    "effect": "^3.19.16",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
@@ -41,7 +43,7 @@
     "@effect/build-utils": "^0.7.9",
     "@effect/eslint-plugin": "^0.2.0",
     "@effect/language-service": "^0.1.0",
-    "@effect/vitest": "latest",
+    "@effect/vitest": "^0.25.0",
     "@eslint/compat": "1.1.1",
     "@eslint/eslintrc": "3.1.0",
     "@eslint/js": "9.10.0",

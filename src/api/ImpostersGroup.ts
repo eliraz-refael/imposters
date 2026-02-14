@@ -7,9 +7,10 @@ import {
   ListImpostersResponse,
   UpdateImposterRequest
 } from "../schemas/ImposterSchema.js"
+import { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import { CreateStubRequest, Stub, UpdateStubRequest } from "../schemas/StubSchema.js"
 import { ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors.js"
-import { DeleteImposterUrlParams, ListImpostersUrlParams } from "./ApiSchemas.js"
+import { DeleteImposterUrlParams, ListImpostersUrlParams, ListRequestsUrlParams } from "./ApiSchemas.js"
 
 const createImposter = HttpApiEndpoint.post("createImposter", "/imposters")
   .setPayload(CreateImposterRequest)
@@ -63,6 +64,17 @@ const deleteStub =
     .addSuccess(Stub)
     .addError(ApiNotFoundError)
 
+const listRequests =
+  HttpApiEndpoint.get("listRequests")`/imposters/${HttpApiSchema.param("id", Schema.String)}/requests`
+    .setUrlParams(ListRequestsUrlParams)
+    .addSuccess(Schema.Array(RequestLogEntry))
+    .addError(ApiNotFoundError)
+
+const clearRequests =
+  HttpApiEndpoint.del("clearRequests")`/imposters/${HttpApiSchema.param("id", Schema.String)}/requests`
+    .addSuccess(Schema.Struct({ message: Schema.String }))
+    .addError(ApiNotFoundError)
+
 export const ImpostersGroup = HttpApiGroup.make("imposters")
   .add(createImposter)
   .add(listImposters)
@@ -73,3 +85,5 @@ export const ImpostersGroup = HttpApiGroup.make("imposters")
   .add(listStubs)
   .add(updateStub)
   .add(deleteStub)
+  .add(listRequests)
+  .add(clearRequests)

@@ -17,7 +17,7 @@ export const CreateImposterRequest = Schema.Struct({
   protocol: Schema.optionalWith(Protocol, { default: () => "HTTP" as const }),
   adminPath: Schema.optionalWith(
     Schema.String.pipe(Schema.startsWith("/")),
-    { default: () => "/admin" }
+    { default: () => "/_admin" }
   )
 })
 export type CreateImposterRequest = Schema.Schema.Type<typeof CreateImposterRequest>

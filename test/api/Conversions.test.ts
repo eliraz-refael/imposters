@@ -26,7 +26,7 @@ describe("Conversions", () => {
       expect(response.status).toBe("stopped")
       expect(response.endpointCount).toBe(0)
       expect(response.adminUrl).toBe("http://localhost:3000")
-      expect(response.adminPath).toBe("/admin")
+      expect(response.adminPath).toBe("/_admin")
       expect(response.uptime).toBeDefined()
     })
 

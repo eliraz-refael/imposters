@@ -20,7 +20,7 @@ export const toImposterResponse = (record: ImposterRecord): Effect.Effect<Impost
       endpointCount: record.stubs.length,
       createdAt: config.createdAt,
       adminUrl: NonEmptyString.make(`http://localhost:${config.port}`),
-      adminPath: NonEmptyString.make("/admin"),
+      adminPath: NonEmptyString.make("/_admin"),
       uptime: Duration.format(uptime)
     }
   })

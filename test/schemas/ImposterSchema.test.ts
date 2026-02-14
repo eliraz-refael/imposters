@@ -15,7 +15,7 @@ describe("ImposterSchema", () => {
       Effect.gen(function*() {
         const request = yield* Schema.decodeUnknown(CreateImposterRequest)({})
         expect(request.protocol).toBe("HTTP")
-        expect(request.adminPath).toBe("/admin")
+        expect(request.adminPath).toBe("/_admin")
       })
     )
 

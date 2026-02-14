@@ -1,4 +1,5 @@
 import { HttpApiBuilder } from "@effect/platform"
+import { Effect, ManagedRuntime } from "effect"
 import * as Layer from "effect/Layer"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { ApiLayer } from "imposters/layers/ApiLayer.js"
@@ -8,11 +9,15 @@ import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepositor
 import { AppConfigLive } from "imposters/services/AppConfig.js"
 import { PortAllocatorLive } from "imposters/services/PortAllocator.js"
 import { UuidLive } from "imposters/services/UuidLive.js"
+import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
+import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient.js"
+import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient.js"
+import { withImposter } from "imposters/client/testing.js"
 
 const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
 const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive))
+  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
 )
 const MainLayer = Layer.mergeAll(
   UuidLive,
@@ -20,20 +25,28 @@ const MainLayer = Layer.mergeAll(
   PortAllocatorWithDeps,
   ImposterRepositoryLive,
   FiberManagerLive,
+  RequestLoggerLive,
   ImposterServerWithDeps
 )
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
 
 let adminHandler: (request: Request) => Promise<Response>
 let dispose: () => void
+let clientRuntime: ManagedRuntime.ManagedRuntime<ImpostersClient, never>
 
 beforeAll(() => {
   const result = HttpApiBuilder.toWebHandler(FullLayer)
   adminHandler = result.handler
   dispose = result.dispose
+
+  const clientLayer = ImpostersClientLive().pipe(
+    Layer.provide(HandlerHttpClientLive(adminHandler))
+  )
+  clientRuntime = ManagedRuntime.make(clientLayer)
 })
 
-afterAll(() => {
+afterAll(async () => {
+  await clientRuntime.dispose()
   dispose()
 })
 
@@ -191,4 +204,33 @@ describe("E2E: Imposter Lifecycle", () => {
       await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
+
+  it("withImposter helper: create → request → auto-cleanup", async () => {
+    await clientRuntime.runPromise(
+      withImposter(
+        {
+          port: 9308,
+          name: "helper-test",
+          stubs: [{
+            predicates: [{ field: "path", operator: "equals", value: "/api" }],
+            responses: [{ status: 200, body: { via: "withImposter" } }]
+          }]
+        },
+        (ctx) =>
+          Effect.gen(function* () {
+            expect(ctx.port).toBe(9308)
+            const resp = yield* Effect.promise(() => fetch(`http://localhost:${ctx.port}/api`))
+            expect(resp.status).toBe(200)
+            const body = yield* Effect.promise(() => resp.json())
+            expect(body).toEqual({ via: "withImposter" })
+          })
+      )
+    )
+
+    // Verify cleanup
+    const getResp = await adminHandler(new Request("http://localhost:2525/imposters"))
+    const list = await getResp.json()
+    const found = (list as any).imposters.filter((i: any) => i.port === 9308)
+    expect(found.length).toBe(0)
+  }, 15000)
 })

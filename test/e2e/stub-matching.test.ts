@@ -7,12 +7,13 @@ import { ImposterServerLive } from "imposters/server/ImposterServer.js"
 import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { AppConfigLive } from "imposters/services/AppConfig.js"
 import { PortAllocatorLive } from "imposters/services/PortAllocator.js"
+import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
 import { UuidLive } from "imposters/services/UuidLive.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
 
 const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
 const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive))
+  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
 )
 const MainLayer = Layer.mergeAll(
   UuidLive,
@@ -20,6 +21,7 @@ const MainLayer = Layer.mergeAll(
   PortAllocatorWithDeps,
   ImposterRepositoryLive,
   FiberManagerLive,
+  RequestLoggerLive,
   ImposterServerWithDeps
 )
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
