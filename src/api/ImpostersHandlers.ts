@@ -7,6 +7,7 @@ import { ImposterRepository } from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
 import { AppConfig } from "../services/AppConfig.js"
 import { PortAllocator } from "../services/PortAllocator.js"
+import { RequestLogger } from "../services/RequestLogger.js"
 import { Uuid } from "../services/Uuid.js"
 import { ImposterServer } from "../server/ImposterServer.js"
 import { AdminApi } from "./AdminApi.js"
@@ -290,6 +291,34 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
         }
 
         return result
+      })
+    )
+    .handle("listRequests", ({ path, urlParams }) =>
+      Effect.gen(function*() {
+        const repo = yield* ImposterRepository
+        const requestLogger = yield* RequestLogger
+        yield* repo.get(path.id).pipe(
+          Effect.catchTag("ImposterNotFoundError", (e) =>
+            Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })))
+        )
+        return yield* requestLogger.getEntries(path.id, {
+          limit: urlParams.limit,
+          ...(urlParams.method !== undefined ? { method: urlParams.method } : {}),
+          ...(urlParams.path !== undefined ? { path: urlParams.path } : {}),
+          ...(urlParams.status !== undefined ? { status: urlParams.status } : {})
+        })
+      })
+    )
+    .handle("clearRequests", ({ path }) =>
+      Effect.gen(function*() {
+        const repo = yield* ImposterRepository
+        const requestLogger = yield* RequestLogger
+        yield* repo.get(path.id).pipe(
+          Effect.catchTag("ImposterNotFoundError", (e) =>
+            Effect.fail(new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })))
+        )
+        yield* requestLogger.clear(path.id)
+        return { message: `Request log cleared for imposter ${path.id}` }
       })
     )
 )

@@ -1,9 +1,14 @@
 import { Context, Data, Effect, HashMap, Layer, Ref, Runtime } from "effect"
+import * as DateTime from "effect/DateTime"
 import { ImposterConfig, ImposterNotFoundError } from "../domain/imposter.js"
 import { extractRequestContext, findMatchingStub } from "../matching/RequestMatcher.js"
 import { buildResponse, makeResponseState } from "../matching/ResponseGenerator.js"
 import { ImposterRepository } from "../repositories/ImposterRepository.js"
+import { NonEmptyString } from "../schemas/common.js"
+import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import type { Stub } from "../schemas/StubSchema.js"
+import { RequestLogger } from "../services/RequestLogger.js"
+import { makeUiRouter } from "../ui/UiRouter.js"
 import { ServerFactory } from "./BunServer.js"
 import { FiberManager } from "./FiberManager.js"
 
@@ -31,6 +36,7 @@ export const ImposterServerLive = Layer.effect(
     const repo = yield* ImposterRepository
     const fiberManager = yield* FiberManager
     const serverFactory = yield* ServerFactory
+    const requestLogger = yield* RequestLogger
     const stateMapRef = yield* Ref.make<HashMap.HashMap<string, ImposterState>>(HashMap.empty())
 
     const start = (id: string): Effect.Effect<void, ImposterServerError | ImposterNotFoundError> =>
@@ -49,27 +55,59 @@ export const ImposterServerLive = Layer.effect(
         const rt = yield* Effect.runtime<never>()
         const runPromise = Runtime.runPromise(rt)
 
-        const handler = async (request: Request): Promise<Response> =>
-          runPromise(
+        // UI router for /_admin pages
+        const uiRouter = makeUiRouter({ id, config, stubsRef, repo, requestLogger, runPromise })
+
+        const handler = async (request: Request): Promise<Response> => {
+          // Try UI router first (returns null if not a /_admin path)
+          const uiResponse = await uiRouter(request)
+          if (uiResponse !== null) return uiResponse
+
+          return runPromise(
             Effect.gen(function*() {
+              const startTime = Date.now()
               const stubs = yield* Ref.get(stubsRef)
               const ctx = yield* Effect.promise(() => extractRequestContext(request))
               const stub = findMatchingStub(ctx, stubs)
+
+              let response: Response
               if (!stub) {
-                return new Response(
+                response = new Response(
                   JSON.stringify({ error: "No matching stub found", method: ctx.method, path: ctx.path }),
                   { status: 404, headers: { "content-type": "application/json" } }
                 )
+              } else {
+                const responses = stub.responses
+                const index = yield* responseState.getNextIndex(id, stub.id, responses.length, stub.responseMode)
+                const responseConfig = responses[index]!
+                const delay = responseConfig.delay
+                if (delay !== undefined && delay > 0) {
+                  yield* Effect.sleep(`${delay} millis`)
+                }
+                response = buildResponse(responseConfig, ctx)
               }
 
-              const responses = stub.responses
-              const index = yield* responseState.getNextIndex(id, stub.id, responses.length, stub.responseMode)
-              const responseConfig = responses[index]!
-              const delay = responseConfig.delay
-              if (delay !== undefined && delay > 0) {
-                yield* Effect.sleep(`${delay} millis`)
+              const duration = Date.now() - startTime
+              const logEntry: RequestLogEntry = {
+                id: NonEmptyString.make(crypto.randomUUID()),
+                imposterId: NonEmptyString.make(id),
+                timestamp: DateTime.unsafeMake(startTime),
+                request: {
+                  method: ctx.method,
+                  path: ctx.path,
+                  headers: ctx.headers,
+                  query: ctx.query,
+                  body: ctx.body
+                },
+                response: {
+                  status: response.status,
+                  ...(stub ? { matchedStubId: NonEmptyString.make(stub.id) } : {})
+                },
+                duration
               }
-              return buildResponse(responseConfig, ctx)
+              yield* requestLogger.log(logEntry).pipe(Effect.catchAll(() => Effect.void))
+
+              return response
             }).pipe(
               Effect.catchAllCause((cause) =>
                 Effect.succeed(new Response(
@@ -79,6 +117,7 @@ export const ImposterServerLive = Layer.effect(
               )
             )
           )
+        }
 
         // Build the long-running fiber effect with acquireRelease
         const fiberEffect = Effect.acquireRelease(
@@ -123,6 +162,7 @@ export const ImposterServerLive = Layer.effect(
           ...r,
           config: ImposterConfig({ ...r.config, status: "stopped" })
         })).pipe(Effect.catchAll(() => Effect.void))
+        yield* requestLogger.removeImposter(id)
       })
 
     const updateStubs = (id: string): Effect.Effect<void> =>
