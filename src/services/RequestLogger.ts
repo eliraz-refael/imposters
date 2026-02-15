@@ -12,6 +12,7 @@ export interface RequestLoggerShape {
   readonly getCount: (imposterId: string) => Effect.Effect<number>
   readonly clear: (imposterId: string) => Effect.Effect<void>
   readonly subscribe: Effect.Effect<Queue.Dequeue<RequestLogEntry>, never, Scope.Scope>
+  readonly getEntryById: (imposterId: string, entryId: string) => Effect.Effect<RequestLogEntry | null>
   readonly removeImposter: (imposterId: string) => Effect.Effect<void>
 }
 
@@ -70,9 +71,18 @@ export const RequestLoggerLive = Layer.scoped(
     const subscribe: Effect.Effect<Queue.Dequeue<RequestLogEntry>, never, Scope.Scope> =
       PubSub.subscribe(pubsub)
 
+    const getEntryById = (imposterId: string, entryId: string): Effect.Effect<RequestLogEntry | null> =>
+      Ref.get(storeRef).pipe(
+        Effect.map((store) => {
+          const existing = HashMap.get(store, imposterId)
+          if (existing._tag === "None") return null
+          return existing.value.find((e) => e.id === entryId) ?? null
+        })
+      )
+
     const removeImposter = (imposterId: string): Effect.Effect<void> =>
       Ref.update(storeRef, HashMap.remove(imposterId))
 
-    return { log, getEntries, getCount, clear, subscribe, removeImposter } satisfies RequestLoggerShape
+    return { log, getEntries, getCount, clear, subscribe, getEntryById, removeImposter } satisfies RequestLoggerShape
   })
 )

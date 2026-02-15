@@ -14,6 +14,11 @@ export const RequestLogEntry = Schema.Struct({
   }),
   response: Schema.Struct({
     status: Schema.Number,
+    headers: Schema.optionalWith(
+      Schema.Record({ key: Schema.String, value: Schema.String }),
+      { default: () => ({}) }
+    ),
+    body: Schema.optional(Schema.String),
     matchedStubId: Schema.optional(NonEmptyString)
   }),
   duration: Schema.Number

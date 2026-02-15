@@ -1,3 +1,4 @@
+import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import type { ResponseConfig, Stub } from "../schemas/StubSchema.js"
 import { html } from "./html.js"
 import type { SafeHtml } from "./html.js"
@@ -74,3 +75,49 @@ export const emptyStubMessage = (): SafeHtml =>
 
 export const errorPartial = (message: string): SafeHtml =>
   html`<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3 mb-3">${message}</div>`
+
+export const methodBadge = (method: string): SafeHtml => {
+  const colors: Record<string, string> = {
+    GET: "bg-green-100 text-green-700",
+    POST: "bg-blue-100 text-blue-700",
+    PUT: "bg-orange-100 text-orange-700",
+    PATCH: "bg-yellow-100 text-yellow-700",
+    DELETE: "bg-red-100 text-red-700",
+    HEAD: "bg-gray-100 text-gray-700",
+    OPTIONS: "bg-purple-100 text-purple-700"
+  }
+  const color = colors[method.toUpperCase()] ?? "bg-gray-100 text-gray-600"
+  return html`<span class="px-1.5 py-0.5 rounded text-xs font-mono font-semibold ${color}">${method.toUpperCase()}</span>`
+}
+
+export const statusBadge = (status: number): SafeHtml => {
+  let color: string
+  if (status < 300) color = "bg-green-100 text-green-700"
+  else if (status < 400) color = "bg-yellow-100 text-yellow-700"
+  else if (status < 500) color = "bg-orange-100 text-orange-700"
+  else color = "bg-red-100 text-red-700"
+  return html`<span class="px-1.5 py-0.5 rounded text-xs font-mono font-semibold ${color}">${String(status)}</span>`
+}
+
+export const requestTablePartial = (entries: ReadonlyArray<RequestLogEntry>, opts?: { linkToDetail?: boolean }): SafeHtml => {
+  if (entries.length === 0) {
+    return html`<tr><td colspan="7" class="text-center py-4 text-gray-400">No requests recorded.</td></tr>`
+  }
+  const rows = entries.map((entry) => {
+    const d = new Date(Number((entry.timestamp as unknown as { epochMillis: bigint }).epochMillis))
+    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`
+    const stubId = entry.response.matchedStubId ?? "-"
+    const rowContent = html`
+      <td class="py-2 px-3 text-xs text-gray-500">${time}</td>
+      <td class="py-2 px-3">${methodBadge(entry.request.method)}</td>
+      <td class="py-2 px-3 font-mono text-sm">${entry.request.path}</td>
+      <td class="py-2 px-3">${statusBadge(entry.response.status)}</td>
+      <td class="py-2 px-3 text-xs text-gray-500 font-mono">${stubId}</td>
+      <td class="py-2 px-3 text-sm text-gray-500">${String(entry.duration)}ms</td>
+      <td class="py-2 px-3">${opts?.linkToDetail !== false
+        ? html`<a href="/_admin/requests/${entry.id}" class="text-indigo-600 hover:underline text-sm">detail</a>`
+        : html``}</td>`
+    return html`<tr class="border-t hover:bg-gray-50">${rowContent}</tr>`
+  })
+  return rows.reduce((acc, r) => html`${acc}${r}`, html``)
+}

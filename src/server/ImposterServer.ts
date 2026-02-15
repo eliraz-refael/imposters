@@ -87,6 +87,15 @@ export const ImposterServerLive = Layer.effect(
                 response = buildResponse(responseConfig, ctx)
               }
 
+              // Capture response for logging
+              const respText = yield* Effect.promise(() => response.text())
+              const respHeaders: Record<string, string> = {}
+              response.headers.forEach((val, key) => { respHeaders[key] = val })
+              // Reconstruct since .text() consumed body
+              response = new Response(respText, { status: response.status, headers: response.headers })
+
+              const logBody = respText.length > 10240 ? respText.slice(0, 10240) : (respText || undefined)
+
               const duration = Date.now() - startTime
               const logEntry: RequestLogEntry = {
                 id: NonEmptyString.make(crypto.randomUUID()),
@@ -101,6 +110,8 @@ export const ImposterServerLive = Layer.effect(
                 },
                 response: {
                   status: response.status,
+                  headers: respHeaders,
+                  ...(logBody !== undefined ? { body: logBody } : {}),
                   ...(stub ? { matchedStubId: NonEmptyString.make(stub.id) } : {})
                 },
                 duration

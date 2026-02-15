@@ -29,6 +29,7 @@ const makeEntry = (overrides: {
   },
   response: {
     status: overrides.status ?? 200,
+    headers: {},
     ...(overrides.matchedStubId !== undefined
       ? { matchedStubId: NonEmptyString.make(overrides.matchedStubId) }
       : {})
@@ -170,6 +171,30 @@ describe("RequestLogger", () => {
         expect(entries.length).toBe(0)
         const count = yield* logger.getCount(impId)
         expect(count).toBe(0)
+      })
+    )
+  })
+
+  it("getEntryById returns entry when found", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        const impId = "i-byid"
+        yield* logger.log(makeEntry({ id: "byid-1", imposterId: impId }))
+        yield* logger.log(makeEntry({ id: "byid-2", imposterId: impId }))
+        const found = yield* logger.getEntryById(impId, "byid-1")
+        expect(found).not.toBeNull()
+        expect(found!.id).toBe("byid-1")
+      })
+    )
+  })
+
+  it("getEntryById returns null when not found", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        const found = yield* logger.getEntryById("i-nope", "nonexistent")
+        expect(found).toBeNull()
       })
     )
   })

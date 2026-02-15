@@ -5,8 +5,10 @@ import type { Stub } from "../schemas/StubSchema.js"
 import { NonEmptyString } from "../schemas/common.js"
 import type { RequestLoggerShape } from "../services/RequestLogger.js"
 import { dashboardPage } from "./pages/dashboard.js"
+import { requestDetailPage } from "./pages/request-detail.js"
+import { requestsPage, testResultPartial } from "./pages/requests.js"
 import { stubsPage } from "./pages/stubs.js"
-import { errorPartial, stubListPartial } from "./partials.js"
+import { errorPartial, requestTablePartial, stubListPartial } from "./partials.js"
 
 export interface UiDeps {
   readonly id: string
@@ -153,6 +155,113 @@ export const makeUiRouter = (deps: UiDeps) =>
         )
       } catch {
         return htmlResponse(errorPartial("Failed to parse form data.").value, 200)
+      }
+    }
+
+    // GET /requests — full page
+    if (method === "GET" && path === "/requests") {
+      return deps.runPromise(
+        Effect.gen(function*() {
+          const entries = yield* deps.requestLogger.getEntries(deps.id, { limit: 100 })
+          return htmlResponse(requestsPage({ config: deps.config, entries }).value)
+        })
+      )
+    }
+
+    // GET /requests/list — HTMX partial (filtered table body)
+    if (method === "GET" && path === "/requests/list") {
+      const params = url.searchParams
+      return deps.runPromise(
+        Effect.gen(function*() {
+          const opts: { limit?: number; method?: string; path?: string; status?: number } = { limit: 100 }
+          const methodFilter = params.get("method")
+          if (methodFilter) opts.method = methodFilter
+          const pathFilter = params.get("path")
+          if (pathFilter) opts.path = pathFilter
+          const statusFilter = params.get("status")
+          if (statusFilter) opts.status = Number(statusFilter)
+          const entries = yield* deps.requestLogger.getEntries(deps.id, opts)
+          return htmlResponse(requestTablePartial(entries.slice().reverse()).value)
+        })
+      )
+    }
+
+    // POST /requests/test — send test request to own port
+    if (method === "POST" && path === "/requests/test") {
+      try {
+        const formData = await request.formData()
+        const testMethod = (formData.get("method") as string) || "GET"
+        const testPath = (formData.get("path") as string) || "/"
+        const testBody = formData.get("body") as string | null
+        const testContentType = (formData.get("contentType") as string) || "application/json"
+        const testHeadersRaw = (formData.get("headers") as string) || ""
+
+        const headers: Record<string, string> = {}
+        if (testContentType && testBody) {
+          headers["content-type"] = testContentType
+        }
+        for (const line of testHeadersRaw.split("\n")) {
+          const colonIdx = line.indexOf(":")
+          if (colonIdx > 0) {
+            headers[line.slice(0, colonIdx).trim()] = line.slice(colonIdx + 1).trim()
+          }
+        }
+
+        const startTime = Date.now()
+        const testResp = await fetch(`http://localhost:${deps.config.port}${testPath}`, {
+          method: testMethod,
+          headers,
+          ...(testBody && testMethod !== "GET" && testMethod !== "HEAD" ? { body: testBody } : {})
+        })
+        const duration = Date.now() - startTime
+
+        const respBody = await testResp.text()
+        const respHeaders: Record<string, string> = {}
+        testResp.headers.forEach((val, key) => { respHeaders[key] = val })
+
+        return htmlResponse(testResultPartial({ status: testResp.status, headers: respHeaders, body: respBody, duration }).value)
+      } catch (err) {
+        return htmlResponse(
+          `<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3">Request failed: ${String(err)}</div>`
+        )
+      }
+    }
+
+    // DELETE /requests — clear log
+    if (method === "DELETE" && path === "/requests") {
+      return deps.runPromise(
+        Effect.gen(function*() {
+          yield* deps.requestLogger.clear(deps.id)
+          return htmlResponse(requestTablePartial([]).value)
+        })
+      )
+    }
+
+    // GET /requests/:id — detail page
+    if (method === "GET" && path.startsWith("/requests/")) {
+      const entryId = path.slice("/requests/".length)
+      if (entryId && !entryId.includes("/")) {
+        return deps.runPromise(
+          Effect.gen(function*() {
+            const entry = yield* deps.requestLogger.getEntryById(deps.id, entryId)
+            if (entry === null) {
+              return htmlResponse("<h1>Request not found</h1>", 404)
+            }
+            // Try to find matched stub
+            let matchedStub: Stub | null = null
+            if (entry.response.matchedStubId) {
+              try {
+                const stubs = yield* deps.repo.getStubs(deps.id).pipe(
+                  Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>))
+                )
+                matchedStub = stubs.find((s) => s.id === entry.response.matchedStubId) ?? null
+              } catch {
+                // ignore
+              }
+            }
+            return htmlResponse(requestDetailPage({ config: deps.config, entry, matchedStub }).value)
+          })
+        )
       }
     }
 

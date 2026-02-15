@@ -1,7 +1,7 @@
 import { Command, Options } from "@effect/cli"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
-import { makeWebHandler } from "../server/AdminServer.js"
+import { makeCompositeHandler } from "../server/AdminServer.js"
 import { ImpostersClientLive } from "../client/ImpostersClient.js"
 import { HandlerHttpClientLive } from "../client/HandlerHttpClient.js"
 import { ImpostersClient } from "../client/ImpostersClient.js"
@@ -26,10 +26,11 @@ const startCommand = Command.make(
     Effect.gen(function* () {
       const adminPort = Option.isSome(port) ? port.value : Number(process.env.ADMIN_PORT ?? 2525)
 
-      const { handler, dispose } = makeWebHandler()
+      const { handler, dispose } = makeCompositeHandler(adminPort)
       const server = Bun.serve({ port: adminPort, fetch: handler })
 
       console.log(`Imposters admin server running on http://localhost:${server.port}`)
+      console.log(`Admin UI: http://localhost:${server.port}/_ui`)
 
       // Load config and create imposters if config file provided
       if (Option.isSome(config)) {
