@@ -1,11 +1,6 @@
 export { HandlerHttpClientLive, makeHandlerHttpClient } from "./HandlerHttpClient"
 
-export {
-  ImpostersClient,
-  ImpostersClientFetchLive,
-  ImpostersClientLive,
-  makeImpostersClient
-} from "./ImpostersClient"
+export { ImpostersClient, ImpostersClientFetchLive, ImpostersClientLive, makeImpostersClient } from "./ImpostersClient"
 
 export type { ImpostersClientShape } from "./ImpostersClient"
 

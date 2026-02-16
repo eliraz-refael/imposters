@@ -9,10 +9,10 @@ export default defineConfig({
     globals: true
   },
   resolve: {
-    alias: {
-      "imposters/test": path.join(__dirname, "test"),
-      "imposters": path.join(__dirname, "src")
-    },
+    alias: [
+      { find: /^imposters\/test\/(.*)/, replacement: path.join(__dirname, "test/$1") },
+      { find: /^imposters\/(.*)/, replacement: path.join(__dirname, "src/$1") }
+    ],
     extensions: [".ts", ".tsx", ".js", ".jsx", ".json"]
   }
 })
