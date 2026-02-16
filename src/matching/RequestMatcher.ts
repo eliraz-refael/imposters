@@ -41,8 +41,7 @@ export const extractRequestContext = async (request: Request): Promise<RequestCo
   return { method, path, headers, query, body }
 }
 
-const normalize = (s: string, caseSensitive: boolean): string =>
-  caseSensitive ? s : s.toLowerCase()
+const normalize = (s: string, caseSensitive: boolean): string => caseSensitive ? s : s.toLowerCase()
 
 const matchString = (
   actual: string,
@@ -55,9 +54,12 @@ const matchString = (
   const a = normalize(actual, caseSensitive)
   const e = normalize(expected, caseSensitive)
   switch (operator) {
-    case "equals": return a === e
-    case "contains": return a.includes(e)
-    case "startsWith": return a.startsWith(e)
+    case "equals":
+      return a === e
+    case "contains":
+      return a.includes(e)
+    case "startsWith":
+      return a.startsWith(e)
     case "matches": {
       const flags = caseSensitive ? "" : "i"
       return new RegExp(expected, flags).test(actual)
@@ -73,9 +75,7 @@ const matchObject = (
 ): boolean => {
   if (operator === "exists") {
     if (typeof expected !== "object" || expected === null) return true
-    return Object.keys(expected as Record<string, unknown>).every((key) =>
-      key.toLowerCase() in actual || key in actual
-    )
+    return Object.keys(expected as Record<string, unknown>).every((key) => key.toLowerCase() in actual || key in actual)
   }
   if (typeof expected !== "object" || expected === null) return false
   const entries = Object.entries(expected as Record<string, unknown>)
@@ -116,8 +116,10 @@ const matchBody = (
   caseSensitive: boolean
 ): boolean => {
   switch (operator) {
-    case "exists": return actual !== null && actual !== undefined
-    case "equals": return deepSubsetMatch(actual, expected, caseSensitive)
+    case "exists":
+      return actual !== null && actual !== undefined
+    case "equals":
+      return deepSubsetMatch(actual, expected, caseSensitive)
     case "contains": {
       const a = normalize(typeof actual === "string" ? actual : JSON.stringify(actual), caseSensitive)
       const e = normalize(typeof expected === "string" ? expected : JSON.stringify(expected), caseSensitive)
@@ -138,13 +140,18 @@ const matchBody = (
 }
 
 export const evaluatePredicate = (ctx: RequestContext, predicate: Predicate): boolean => {
-  const { field, operator, value, caseSensitive } = predicate
+  const { caseSensitive, field, operator, value } = predicate
   switch (field) {
-    case "method": return matchString(ctx.method, value, operator, caseSensitive)
-    case "path": return matchString(ctx.path, value, operator, caseSensitive)
-    case "headers": return matchObject(ctx.headers, value, operator, caseSensitive)
-    case "query": return matchObject(ctx.query, value, operator, caseSensitive)
-    case "body": return matchBody(ctx.body, value, operator, caseSensitive)
+    case "method":
+      return matchString(ctx.method, value, operator, caseSensitive)
+    case "path":
+      return matchString(ctx.path, value, operator, caseSensitive)
+    case "headers":
+      return matchObject(ctx.headers, value, operator, caseSensitive)
+    case "query":
+      return matchObject(ctx.query, value, operator, caseSensitive)
+    case "body":
+      return matchBody(ctx.body, value, operator, caseSensitive)
   }
 }
 

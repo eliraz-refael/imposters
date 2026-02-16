@@ -10,8 +10,7 @@ const predicateSummary = (stub: Stub): string => {
     .join(" AND ")
 }
 
-const formatJson = (value: unknown): string =>
-  JSON.stringify(value, null, 2)
+const formatJson = (value: unknown): string => JSON.stringify(value, null, 2)
 
 const responseDetail = (r: ResponseConfig, index: number, total: number): SafeHtml => {
   const label = total > 1 ? `Response ${String(index + 1)}/${String(total)}` : "Response"
@@ -25,9 +24,13 @@ const responseDetail = (r: ResponseConfig, index: number, total: number): SafeHt
       ${r.delay !== undefined ? html`<span class="text-xs text-gray-400">delay ${String(r.delay)}ms</span>` : html``}
     </div>
     ${headers !== null ? html`<div class="text-xs text-gray-500 mb-1">Headers: ${headers}</div>` : html``}
-    ${r.body !== undefined
-      ? html`<pre class="mt-1 bg-white border rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap">${formatJson(r.body)}</pre>`
-      : html`<div class="text-xs text-gray-400 italic">no body</div>`}
+    ${
+    r.body !== undefined
+      ? html`<pre class="mt-1 bg-white border rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap">${
+        formatJson(r.body)
+      }</pre>`
+      : html`<div class="text-xs text-gray-400 italic">no body</div>`
+  }
   </div>`
 }
 
@@ -99,13 +102,18 @@ export const statusBadge = (status: number): SafeHtml => {
   return html`<span class="px-1.5 py-0.5 rounded text-xs font-mono font-semibold ${color}">${String(status)}</span>`
 }
 
-export const requestTablePartial = (entries: ReadonlyArray<RequestLogEntry>, opts?: { linkToDetail?: boolean }): SafeHtml => {
+export const requestTablePartial = (
+  entries: ReadonlyArray<RequestLogEntry>,
+  opts?: { linkToDetail?: boolean }
+): SafeHtml => {
   if (entries.length === 0) {
     return html`<tr><td colspan="7" class="text-center py-4 text-gray-400">No requests recorded.</td></tr>`
   }
   const rows = entries.map((entry) => {
     const d = new Date(Number((entry.timestamp as unknown as { epochMillis: bigint }).epochMillis))
-    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`
+    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${
+      String(d.getSeconds()).padStart(2, "0")
+    }`
     const stubId = entry.response.matchedStubId ?? "-"
     const rowContent = html`
       <td class="py-2 px-3 text-xs text-gray-500">${time}</td>
@@ -114,9 +122,11 @@ export const requestTablePartial = (entries: ReadonlyArray<RequestLogEntry>, opt
       <td class="py-2 px-3">${statusBadge(entry.response.status)}</td>
       <td class="py-2 px-3 text-xs text-gray-500 font-mono">${stubId}</td>
       <td class="py-2 px-3 text-sm text-gray-500">${String(entry.duration)}ms</td>
-      <td class="py-2 px-3">${opts?.linkToDetail !== false
+      <td class="py-2 px-3">${
+      opts?.linkToDetail !== false
         ? html`<a href="/_admin/requests/${entry.id}" class="text-indigo-600 hover:underline text-sm">detail</a>`
-        : html``}</td>`
+        : html``
+    }</td>`
     return html`<tr class="border-t hover:bg-gray-50">${rowContent}</tr>`
   })
   return rows.reduce((acc, r) => html`${acc}${r}`, html``)

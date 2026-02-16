@@ -88,54 +88,62 @@ const addStub = async (imposterId: string, stub: Record<string, unknown>) => {
   })
 }
 
-describe("E2E: Request Logging", () => {
-  it("logs requests sent to an imposter and retrieves them via admin API", async () => {
-    const imp = await createImposter(9511)
-    const stubResp = await admin(`/imposters/${imp.id}/stubs`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        predicates: [{ field: "path", operator: "equals", value: "/hello" }],
-        responses: [{ status: 200, body: { greeting: "hi" } }]
-      })
+describe("E2E: Statistics", () => {
+  it("returns zero stats for imposter with no requests", async () => {
+    const imp = await createImposter(9301)
+    const resp = await admin(`/imposters/${imp.id}/stats`)
+    expect(resp.status).toBe(200)
+    const stats = await resp.json()
+    expect(stats.totalRequests).toBe(0)
+    expect(stats.requestsPerMinute).toBe(0)
+    expect(stats.errorRate).toBe(0)
+  }, 10000)
+
+  it("tracks request statistics after serving requests", async () => {
+    const imp = await createImposter(9302)
+    await addStub(imp.id, {
+      predicates: [{ field: "method", operator: "equals", value: "GET" }],
+      responses: [{ status: 200, body: { ok: true } }]
     })
-    const stub = await stubResp.json()
+    await addStub(imp.id, {
+      predicates: [{ field: "method", operator: "equals", value: "POST" }],
+      responses: [{ status: 201, body: { created: true } }]
+    })
 
     await startImposter(imp.id)
     await new Promise((r) => setTimeout(r, 150))
 
     try {
-      // Send requests to the imposter
-      await fetch("http://localhost:9511/hello")
-      await fetch("http://localhost:9511/hello?name=world")
+      // Make some requests
+      await fetch("http://localhost:9302/a")
+      await fetch("http://localhost:9302/b")
+      await fetch("http://localhost:9302/c", { method: "POST" })
+
+      // Small delay for async logging
       await new Promise((r) => setTimeout(r, 100))
 
-      // Query request log
-      const res = await admin(`/imposters/${imp.id}/requests`)
-      expect(res.status).toBe(200)
-      const entries = await res.json()
-      expect(entries.length).toBe(2)
+      const resp = await admin(`/imposters/${imp.id}/stats`)
+      expect(resp.status).toBe(200)
+      const stats = await resp.json()
 
-      // Verify entry structure
-      const entry = entries[0]
-      expect(entry.id).toBeDefined()
-      expect(entry.imposterId).toBe(imp.id)
-      expect(entry.request.method).toBe("GET")
-      expect(entry.request.path).toBe("/hello")
-      expect(entry.response.status).toBe(200)
-      expect(entry.response.matchedStubId).toBe(stub.id)
-      expect(entry.duration).toBeGreaterThanOrEqual(0)
-      expect(entry.timestamp).toBeDefined()
+      expect(stats.totalRequests).toBe(3)
+      expect(stats.requestsByMethod.GET).toBe(2)
+      expect(stats.requestsByMethod.POST).toBe(1)
+      expect(stats.requestsByStatusCode["200"]).toBe(2)
+      expect(stats.requestsByStatusCode["201"]).toBe(1)
+      expect(stats.errorRate).toBe(0)
+      expect(stats.lastRequestAt).toBeDefined()
+      expect(stats.p50ResponseTime).toBeDefined()
     } finally {
       await stopImposter(imp.id)
       await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
-  it("logs 404 responses with no matchedStubId", async () => {
-    const imp = await createImposter(9512)
+  it("resets stats via DELETE", async () => {
+    const imp = await createImposter(9303)
     await addStub(imp.id, {
-      predicates: [{ field: "path", operator: "equals", value: "/specific" }],
+      predicates: [],
       responses: [{ status: 200 }]
     })
 
@@ -143,60 +151,32 @@ describe("E2E: Request Logging", () => {
     await new Promise((r) => setTimeout(r, 150))
 
     try {
-      // Send a request that won't match any stub
-      await fetch("http://localhost:9512/nomatch")
+      await fetch("http://localhost:9303/something")
       await new Promise((r) => setTimeout(r, 100))
 
-      const res = await admin(`/imposters/${imp.id}/requests`)
-      const entries = await res.json()
-      expect(entries.length).toBe(1)
-      expect(entries[0].response.status).toBe(404)
-      expect(entries[0].response.matchedStubId).toBeUndefined()
+      // Verify stats exist
+      let resp = await admin(`/imposters/${imp.id}/stats`)
+      let stats = await resp.json()
+      expect(stats.totalRequests).toBe(1)
+
+      // Reset stats
+      resp = await admin(`/imposters/${imp.id}/stats`, { method: "DELETE" })
+      expect(resp.status).toBe(200)
+      const body = await resp.json()
+      expect(body.message).toContain("reset")
+
+      // Verify stats are cleared
+      resp = await admin(`/imposters/${imp.id}/stats`)
+      stats = await resp.json()
+      expect(stats.totalRequests).toBe(0)
     } finally {
       await stopImposter(imp.id)
       await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
-  it("clears request log via DELETE and filters by query params", async () => {
-    const imp = await createImposter(9513)
-    await addStub(imp.id, {
-      predicates: [],
-      responses: [{ status: 200, body: { ok: true } }]
-    })
-
-    await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
-
-    try {
-      // Send mixed requests
-      await fetch("http://localhost:9513/api/users")
-      await fetch("http://localhost:9513/api/orders", { method: "POST" })
-      await fetch("http://localhost:9513/api/users")
-      await new Promise((r) => setTimeout(r, 100))
-
-      // Filter by method
-      const getOnly = await admin(`/imposters/${imp.id}/requests?method=GET`)
-      const getEntries = await getOnly.json()
-      expect(getEntries.length).toBe(2)
-
-      // Filter by path
-      const ordersOnly = await admin(`/imposters/${imp.id}/requests?path=/api/orders`)
-      const orderEntries = await ordersOnly.json()
-      expect(orderEntries.length).toBe(1)
-      expect(orderEntries[0].request.method).toBe("POST")
-
-      // Clear the log
-      const clearRes = await admin(`/imposters/${imp.id}/requests`, { method: "DELETE" })
-      expect(clearRes.status).toBe(200)
-
-      // Verify cleared
-      const afterClear = await admin(`/imposters/${imp.id}/requests`)
-      const clearedEntries = await afterClear.json()
-      expect(clearedEntries.length).toBe(0)
-    } finally {
-      await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
-    }
-  }, 10000)
+  it("returns 404 for stats of nonexistent imposter", async () => {
+    const resp = await admin("/imposters/nonexistent/stats")
+    expect(resp.status).toBe(404)
+  })
 })

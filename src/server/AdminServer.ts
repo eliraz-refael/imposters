@@ -9,7 +9,7 @@ export const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
 export const makeWebHandler = () => HttpApiBuilder.toWebHandler(FullLayer)
 
 export const makeCompositeHandler = (adminPort: number) => {
-  const { handler: apiHandler, dispose } = HttpApiBuilder.toWebHandler(FullLayer)
+  const { dispose, handler: apiHandler } = HttpApiBuilder.toWebHandler(FullLayer)
   const adminUiRouter = makeAdminUiRouter({ apiHandler, adminPort })
 
   const handler = async (request: Request): Promise<Response> => {

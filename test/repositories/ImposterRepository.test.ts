@@ -2,13 +2,10 @@ import { it } from "@effect/vitest"
 import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { describe, expect } from "vitest"
 import { ImposterConfig } from "imposters/domain/imposter.js"
-import {
-  ImposterRepository,
-  ImposterRepositoryLive
-} from "imposters/repositories/ImposterRepository.js"
+import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { Stub } from "imposters/schemas/StubSchema.js"
+import { describe, expect } from "vitest"
 
 const makeConfig = (id: string, name: string): ImposterConfig =>
   ImposterConfig({
@@ -19,11 +16,12 @@ const makeConfig = (id: string, name: string): ImposterConfig =>
     createdAt: DateTime.unsafeNow()
   })
 
-const makeStub = (id: string) => Schema.decodeUnknownSync(Stub)({
-  id,
-  predicates: [],
-  responses: [{ status: 200 }]
-})
+const makeStub = (id: string) =>
+  Schema.decodeUnknownSync(Stub)({
+    id,
+    predicates: [],
+    responses: [{ status: 200 }]
+  })
 
 describe("ImposterRepository", () => {
   it.effect("create and get imposter", () =>
@@ -36,16 +34,14 @@ describe("ImposterRepository", () => {
 
       const fetched = yield* repo.get("imp-1")
       expect(fetched.config.name).toBe("test")
-    }).pipe(Effect.provide(ImposterRepositoryLive))
-  )
+    }).pipe(Effect.provide(ImposterRepositoryLive)))
 
   it.effect("get missing imposter fails", () =>
     Effect.gen(function*() {
       const repo = yield* ImposterRepository
       const error = yield* Effect.flip(repo.get("nonexistent"))
       expect(error._tag).toBe("ImposterNotFoundError")
-    }).pipe(Effect.provide(ImposterRepositoryLive))
-  )
+    }).pipe(Effect.provide(ImposterRepositoryLive)))
 
   it.effect("update imposter config", () =>
     Effect.gen(function*() {
@@ -59,8 +55,7 @@ describe("ImposterRepository", () => {
 
       const fetched = yield* repo.get("imp-1")
       expect(fetched.config.name).toBe("updated")
-    }).pipe(Effect.provide(ImposterRepositoryLive))
-  )
+    }).pipe(Effect.provide(ImposterRepositoryLive)))
 
   it.effect("remove imposter", () =>
     Effect.gen(function*() {
@@ -71,8 +66,7 @@ describe("ImposterRepository", () => {
 
       const error = yield* Effect.flip(repo.get("imp-1"))
       expect(error._tag).toBe("ImposterNotFoundError")
-    }).pipe(Effect.provide(ImposterRepositoryLive))
-  )
+    }).pipe(Effect.provide(ImposterRepositoryLive)))
 
   it.effect("getAll returns all imposters", () =>
     Effect.gen(function*() {
@@ -81,8 +75,7 @@ describe("ImposterRepository", () => {
       yield* repo.create(makeConfig("imp-2", "second"))
       const all = yield* repo.getAll
       expect(all).toHaveLength(2)
-    }).pipe(Effect.provide(ImposterRepositoryLive))
-  )
+    }).pipe(Effect.provide(ImposterRepositoryLive)))
 
   describe("stub management", () => {
     it.effect("add and get stubs", () =>
@@ -96,8 +89,7 @@ describe("ImposterRepository", () => {
         const stubs = yield* repo.getStubs("imp-1")
         expect(stubs).toHaveLength(1)
         expect(stubs[0]!.id).toBe("stub-1")
-      }).pipe(Effect.provide(ImposterRepositoryLive))
-    )
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
 
     it.effect("update stub", () =>
       Effect.gen(function*() {
@@ -110,8 +102,7 @@ describe("ImposterRepository", () => {
           responses: [{ status: 404 }]
         }))
         expect(updated.responses[0]!.status).toBe(404)
-      }).pipe(Effect.provide(ImposterRepositoryLive))
-    )
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
 
     it.effect("remove stub", () =>
       Effect.gen(function*() {
@@ -124,8 +115,7 @@ describe("ImposterRepository", () => {
 
         const stubs = yield* repo.getStubs("imp-1")
         expect(stubs).toHaveLength(0)
-      }).pipe(Effect.provide(ImposterRepositoryLive))
-    )
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
 
     it.effect("update missing stub fails", () =>
       Effect.gen(function*() {
@@ -136,15 +126,13 @@ describe("ImposterRepository", () => {
           repo.updateStub("imp-1", "nonexistent", (s) => s)
         )
         expect(error._tag).toBe("StubNotFoundError")
-      }).pipe(Effect.provide(ImposterRepositoryLive))
-    )
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
 
     it.effect("stub operations on missing imposter fail", () =>
       Effect.gen(function*() {
         const repo = yield* ImposterRepository
         const error = yield* Effect.flip(repo.getStubs("nonexistent"))
         expect(error._tag).toBe("ImposterNotFoundError")
-      }).pipe(Effect.provide(ImposterRepositoryLive))
-    )
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
   })
 })

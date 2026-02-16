@@ -1,22 +1,35 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect, Layer, ManagedRuntime } from "effect"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient.js"
+import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient.js"
 import { ApiLayer } from "imposters/layers/ApiLayer.js"
+import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
+import type { NonEmptyString, PortNumber, PositiveInteger } from "imposters/schemas/common.js"
 import { FiberManagerLive } from "imposters/server/FiberManager.js"
 import { ImposterServerLive } from "imposters/server/ImposterServer.js"
-import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { AppConfigLive } from "imposters/services/AppConfig.js"
+import { MetricsServiceLive } from "imposters/services/MetricsService.js"
 import { PortAllocatorLive } from "imposters/services/PortAllocator.js"
+import { ProxyServiceLive } from "imposters/services/ProxyService.js"
 import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
 import { UuidLive } from "imposters/services/UuidLive.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
-import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient.js"
-import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient.js"
-import type { PortNumber, NonEmptyString, PositiveInteger } from "imposters/schemas/common.js"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
+const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
+
 const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
+  Layer.provide(
+    Layer.mergeAll(
+      FiberManagerLive,
+      ImposterRepositoryLive,
+      NodeServerFactoryLive,
+      RequestLoggerLive,
+      MetricsServiceLive,
+      ProxyServiceWithDeps
+    )
+  )
 )
 const MainLayer = Layer.mergeAll(
   UuidLive,
@@ -25,6 +38,7 @@ const MainLayer = Layer.mergeAll(
   ImposterRepositoryLive,
   FiberManagerLive,
   RequestLoggerLive,
+  MetricsServiceLive,
   ImposterServerWithDeps
 )
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -54,14 +68,13 @@ afterAll(async () => {
   dispose()
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, ImpostersClient>) =>
-  runtime.runPromise(effect)
+const run = <A, E>(effect: Effect.Effect<A, E, ImpostersClient>) => runtime.runPromise(effect)
 
 describe("ImpostersClient", () => {
   describe("system endpoints (top-level)", () => {
     it("healthCheck returns healthy status", async () => {
       const result = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.healthCheck()
         })
@@ -71,7 +84,7 @@ describe("ImpostersClient", () => {
 
     it("serverInfo returns server info", async () => {
       const result = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.serverInfo()
         })
@@ -85,7 +98,7 @@ describe("ImpostersClient", () => {
     it("create, get, list, update, delete imposter", async () => {
       // Create
       const created = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.createImposter({ payload: impPayload(9401) })
         })
@@ -96,7 +109,7 @@ describe("ImpostersClient", () => {
 
       // Get
       const fetched = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.getImposter({ path: { id } })
         })
@@ -106,7 +119,7 @@ describe("ImpostersClient", () => {
 
       // List
       const listed = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.listImposters({ urlParams: { limit: posInt(50), offset: 0 } })
         })
@@ -116,7 +129,7 @@ describe("ImpostersClient", () => {
 
       // Update
       const updated = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.updateImposter({
             path: { id },
@@ -128,7 +141,7 @@ describe("ImpostersClient", () => {
 
       // Delete
       const deleted = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.deleteImposter({
             path: { id },
@@ -141,7 +154,7 @@ describe("ImpostersClient", () => {
 
     it("stubs: add, list, update, delete", async () => {
       const imp = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.createImposter({ payload: impPayload(9402) })
         })
@@ -150,7 +163,7 @@ describe("ImpostersClient", () => {
       try {
         // Add stub
         const stub = await run(
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.addStub({
               path: { imposterId: imp.id },
@@ -167,7 +180,7 @@ describe("ImpostersClient", () => {
 
         // List stubs
         const stubs = await run(
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.listStubs({ path: { imposterId: imp.id } })
           })
@@ -176,7 +189,7 @@ describe("ImpostersClient", () => {
 
         // Update stub
         const updatedStub = await run(
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.updateStub({
               path: { imposterId: imp.id, stubId: stub.id },
@@ -188,7 +201,7 @@ describe("ImpostersClient", () => {
 
         // Delete stub
         const deletedStub = await run(
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.deleteStub({
               path: { imposterId: imp.id, stubId: stub.id }
@@ -198,7 +211,7 @@ describe("ImpostersClient", () => {
         expect(deletedStub.id).toBe(stub.id)
       } finally {
         await run(
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.deleteImposter({
               path: { id: imp.id },
@@ -211,7 +224,7 @@ describe("ImpostersClient", () => {
 
     it("returns error for missing imposter", async () => {
       const result = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.getImposter({ path: { id: "nonexistent" } }).pipe(
             Effect.map(() => "should-not-reach" as const),
@@ -224,7 +237,7 @@ describe("ImpostersClient", () => {
 
     it("returns error for duplicate port", async () => {
       const imp = await run(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.createImposter({ payload: impPayload(9403) })
         })
@@ -232,7 +245,7 @@ describe("ImpostersClient", () => {
 
       try {
         const result = await run(
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.createImposter({ payload: impPayload(9403) }).pipe(
               Effect.map(() => "should-not-reach" as const),
@@ -243,7 +256,7 @@ describe("ImpostersClient", () => {
         expect(result).toBe("conflict")
       } finally {
         await run(
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.deleteImposter({
               path: { id: imp.id },

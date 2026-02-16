@@ -21,7 +21,8 @@ export const toImposterResponse = (record: ImposterRecord): Effect.Effect<Impost
       createdAt: config.createdAt,
       adminUrl: NonEmptyString.make(`http://localhost:${config.port}`),
       adminPath: NonEmptyString.make("/_admin"),
-      uptime: Duration.format(uptime)
+      uptime: Duration.format(uptime),
+      ...(config.proxy !== undefined ? { proxy: config.proxy } : {})
     }
   })
 

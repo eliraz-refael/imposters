@@ -1,12 +1,14 @@
 import { Context, Data, Effect, HashMap, Layer, Ref, Runtime } from "effect"
 import * as DateTime from "effect/DateTime"
-import { ImposterConfig, ImposterNotFoundError } from "../domain/imposter.js"
+import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter.js"
 import { extractRequestContext, findMatchingStub } from "../matching/RequestMatcher.js"
 import { buildResponse, makeResponseState } from "../matching/ResponseGenerator.js"
 import { ImposterRepository } from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import type { Stub } from "../schemas/StubSchema.js"
+import { MetricsService } from "../services/MetricsService.js"
+import { ProxyService } from "../services/ProxyService.js"
 import { RequestLogger } from "../services/RequestLogger.js"
 import { makeUiRouter } from "../ui/UiRouter.js"
 import { ServerFactory } from "./BunServer.js"
@@ -21,6 +23,7 @@ export interface ImposterServerShape {
   readonly start: (id: string) => Effect.Effect<void, ImposterServerError | ImposterNotFoundError>
   readonly stop: (id: string) => Effect.Effect<void>
   readonly updateStubs: (id: string) => Effect.Effect<void>
+  readonly updateProxyConfig: (id: string) => Effect.Effect<void>
   readonly isRunning: (id: string) => Effect.Effect<boolean>
 }
 
@@ -28,6 +31,7 @@ export class ImposterServer extends Context.Tag("ImposterServer")<ImposterServer
 
 interface ImposterState {
   readonly stubsRef: Ref.Ref<ReadonlyArray<Stub>>
+  readonly proxyConfigRef: Ref.Ref<ProxyConfigDomain | undefined>
 }
 
 export const ImposterServerLive = Layer.effect(
@@ -37,6 +41,8 @@ export const ImposterServerLive = Layer.effect(
     const fiberManager = yield* FiberManager
     const serverFactory = yield* ServerFactory
     const requestLogger = yield* RequestLogger
+    const metricsService = yield* MetricsService
+    const proxyService = yield* ProxyService
     const stateMapRef = yield* Ref.make<HashMap.HashMap<string, ImposterState>>(HashMap.empty())
 
     const start = (id: string): Effect.Effect<void, ImposterServerError | ImposterNotFoundError> =>
@@ -46,10 +52,11 @@ export const ImposterServerLive = Layer.effect(
 
         // Create per-imposter state
         const stubsRef = yield* Ref.make<ReadonlyArray<Stub>>(record.stubs)
+        const proxyConfigRef = yield* Ref.make<ProxyConfigDomain | undefined>(config.proxy)
         const responseState = yield* makeResponseState()
 
         // Store state for hot-reload
-        yield* Ref.update(stateMapRef, HashMap.set(id, { stubsRef } as ImposterState))
+        yield* Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef } as ImposterState))
 
         // Capture runtime for running effects inside fetch handler
         const rt = yield* Effect.runtime<never>()
@@ -71,11 +78,37 @@ export const ImposterServerLive = Layer.effect(
               const stub = findMatchingStub(ctx, stubs)
 
               let response: Response
+              let proxied = false
               if (!stub) {
-                response = new Response(
-                  JSON.stringify({ error: "No matching stub found", method: ctx.method, path: ctx.path }),
-                  { status: 404, headers: { "content-type": "application/json" } }
-                )
+                const proxyConfig = yield* Ref.get(proxyConfigRef)
+                if (proxyConfig) {
+                  const url = new URL(request.url)
+                  response = yield* proxyService.forward(ctx, proxyConfig, url).pipe(
+                    Effect.catchTag("ProxyError", (err) =>
+                      Effect.succeed(
+                        new Response(
+                          JSON.stringify({ error: "Proxy failed", target: err.targetUrl, reason: err.reason }),
+                          { status: 502, headers: { "content-type": "application/json" } }
+                        )
+                      ))
+                  )
+                  proxied = true
+                  // Record mode: save as stub + update stubsRef
+                  if (proxyConfig.mode === "record" && response.status < 500) {
+                    const responseClone = response.clone()
+                    const newStub = yield* proxyService.recordAsStub(ctx, responseClone)
+                    yield* repo.addStub(id, newStub).pipe(Effect.catchAll(() => Effect.void))
+                    const freshStubs = yield* repo.getStubs(id).pipe(
+                      Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>))
+                    )
+                    yield* Ref.set(stubsRef, freshStubs)
+                  }
+                } else {
+                  response = new Response(
+                    JSON.stringify({ error: "No matching stub found", method: ctx.method, path: ctx.path }),
+                    { status: 404, headers: { "content-type": "application/json" } }
+                  )
+                }
               } else {
                 const responses = stub.responses
                 const index = yield* responseState.getNextIndex(id, stub.id, responses.length, stub.responseMode)
@@ -84,13 +117,15 @@ export const ImposterServerLive = Layer.effect(
                 if (delay !== undefined && delay > 0) {
                   yield* Effect.sleep(`${delay} millis`)
                 }
-                response = buildResponse(responseConfig, ctx)
+                response = yield* Effect.promise(() => buildResponse(responseConfig, ctx))
               }
 
               // Capture response for logging
               const respText = yield* Effect.promise(() => response.text())
               const respHeaders: Record<string, string> = {}
-              response.headers.forEach((val, key) => { respHeaders[key] = val })
+              response.headers.forEach((val, key) => {
+                respHeaders[key] = val
+              })
               // Reconstruct since .text() consumed body
               response = new Response(respText, { status: response.status, headers: response.headers })
 
@@ -112,19 +147,23 @@ export const ImposterServerLive = Layer.effect(
                   status: response.status,
                   headers: respHeaders,
                   ...(logBody !== undefined ? { body: logBody } : {}),
-                  ...(stub ? { matchedStubId: NonEmptyString.make(stub.id) } : {})
+                  ...(stub ? { matchedStubId: NonEmptyString.make(stub.id) } : {}),
+                  proxied
                 },
                 duration
               }
               yield* requestLogger.log(logEntry).pipe(Effect.catchAll(() => Effect.void))
+              yield* metricsService.recordRequest(logEntry).pipe(Effect.catchAll(() => Effect.void))
 
               return response
             }).pipe(
               Effect.catchAllCause((cause) =>
-                Effect.succeed(new Response(
-                  JSON.stringify({ error: "Internal server error", details: String(cause) }),
-                  { status: 500, headers: { "content-type": "application/json" } }
-                ))
+                Effect.succeed(
+                  new Response(
+                    JSON.stringify({ error: "Internal server error", details: String(cause) }),
+                    { status: 500, headers: { "content-type": "application/json" } }
+                  )
+                )
               )
             )
           )
@@ -134,7 +173,8 @@ export const ImposterServerLive = Layer.effect(
         const fiberEffect = Effect.acquireRelease(
           Effect.try({
             try: () => serverFactory.create({ port: config.port, fetch: handler }),
-            catch: (err) => new ImposterServerError({ imposterId: id, reason: `Failed to bind port ${config.port}: ${err}` })
+            catch: (err) =>
+              new ImposterServerError({ imposterId: id, reason: `Failed to bind port ${config.port}: ${err}` })
           }),
           (server) => Effect.sync(() => server.stop(true))
         ).pipe(
@@ -186,9 +226,19 @@ export const ImposterServerLive = Layer.effect(
         }
       })
 
-    const isRunning = (id: string): Effect.Effect<boolean> =>
-      fiberManager.isRunning(id)
+    const updateProxyConfig = (id: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const record = yield* repo.get(id).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        if (record === null) return
+        const stateMap = yield* Ref.get(stateMapRef)
+        const state = HashMap.get(stateMap, id)
+        if (state._tag === "Some") {
+          yield* Ref.set(state.value.proxyConfigRef, record.config.proxy)
+        }
+      })
 
-    return { start, stop, updateStubs, isRunning } satisfies ImposterServerShape
+    const isRunning = (id: string): Effect.Effect<boolean> => fiberManager.isRunning(id)
+
+    return { start, stop, updateStubs, updateProxyConfig, isRunning } satisfies ImposterServerShape
   })
 )

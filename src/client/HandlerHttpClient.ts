@@ -47,5 +47,4 @@ export const makeHandlerHttpClient = (
 
 export const HandlerHttpClientLive = (
   handler: (request: Request) => Promise<Response>
-): Layer.Layer<HttpClient.HttpClient> =>
-  Layer.succeed(HttpClient.HttpClient, makeHandlerHttpClient(handler))
+): Layer.Layer<HttpClient.HttpClient> => Layer.succeed(HttpClient.HttpClient, makeHandlerHttpClient(handler))

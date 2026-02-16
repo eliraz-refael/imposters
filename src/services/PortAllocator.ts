@@ -25,13 +25,21 @@ export const PortAllocatorLive = Layer.effect(
     const config = yield* AppConfig
     const portsRef = yield* Ref.make(HashSet.empty<number>())
 
-    type AllocateResult = readonly [Effect.Effect<number, PortAllocatorError | PortExhaustedError>, HashSet.HashSet<number>]
+    type AllocateResult = readonly [
+      Effect.Effect<number, PortAllocatorError | PortExhaustedError>,
+      HashSet.HashSet<number>
+    ]
 
     const allocate = (preferred?: number): Effect.Effect<number, PortAllocatorError | PortExhaustedError> => {
       if (preferred !== undefined) {
         return Ref.modify(portsRef, (ports): AllocateResult => {
           if (HashSet.has(ports, preferred)) {
-            return [Effect.fail(new PortAllocatorError({ reason: `Port ${preferred} is already allocated`, port: preferred })), ports]
+            return [
+              Effect.fail(
+                new PortAllocatorError({ reason: `Port ${preferred} is already allocated`, port: preferred })
+              ),
+              ports
+            ]
           }
           return [Effect.succeed(preferred), HashSet.add(ports, preferred)]
         }).pipe(Effect.flatten)
@@ -43,12 +51,14 @@ export const PortAllocatorLive = Layer.effect(
             return [Effect.succeed(port), HashSet.add(ports, port)]
           }
         }
-        return [Effect.fail(new PortExhaustedError({ rangeMin: config.portRangeMin, rangeMax: config.portRangeMax })), ports]
+        return [
+          Effect.fail(new PortExhaustedError({ rangeMin: config.portRangeMin, rangeMax: config.portRangeMax })),
+          ports
+        ]
       }).pipe(Effect.flatten)
     }
 
-    const release = (port: number): Effect.Effect<void> =>
-      Ref.update(portsRef, HashSet.remove(port))
+    const release = (port: number): Effect.Effect<void> => Ref.update(portsRef, HashSet.remove(port))
 
     const isAvailable = (port: number): Effect.Effect<boolean> =>
       Ref.get(portsRef).pipe(Effect.map((ports) => !HashSet.has(ports, port)))

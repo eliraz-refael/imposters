@@ -1,13 +1,13 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { describe, expect } from "vitest"
 import {
   CreateImposterRequest,
   CreateRouteRequest,
   DeleteImposterQuery,
   UpdateImposterRequest
 } from "imposters/schemas/ImposterSchema.js"
+import { describe, expect } from "vitest"
 
 describe("ImposterSchema", () => {
   describe("CreateImposterRequest", () => {
@@ -16,8 +16,7 @@ describe("ImposterSchema", () => {
         const request = yield* Schema.decodeUnknown(CreateImposterRequest)({})
         expect(request.protocol).toBe("HTTP")
         expect(request.adminPath).toBe("/_admin")
-      })
-    )
+      }))
 
     it.effect("accepts custom values", () =>
       Effect.gen(function*() {
@@ -29,8 +28,7 @@ describe("ImposterSchema", () => {
         expect(request.name).toBe("test-imposter")
         expect(request.port).toBe(3000)
         expect(request.adminPath).toBe("/custom")
-      })
-    )
+      }))
   })
 
   describe("UpdateImposterRequest", () => {
@@ -40,8 +38,7 @@ describe("ImposterSchema", () => {
           name: "new-name"
         })
         expect(request.name).toBe("new-name")
-      })
-    )
+      }))
 
     it.effect("accepts port and adminPath", () =>
       Effect.gen(function*() {
@@ -51,8 +48,7 @@ describe("ImposterSchema", () => {
         })
         expect(request.port).toBe(4000)
         expect(request.adminPath).toBe("/new-admin")
-      })
-    )
+      }))
   })
 
   describe("CreateRouteRequest", () => {
@@ -64,8 +60,7 @@ describe("ImposterSchema", () => {
         })
         expect(request.method).toBe("GET")
         expect(request.response.status).toBe(200)
-      })
-    )
+      }))
 
     it.effect("rejects path without leading slash", () =>
       Effect.gen(function*() {
@@ -76,8 +71,7 @@ describe("ImposterSchema", () => {
           })
         )
         expect(result._tag).toBe("ParseError")
-      })
-    )
+      }))
   })
 
   describe("DeleteImposterQuery", () => {
@@ -85,7 +79,6 @@ describe("ImposterSchema", () => {
       Effect.gen(function*() {
         const query = yield* Schema.decodeUnknown(DeleteImposterQuery)({})
         expect(query.force).toBe(false)
-      })
-    )
+      }))
   })
 })

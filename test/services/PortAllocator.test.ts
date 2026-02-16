@@ -1,12 +1,9 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { describe, expect } from "vitest"
 import { AppConfig } from "imposters/services/AppConfig.js"
-import {
-  PortAllocator,
-  PortAllocatorLive
-} from "imposters/services/PortAllocator.js"
+import { PortAllocator, PortAllocatorLive } from "imposters/services/PortAllocator.js"
+import { describe, expect } from "vitest"
 
 // Use a small port range for testing
 const TestConfig = Layer.succeed(AppConfig, {
@@ -25,8 +22,7 @@ describe("PortAllocator", () => {
       const allocator = yield* PortAllocator
       const port = yield* allocator.allocate(5000)
       expect(port).toBe(5000)
-    }).pipe(Effect.provide(TestPortAllocator))
-  )
+    }).pipe(Effect.provide(TestPortAllocator)))
 
   it.effect("allocate same port twice fails", () =>
     Effect.gen(function*() {
@@ -34,8 +30,7 @@ describe("PortAllocator", () => {
       yield* allocator.allocate(5000)
       const error = yield* Effect.flip(allocator.allocate(5000))
       expect(error._tag).toBe("PortAllocatorError")
-    }).pipe(Effect.provide(TestPortAllocator))
-  )
+    }).pipe(Effect.provide(TestPortAllocator)))
 
   it.effect("allocate without preference returns port in range", () =>
     Effect.gen(function*() {
@@ -43,8 +38,7 @@ describe("PortAllocator", () => {
       const port = yield* allocator.allocate()
       expect(port).toBeGreaterThanOrEqual(5000)
       expect(port).toBeLessThanOrEqual(5002)
-    }).pipe(Effect.provide(TestPortAllocator))
-  )
+    }).pipe(Effect.provide(TestPortAllocator)))
 
   it.effect("release port allows re-allocation", () =>
     Effect.gen(function*() {
@@ -53,8 +47,7 @@ describe("PortAllocator", () => {
       yield* allocator.release(5000)
       const port = yield* allocator.allocate(5000)
       expect(port).toBe(5000)
-    }).pipe(Effect.provide(TestPortAllocator))
-  )
+    }).pipe(Effect.provide(TestPortAllocator)))
 
   it.effect("exhaust all ports fails with PortExhaustedError", () =>
     Effect.gen(function*() {
@@ -64,8 +57,7 @@ describe("PortAllocator", () => {
       yield* allocator.allocate(5002)
       const error = yield* Effect.flip(allocator.allocate())
       expect(error._tag).toBe("PortExhaustedError")
-    }).pipe(Effect.provide(TestPortAllocator))
-  )
+    }).pipe(Effect.provide(TestPortAllocator)))
 
   it.effect("isAvailable reflects current state", () =>
     Effect.gen(function*() {
@@ -75,8 +67,7 @@ describe("PortAllocator", () => {
       expect(yield* allocator.isAvailable(5000)).toBe(false)
       yield* allocator.release(5000)
       expect(yield* allocator.isAvailable(5000)).toBe(true)
-    }).pipe(Effect.provide(TestPortAllocator))
-  )
+    }).pipe(Effect.provide(TestPortAllocator)))
 
   it.effect("concurrent allocations don't produce duplicates", () =>
     Effect.gen(function*() {
@@ -88,6 +79,5 @@ describe("PortAllocator", () => {
       ])
       const uniquePorts = new Set(ports)
       expect(uniquePorts.size).toBe(3)
-    }).pipe(Effect.provide(TestPortAllocator))
-  )
+    }).pipe(Effect.provide(TestPortAllocator)))
 })

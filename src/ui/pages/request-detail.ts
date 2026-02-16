@@ -76,9 +76,11 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
       </div>
       <div class="text-sm text-gray-500">
         <span>Timestamp: ${timestamp}</span>
-        ${entry.response.matchedStubId
-          ? html`<span class="ml-4">Matched Stub: <span class="font-mono text-indigo-600">${entry.response.matchedStubId}</span></span>`
-          : html`<span class="ml-4 text-orange-500">No matching stub</span>`}
+        ${
+    entry.response.matchedStubId
+      ? html`<span class="ml-4">Matched Stub: <span class="font-mono text-indigo-600">${entry.response.matchedStubId}</span></span>`
+      : html`<span class="ml-4 text-orange-500">No matching stub</span>`
+  }
       </div>
     </div>
 
@@ -119,15 +121,22 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
       </div>
     </div>
 
-    ${matchedStub !== null
+    ${
+    matchedStub !== null
       ? html`<div>
           <h3 class="text-lg font-semibold mb-3">Matched Stub</h3>
           ${raw(stubCardPartial(matchedStub).value)}
         </div>`
-      : html``}`
+      : html``
+  }`
 
   return layout(
-    { title: `${data.config.name} — Request ${entry.id}`, imposterName: data.config.name, port: data.config.port, activeTab: "requests" },
+    {
+      title: `${data.config.name} — Request ${entry.id}`,
+      imposterName: data.config.name,
+      port: data.config.port,
+      activeTab: "requests"
+    },
     content
   )
 }

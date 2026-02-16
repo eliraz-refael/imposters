@@ -1,9 +1,9 @@
+import * as Clock from "effect/Clock"
 import * as Data from "effect/Data"
 import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Clock from "effect/Clock"
-import * as ParseResult from "effect/ParseResult"
+import type * as ParseResult from "effect/ParseResult"
 import * as Schema from "effect/Schema"
 import { Uuid } from "../services/Uuid.js"
 
@@ -26,6 +26,15 @@ const CreateImposterRequestSchema = Schema.Struct({
   port: Schema.optional(PortSchema)
 })
 
+export interface ProxyConfigDomain {
+  readonly targetUrl: string
+  readonly mode: "passthrough" | "record"
+  readonly addHeaders?: Record<string, string> | undefined
+  readonly removeHeaders: ReadonlyArray<string>
+  readonly followRedirects: boolean
+  readonly timeout: number
+}
+
 // Domain types using tagged interfaces
 export interface ImposterConfig {
   readonly _tag: "ImposterConfig"
@@ -34,6 +43,7 @@ export interface ImposterConfig {
   readonly port: number
   readonly status: ImposterStatus
   readonly createdAt: DateTime.Utc
+  readonly proxy?: ProxyConfigDomain | undefined
 }
 
 export const ImposterConfig = Data.tagged<ImposterConfig>("ImposterConfig")
@@ -128,8 +138,7 @@ export const updateImposterPort = (port: number) => (config: ImposterConfig): Im
  * Calculates imposter uptime using Effect's Duration
  */
 export const calculateUptime = (startTime: DateTime.Utc) =>
-  Effect.map(Clock.currentTimeMillis, (now) =>
-    Duration.millis(now - DateTime.toEpochMillis(startTime)))
+  Effect.map(Clock.currentTimeMillis, (now) => Duration.millis(now - DateTime.toEpochMillis(startTime)))
 
 /**
  * Creates an ImposterRef from config and runtime info
@@ -159,8 +168,7 @@ export const toImposterSummary = (ref: ImposterRef) =>
 /**
  * Gets uptime in human readable format
  */
-export const getUptimeFormatted = (ref: ImposterRef) =>
-  Effect.map(calculateUptime(ref.startTime), Duration.format)
+export const getUptimeFormatted = (ref: ImposterRef) => Effect.map(calculateUptime(ref.startTime), Duration.format)
 
 /**
  * Checks if imposter is running

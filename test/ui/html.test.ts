@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
 import { escapeHtml, html, raw, SafeHtml } from "imposters/ui/html.js"
+import { describe, expect, it } from "vitest"
 
 describe("escapeHtml", () => {
   it("escapes all 5 special characters", () => {

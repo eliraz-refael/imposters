@@ -105,12 +105,19 @@ export const requestsPage = (data: RequestsPageData): SafeHtml => {
     </div>`
 
   return layout(
-    { title: `${data.config.name} — Requests`, imposterName: data.config.name, port: data.config.port, activeTab: "requests" },
+    {
+      title: `${data.config.name} — Requests`,
+      imposterName: data.config.name,
+      port: data.config.port,
+      activeTab: "requests"
+    },
     content
   )
 }
 
-export const testResultPartial = (result: { status: number; headers: Record<string, string>; body: string; duration: number }): SafeHtml => {
+export const testResultPartial = (
+  result: { status: number; headers: Record<string, string>; body: string; duration: number }
+): SafeHtml => {
   const headerRows = Object.entries(result.headers).map(([k, v]) =>
     html`<tr class="border-t"><td class="py-1 px-2 text-xs font-mono text-gray-600">${k}</td><td class="py-1 px-2 text-xs font-mono">${v}</td></tr>`
   )
@@ -120,9 +127,15 @@ export const testResultPartial = (result: { status: number; headers: Record<stri
       ${statusBadge(result.status)}
       <span class="text-xs text-gray-500">${String(result.duration)}ms</span>
     </div>
-    ${headerRows.length > 0
-      ? html`<table class="w-full mb-2"><thead><tr class="text-xs text-gray-500"><th class="text-left px-2">Header</th><th class="text-left px-2">Value</th></tr></thead><tbody>${headerRows.reduce((a, r) => html`${a}${r}`, html``)}</tbody></table>`
-      : html``}
-    <pre class="bg-white border rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">${result.body || "(empty body)"}</pre>
+    ${
+    headerRows.length > 0
+      ? html`<table class="w-full mb-2"><thead><tr class="text-xs text-gray-500"><th class="text-left px-2">Header</th><th class="text-left px-2">Value</th></tr></thead><tbody>${
+        headerRows.reduce((a, r) => html`${a}${r}`, html``)
+      }</tbody></table>`
+      : html``
+  }
+    <pre class="bg-white border rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">${
+    result.body || "(empty body)"
+  }</pre>
   </div>`
 }

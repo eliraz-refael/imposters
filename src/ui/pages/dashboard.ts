@@ -32,9 +32,10 @@ export const dashboardPage = (data: DashboardData) => {
       <h2 class="text-lg font-semibold px-4 pt-4 pb-2">
         <a href="/_admin/requests" class="hover:text-indigo-600">Recent Requests &rarr;</a>
       </h2>
-      ${data.recentRequests.length === 0
-        ? html`<p class="px-4 pb-4 text-gray-400">No requests yet.</p>`
-        : html`<table class="w-full text-left">
+      ${
+    data.recentRequests.length === 0
+      ? html`<p class="px-4 pb-4 text-gray-400">No requests yet.</p>`
+      : html`<table class="w-full text-left">
             <thead>
               <tr class="text-xs text-gray-500 uppercase border-b">
                 <th class="py-2 px-3">Time</th>
@@ -47,11 +48,17 @@ export const dashboardPage = (data: DashboardData) => {
               </tr>
             </thead>
             <tbody>${raw(requestTablePartial(data.recentRequests).value)}</tbody>
-          </table>`}
+          </table>`
+  }
     </div>`
 
   return layout(
-    { title: `${data.config.name} — Dashboard`, imposterName: data.config.name, port: data.config.port, activeTab: "dashboard" },
+    {
+      title: `${data.config.name} — Dashboard`,
+      imposterName: data.config.name,
+      port: data.config.port,
+      activeTab: "dashboard"
+    },
     content
   )
 }

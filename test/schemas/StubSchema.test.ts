@@ -1,13 +1,8 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { CreateStubRequest, Predicate, ResponseConfig, Stub } from "imposters/schemas/StubSchema.js"
 import { describe, expect } from "vitest"
-import {
-  CreateStubRequest,
-  Predicate,
-  ResponseConfig,
-  Stub
-} from "imposters/schemas/StubSchema.js"
 
 describe("StubSchema", () => {
   describe("ResponseConfig", () => {
@@ -15,22 +10,19 @@ describe("StubSchema", () => {
       Effect.gen(function*() {
         const config = yield* Schema.decodeUnknown(ResponseConfig)({})
         expect(config.status).toBe(200)
-      })
-    )
+      }))
 
     it.effect("accepts custom status", () =>
       Effect.gen(function*() {
         const config = yield* Schema.decodeUnknown(ResponseConfig)({ status: 404 })
         expect(config.status).toBe(404)
-      })
-    )
+      }))
 
     it.effect("rejects invalid status", () =>
       Effect.gen(function*() {
         const result = yield* Effect.flip(Schema.decodeUnknown(ResponseConfig)({ status: 999 }))
         expect(result._tag).toBe("ParseError")
-      })
-    )
+      }))
   })
 
   describe("Predicate", () => {
@@ -44,8 +36,7 @@ describe("StubSchema", () => {
         expect(predicate.field).toBe("path")
         expect(predicate.operator).toBe("equals")
         expect(predicate.caseSensitive).toBe(true)
-      })
-    )
+      }))
 
     it.effect("rejects invalid operator", () =>
       Effect.gen(function*() {
@@ -57,8 +48,7 @@ describe("StubSchema", () => {
           })
         )
         expect(result._tag).toBe("ParseError")
-      })
-    )
+      }))
   })
 
   describe("Stub", () => {
@@ -73,8 +63,7 @@ describe("StubSchema", () => {
         expect(stub.predicates).toHaveLength(1)
         expect(stub.responses).toHaveLength(1)
         expect(stub.responseMode).toBe("sequential")
-      })
-    )
+      }))
 
     it.effect("rejects empty responses array", () =>
       Effect.gen(function*() {
@@ -86,8 +75,7 @@ describe("StubSchema", () => {
           })
         )
         expect(result._tag).toBe("ParseError")
-      })
-    )
+      }))
   })
 
   describe("CreateStubRequest", () => {
@@ -98,7 +86,6 @@ describe("StubSchema", () => {
         })
         expect(request.predicates).toEqual([])
         expect(request.responseMode).toBe("sequential")
-      })
-    )
+      }))
   })
 })

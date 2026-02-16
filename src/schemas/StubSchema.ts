@@ -1,15 +1,41 @@
 import * as Schema from "effect/Schema"
 import { NonEmptyString } from "./common.js"
 
+// Proxy Mode
+export const ProxyMode = Schema.Literal("passthrough", "record")
+export type ProxyMode = Schema.Schema.Type<typeof ProxyMode>
+
+// Proxy Configuration
+export const ProxyConfig = Schema.Struct({
+  targetUrl: Schema.String.pipe(Schema.pattern(/^https?:\/\//)),
+  mode: Schema.optionalWith(ProxyMode, { default: () => "passthrough" as const }),
+  addHeaders: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+  removeHeaders: Schema.optionalWith(Schema.Array(Schema.String), { default: () => [] as const }),
+  followRedirects: Schema.optionalWith(Schema.Boolean, { default: () => true }),
+  timeout: Schema.optionalWith(
+    Schema.Number.pipe(Schema.int(), Schema.between(100, 60000)),
+    { default: () => 10000 }
+  )
+})
+export type ProxyConfig = Schema.Schema.Type<typeof ProxyConfig>
+
 // Predicate operators for matching incoming requests
 export const PredicateOperator = Schema.Literal(
-  "equals", "contains", "startsWith", "matches", "exists"
+  "equals",
+  "contains",
+  "startsWith",
+  "matches",
+  "exists"
 )
 export type PredicateOperator = Schema.Schema.Type<typeof PredicateOperator>
 
 // Which part of the request to match against
 export const PredicateField = Schema.Literal(
-  "method", "path", "headers", "query", "body"
+  "method",
+  "path",
+  "headers",
+  "query",
+  "body"
 )
 export type PredicateField = Schema.Schema.Type<typeof PredicateField>
 

@@ -1,10 +1,9 @@
 import { Command, Options } from "@effect/cli"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
-import { makeCompositeHandler } from "../server/AdminServer.js"
-import { ImpostersClientLive } from "../client/ImpostersClient.js"
 import { HandlerHttpClientLive } from "../client/HandlerHttpClient.js"
-import { ImpostersClient } from "../client/ImpostersClient.js"
+import { ImpostersClient, ImpostersClientLive } from "../client/ImpostersClient.js"
+import { makeCompositeHandler } from "../server/AdminServer.js"
 import { loadConfigFile } from "./ConfigLoader.js"
 
 const configOption = Options.file("config").pipe(
@@ -23,10 +22,10 @@ const startCommand = Command.make(
   "start",
   { config: configOption, port: portOption },
   ({ config, port }) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const adminPort = Option.isSome(port) ? port.value : Number(process.env.ADMIN_PORT ?? 2525)
 
-      const { handler, dispose } = makeCompositeHandler(adminPort)
+      const { dispose, handler } = makeCompositeHandler(adminPort)
       const server = Bun.serve({ port: adminPort, fetch: handler })
 
       console.log(`Imposters admin server running on http://localhost:${server.port}`)
@@ -39,8 +38,7 @@ const startCommand = Command.make(
             Effect.sync(() => {
               console.error(`Warning: ${e.message}`)
               return null
-            })
-          )
+            }))
         )
 
         if (configData !== null && configData.imposters.length > 0) {
@@ -49,7 +47,7 @@ const startCommand = Command.make(
           )
 
           yield* Effect.provide(
-            Effect.gen(function* () {
+            Effect.gen(function*() {
               const client = yield* ImpostersClient
               for (const imp of configData.imposters) {
                 const created = yield* client.imposters.createImposter({

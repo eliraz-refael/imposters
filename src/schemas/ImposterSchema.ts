@@ -9,6 +9,7 @@ import {
   ProtocolFilter,
   StatusFilter
 } from "./common.js"
+import { ProxyConfig } from "./StubSchema.js"
 
 // Create Imposter Request Schema - POST /imposters
 export const CreateImposterRequest = Schema.Struct({
@@ -18,7 +19,8 @@ export const CreateImposterRequest = Schema.Struct({
   adminPath: Schema.optionalWith(
     Schema.String.pipe(Schema.startsWith("/")),
     { default: () => "/_admin" }
-  )
+  ),
+  proxy: Schema.optional(ProxyConfig)
 })
 export type CreateImposterRequest = Schema.Schema.Type<typeof CreateImposterRequest>
 
@@ -27,7 +29,8 @@ export const UpdateImposterRequest = Schema.Struct({
   name: Schema.optional(NonEmptyString),
   status: Schema.optional(ImposterStatus),
   port: Schema.optional(PortNumber),
-  adminPath: Schema.optional(Schema.String.pipe(Schema.startsWith("/")))
+  adminPath: Schema.optional(Schema.String.pipe(Schema.startsWith("/"))),
+  proxy: Schema.optional(Schema.NullOr(ProxyConfig))
 })
 export type UpdateImposterRequest = Schema.Schema.Type<typeof UpdateImposterRequest>
 
@@ -94,7 +97,19 @@ export const Statistics = Schema.Struct({
   totalRequests: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
   requestsPerMinute: Schema.Number.pipe(Schema.nonNegative()),
   averageResponseTime: Schema.Number.pipe(Schema.nonNegative()),
-  errorRate: Schema.Number.pipe(Schema.between(0, 1))
+  errorRate: Schema.Number.pipe(Schema.between(0, 1)),
+  requestsByMethod: Schema.optionalWith(
+    Schema.Record({ key: Schema.String, value: Schema.Number }),
+    { default: () => ({}) }
+  ),
+  requestsByStatusCode: Schema.optionalWith(
+    Schema.Record({ key: Schema.String, value: Schema.Number }),
+    { default: () => ({}) }
+  ),
+  lastRequestAt: Schema.optional(Schema.DateTimeUtc),
+  p50ResponseTime: Schema.optional(Schema.Number),
+  p95ResponseTime: Schema.optional(Schema.Number),
+  p99ResponseTime: Schema.optional(Schema.Number)
 })
 export type Statistics = Schema.Schema.Type<typeof Statistics>
 
@@ -111,7 +126,8 @@ export const ImposterResponse = Schema.Struct({
   adminPath: NonEmptyString,
   uptime: Schema.optional(Schema.String), // Formatted duration string
   endpoints: Schema.optional(Schema.Array(EndpointSummary)),
-  statistics: Schema.optional(Statistics)
+  statistics: Schema.optional(Statistics),
+  proxy: Schema.optional(ProxyConfig)
 })
 export type ImposterResponse = Schema.Schema.Type<typeof ImposterResponse>
 
@@ -214,4 +230,3 @@ export const ServerInfoResponse = Schema.Struct({
   features: ServerFeatures
 })
 export type ServerInfoResponse = Schema.Schema.Type<typeof ServerInfoResponse>
-

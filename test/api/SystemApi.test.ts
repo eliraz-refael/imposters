@@ -1,8 +1,8 @@
 import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
-import { describe, expect, it } from "vitest"
 import { ApiLayer } from "imposters/layers/ApiLayer.js"
 import { MainLayer } from "imposters/layers/MainLayer.js"
+import { describe, expect, it } from "vitest"
 
 const makeHandler = () => {
   const fullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -11,7 +11,7 @@ const makeHandler = () => {
 
 describe("System API", () => {
   it("GET /health returns healthy status", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/health"))
       expect(res.status).toBe(200)
@@ -30,14 +30,16 @@ describe("System API", () => {
   })
 
   it("GET /health reflects imposter count", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       // Create an imposter first
-      await handler(new Request("http://localhost/imposters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "health-check" })
-      }))
+      await handler(
+        new Request("http://localhost/imposters", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "health-check" })
+        })
+      )
 
       const res = await handler(new Request("http://localhost/health"))
       const body = await res.json()
@@ -50,7 +52,7 @@ describe("System API", () => {
   })
 
   it("GET /info returns server info", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/info"))
       expect(res.status).toBe(200)
@@ -69,7 +71,7 @@ describe("System API", () => {
   })
 
   it("GET /openapi.json returns OpenAPI spec", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/openapi.json"))
       expect(res.status).toBe(200)

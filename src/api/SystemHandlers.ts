@@ -43,8 +43,7 @@ export const SystemHandlersLive = HttpApiBuilder.group(AdminApi, "system", (hand
             }
           }
         }
-      })
-    )
+      }))
     .handle("serverInfo", () =>
       Effect.gen(function*() {
         const config = yield* AppConfig
@@ -74,6 +73,4 @@ export const SystemHandlersLive = HttpApiBuilder.group(AdminApi, "system", (hand
             clustering: false
           }
         }
-      })
-    )
-)
+      })))

@@ -4,7 +4,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import { pipe } from "effect/Function"
 import * as Option from "effect/Option"
-import * as ParseResult from "effect/ParseResult"
+import type * as ParseResult from "effect/ParseResult"
 import * as Schema from "effect/Schema"
 import { Uuid } from "../services/Uuid.js"
 
@@ -185,12 +185,11 @@ export const substituteParams = (params: Record<string, string>) => (body: unkno
 /**
  * Creates a response with substituted parameters
  */
-export const createResponseWithParams =
-  (params: Record<string, string>) => (response: Response): Response =>
-    Response({
-      ...response,
-      body: substituteParams(params)(response.body)
-    })
+export const createResponseWithParams = (params: Record<string, string>) => (response: Response): Response =>
+  Response({
+    ...response,
+    body: substituteParams(params)(response.body)
+  })
 
 /**
  * Extracts route summary for API responses

@@ -1,23 +1,36 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect, ManagedRuntime } from "effect"
 import * as Layer from "effect/Layer"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient.js"
+import { type ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient.js"
+import { withImposter } from "imposters/client/testing.js"
 import { ApiLayer } from "imposters/layers/ApiLayer.js"
+import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { FiberManagerLive } from "imposters/server/FiberManager.js"
 import { ImposterServerLive } from "imposters/server/ImposterServer.js"
-import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { AppConfigLive } from "imposters/services/AppConfig.js"
+import { MetricsServiceLive } from "imposters/services/MetricsService.js"
 import { PortAllocatorLive } from "imposters/services/PortAllocator.js"
-import { UuidLive } from "imposters/services/UuidLive.js"
+import { ProxyServiceLive } from "imposters/services/ProxyService.js"
 import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
+import { UuidLive } from "imposters/services/UuidLive.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
-import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient.js"
-import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient.js"
-import { withImposter } from "imposters/client/testing.js"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
+const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
+
 const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
+  Layer.provide(
+    Layer.mergeAll(
+      FiberManagerLive,
+      ImposterRepositoryLive,
+      NodeServerFactoryLive,
+      RequestLoggerLive,
+      MetricsServiceLive,
+      ProxyServiceWithDeps
+    )
+  )
 )
 const MainLayer = Layer.mergeAll(
   UuidLive,
@@ -26,6 +39,7 @@ const MainLayer = Layer.mergeAll(
   ImposterRepositoryLive,
   FiberManagerLive,
   RequestLoggerLive,
+  MetricsServiceLive,
   ImposterServerWithDeps
 )
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -50,8 +64,7 @@ afterAll(async () => {
   dispose()
 })
 
-const admin = (path: string, init?: RequestInit) =>
-  adminHandler(new Request(`http://localhost:2525${path}`, init))
+const admin = (path: string, init?: RequestInit) => adminHandler(new Request(`http://localhost:2525${path}`, init))
 
 const createImposter = async (port: number) => {
   const resp = await admin("/imposters", {
@@ -217,7 +230,7 @@ describe("E2E: Imposter Lifecycle", () => {
           }]
         },
         (ctx) =>
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             expect(ctx.port).toBe(9308)
             const resp = yield* Effect.promise(() => fetch(`http://localhost:${ctx.port}/api`))
             expect(resp.status).toBe(200)

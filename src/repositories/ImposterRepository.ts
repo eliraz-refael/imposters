@@ -17,12 +17,22 @@ export interface ImposterRepositoryShape {
   readonly create: (config: ImposterConfig) => Effect.Effect<ImposterRecord>
   readonly get: (id: string) => Effect.Effect<ImposterRecord, ImposterNotFoundError>
   readonly getAll: Effect.Effect<ReadonlyArray<ImposterRecord>>
-  readonly update: (id: string, fn: (r: ImposterRecord) => ImposterRecord) => Effect.Effect<ImposterRecord, ImposterNotFoundError>
+  readonly update: (
+    id: string,
+    fn: (r: ImposterRecord) => ImposterRecord
+  ) => Effect.Effect<ImposterRecord, ImposterNotFoundError>
   readonly remove: (id: string) => Effect.Effect<ImposterRecord, ImposterNotFoundError>
   readonly addStub: (imposterId: string, stub: Stub) => Effect.Effect<Stub, ImposterNotFoundError>
   readonly getStubs: (imposterId: string) => Effect.Effect<ReadonlyArray<Stub>, ImposterNotFoundError>
-  readonly updateStub: (imposterId: string, stubId: string, fn: (s: Stub) => Stub) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
-  readonly removeStub: (imposterId: string, stubId: string) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
+  readonly updateStub: (
+    imposterId: string,
+    stubId: string,
+    fn: (s: Stub) => Stub
+  ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
+  readonly removeStub: (
+    imposterId: string,
+    stubId: string
+  ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
 }
 
 export class ImposterRepository extends Context.Tag("ImposterRepository")<
@@ -53,17 +63,17 @@ export const ImposterRepositoryLive = Layer.effect(
 
     const create = (config: ImposterConfig): Effect.Effect<ImposterRecord> => {
       const record: ImposterRecord = { config, stubs: [] }
-      return Ref.modify(storeRef, (store): ModifyRecord<ImposterRecord, never> =>
-        [Effect.succeed(record), HashMap.set(store, config.id, record)]
+      return Ref.modify(
+        storeRef,
+        (store): ModifyRecord<ImposterRecord, never> => [Effect.succeed(record), HashMap.set(store, config.id, record)]
       ).pipe(Effect.flatten)
     }
 
     const get = (id: string) => getRecord(id)
 
-    const getAll: Effect.Effect<ReadonlyArray<ImposterRecord>> =
-      Ref.get(storeRef).pipe(
-        Effect.map((store) => Array.from(HashMap.values(store)))
-      )
+    const getAll: Effect.Effect<ReadonlyArray<ImposterRecord>> = Ref.get(storeRef).pipe(
+      Effect.map((store) => Array.from(HashMap.values(store)))
+    )
 
     const update = (id: string, fn: (r: ImposterRecord) => ImposterRecord) =>
       Ref.modify(storeRef, (store): RecordResult => {
@@ -94,8 +104,7 @@ export const ImposterRepositoryLive = Layer.effect(
         return [Effect.succeed(stub), HashMap.set(store, imposterId, updated)]
       }).pipe(Effect.flatten)
 
-    const getStubs = (imposterId: string) =>
-      getRecord(imposterId).pipe(Effect.map((r) => r.stubs))
+    const getStubs = (imposterId: string) => getRecord(imposterId).pipe(Effect.map((r) => r.stubs))
 
     const updateStub = (imposterId: string, stubId: string, fn: (s: Stub) => Stub) =>
       Ref.modify(storeRef, (store): StubOrNotFound => {
@@ -124,7 +133,10 @@ export const ImposterRepositoryLive = Layer.effect(
         if (!stub) {
           return [Effect.fail(new StubNotFoundError({ imposterId, stubId })), store]
         }
-        const updated: ImposterRecord = { ...existing.value, stubs: existing.value.stubs.filter((s) => s.id !== stubId) }
+        const updated: ImposterRecord = {
+          ...existing.value,
+          stubs: existing.value.stubs.filter((s) => s.id !== stubId)
+        }
         return [Effect.succeed(stub), HashMap.set(store, imposterId, updated)]
       }).pipe(Effect.flatten)
 

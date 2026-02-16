@@ -19,7 +19,8 @@ export const RequestLogEntry = Schema.Struct({
       { default: () => ({}) }
     ),
     body: Schema.optional(Schema.String),
-    matchedStubId: Schema.optional(NonEmptyString)
+    matchedStubId: Schema.optional(NonEmptyString),
+    proxied: Schema.optionalWith(Schema.Boolean, { default: () => false })
   }),
   duration: Schema.Number
 })

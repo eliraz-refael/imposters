@@ -2,7 +2,6 @@ import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import { describe, expect } from "vitest"
 import {
   createResponseWithParams,
   createRoute,
@@ -14,6 +13,7 @@ import {
   updateRoute
 } from "imposters/domain/route.js"
 import { Uuid } from "imposters/services/Uuid.js"
+import { describe, expect } from "vitest"
 
 const TestUuid = Layer.succeed(Uuid, {
   generate: Effect.succeed("test-uuid-full"),
@@ -34,8 +34,7 @@ describe("route domain", () => {
         expect(route.method).toBe("GET")
         expect(route.response.status).toBe(200)
         expect(route.id).toBe("test-uuid-full")
-      }).pipe(Effect.provide(TestUuid))
-    )
+      }).pipe(Effect.provide(TestUuid)))
 
     it.effect("uses provided id when given", () =>
       Effect.gen(function*() {
@@ -46,8 +45,7 @@ describe("route domain", () => {
           response: { status: 201, body: null }
         })
         expect(route.id).toBe("custom-id")
-      }).pipe(Effect.provide(TestUuid))
-    )
+      }).pipe(Effect.provide(TestUuid)))
   })
 
   describe("newRoute", () => {
@@ -60,15 +58,13 @@ describe("route domain", () => {
         })
         expect(route.path).toBe("/api/users")
         expect(route.response.status).toBe(200)
-      }).pipe(Effect.provide(TestUuid))
-    )
+      }).pipe(Effect.provide(TestUuid)))
 
     it.effect("fails with ParseError for invalid input", () =>
       Effect.gen(function*() {
         const result = yield* Effect.flip(newRoute({ path: "no-slash", response: { body: null } }))
         expect(result._tag).toBe("ParseError")
-      }).pipe(Effect.provide(TestUuid))
-    )
+      }).pipe(Effect.provide(TestUuid)))
   })
 
   describe("updateRoute", () => {
@@ -82,8 +78,7 @@ describe("route domain", () => {
         const updated = yield* updateRoute({ path: "/updated" })(original)
         expect(updated.path).toBe("/updated")
         expect(updated.createdAt).toEqual(original.createdAt)
-      }).pipe(Effect.provide(TestUuid))
-    )
+      }).pipe(Effect.provide(TestUuid)))
   })
 
   describe("substituteParams", () => {

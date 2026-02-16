@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
-import { applyTemplates, flattenRequestContext } from "imposters/matching/TemplateEngine.js"
 import type { RequestContext } from "imposters/matching/RequestMatcher.js"
+import { applyTemplates, flattenRequestContext } from "imposters/matching/TemplateEngine.js"
+import { describe, expect, it } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   method: "GET",
@@ -58,47 +58,81 @@ describe("flattenRequestContext", () => {
 })
 
 describe("applyTemplates", () => {
-  it("substitutes method in string", () => {
+  it("substitutes method in string", async () => {
     const ctx = makeCtx({ method: "POST" })
-    expect(applyTemplates(ctx, "Method is {{request.method}}")).toBe("Method is POST")
+    expect(await applyTemplates(ctx, "Method is {{request.method}}")).toBe("Method is POST")
   })
 
-  it("substitutes query param in string", () => {
+  it("substitutes query param in string", async () => {
     const ctx = makeCtx({ query: { name: "Alice" } })
-    expect(applyTemplates(ctx, "Hello, {{request.query.name}}!")).toBe("Hello, Alice!")
+    expect(await applyTemplates(ctx, "Hello, {{request.query.name}}!")).toBe("Hello, Alice!")
   })
 
-  it("substitutes body field in string", () => {
+  it("substitutes body field in string", async () => {
     const ctx = makeCtx({ body: { greeting: "Hi" } })
-    expect(applyTemplates(ctx, "Says: {{request.body.greeting}}")).toBe("Says: Hi")
+    expect(await applyTemplates(ctx, "Says: {{request.body.greeting}}")).toBe("Says: Hi")
   })
 
-  it("substitutes in object values recursively", () => {
+  it("substitutes in object values recursively", async () => {
     const ctx = makeCtx({ query: { name: "Alice" } })
     const data = { message: "Hello, {{request.query.name}}!", path: "{{request.path}}" }
-    expect(applyTemplates(ctx, data)).toEqual({ message: "Hello, Alice!", path: "/users/123" })
+    expect(await applyTemplates(ctx, data)).toEqual({ message: "Hello, Alice!", path: "/users/123" })
   })
 
-  it("substitutes in arrays", () => {
+  it("substitutes in arrays", async () => {
     const ctx = makeCtx({ method: "GET" })
     const data = ["{{request.method}}", "static"]
-    expect(applyTemplates(ctx, data)).toEqual(["GET", "static"])
+    expect(await applyTemplates(ctx, data)).toEqual(["GET", "static"])
   })
 
-  it("leaves non-string primitives unchanged", () => {
+  it("leaves non-string primitives unchanged", async () => {
     const ctx = makeCtx()
-    expect(applyTemplates(ctx, 42)).toBe(42)
-    expect(applyTemplates(ctx, true)).toBe(true)
-    expect(applyTemplates(ctx, null)).toBeNull()
+    expect(await applyTemplates(ctx, 42)).toBe(42)
+    expect(await applyTemplates(ctx, true)).toBe(true)
+    expect(await applyTemplates(ctx, null)).toBeNull()
   })
 
-  it("handles multiple substitutions in one string", () => {
+  it("handles multiple substitutions in one string", async () => {
     const ctx = makeCtx({ method: "POST", path: "/api" })
-    expect(applyTemplates(ctx, "{{request.method}} {{request.path}}")).toBe("POST /api")
+    expect(await applyTemplates(ctx, "{{request.method}} {{request.path}}")).toBe("POST /api")
   })
 
-  it("preserves template if no matching key", () => {
+  it("preserves template if no matching key", async () => {
     const ctx = makeCtx()
-    expect(applyTemplates(ctx, "{{request.nonexistent}}")).toBe("{{request.nonexistent}}")
+    expect(await applyTemplates(ctx, "{{request.nonexistent}}")).toBe("{{request.nonexistent}}")
+  })
+
+  // ${expr} JSONata expressions
+  it("evaluates ${expr} JSONata expression", async () => {
+    const ctx = makeCtx({ query: { name: "Alice" } })
+    expect(await applyTemplates(ctx, "${$uppercase(request.query.name)}")).toBe("ALICE")
+  })
+
+  it("evaluates ${expr} in object values", async () => {
+    const ctx = makeCtx({ body: { price: 10, quantity: 3 } })
+    const data = { total: "${request.body.price * request.body.quantity}" }
+    expect(await applyTemplates(ctx, data)).toEqual({ total: 30 })
+  })
+
+  it("coexists: {{key}} runs first, then ${expr}", async () => {
+    const ctx = makeCtx({ method: "POST", query: { name: "Alice" } })
+    const data = {
+      template: "{{request.query.name}}",
+      expression: "${$uppercase(request.query.name)}"
+    }
+    const result = await applyTemplates(ctx, data) as Record<string, unknown>
+    expect(result.template).toBe("Alice")
+    expect(result.expression).toBe("ALICE")
+  })
+
+  it("preserves ${expr} on evaluation failure", async () => {
+    const ctx = makeCtx()
+    expect(await applyTemplates(ctx, "${$$$bad}")).toBe("${$$$bad}")
+  })
+
+  it("handles mixed {{key}} and ${expr} in same string", async () => {
+    const ctx = makeCtx({ method: "GET", query: { name: "Alice" } })
+    expect(await applyTemplates(ctx, "{{request.method}} to ${$uppercase(request.query.name)}"))
+      .toBe("GET to ALICE")
   })
 })

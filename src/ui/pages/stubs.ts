@@ -41,7 +41,12 @@ export const stubsPage = (data: StubsPageData) => {
     </div>`
 
   return layout(
-    { title: `${data.config.name} — Stubs`, imposterName: data.config.name, port: data.config.port, activeTab: "stubs" },
+    {
+      title: `${data.config.name} — Stubs`,
+      imposterName: data.config.name,
+      port: data.config.port,
+      activeTab: "stubs"
+    },
     content
   )
 }

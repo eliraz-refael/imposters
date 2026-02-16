@@ -1,10 +1,9 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect, Layer } from "effect"
-import type { NonEmptyString } from "../schemas/common.js"
-import type { PortNumber } from "../schemas/common.js"
+import type { NonEmptyString, PortNumber } from "../schemas/common.js"
 import type { CreateStubRequest } from "../schemas/StubSchema.js"
-import { ImpostersClient, ImpostersClientLive } from "./ImpostersClient.js"
 import { HandlerHttpClientLive } from "./HandlerHttpClient.js"
+import { ImpostersClient, ImpostersClientLive } from "./ImpostersClient.js"
 
 export interface StubConfig {
   readonly predicates?: ReadonlyArray<{
@@ -39,13 +38,13 @@ const asPort = (n: number) => n as PortNumber
 const asNes = (s: string) => s as NonEmptyString
 
 const toStubPayload = (stub: StubConfig): CreateStubRequest => ({
-  predicates: (stub.predicates ?? []).map(p => ({
+  predicates: (stub.predicates ?? []).map((p) => ({
     field: p.field,
     operator: p.operator,
     value: p.value,
     caseSensitive: p.caseSensitive ?? true
   })),
-  responses: stub.responses.map(r => ({
+  responses: stub.responses.map((r) => ({
     status: r.status ?? 200,
     ...(r.headers !== undefined ? { headers: r.headers } : {}),
     ...(r.body !== undefined ? { body: r.body } : {}),
@@ -59,7 +58,7 @@ export const withImposter = <A, E>(
   testFn: (ctx: ImposterTestContext) => Effect.Effect<A, E, ImpostersClient>
 ): Effect.Effect<A, E | Error, ImpostersClient> =>
   Effect.acquireUseRelease(
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const client = yield* ImpostersClient
       const imp = yield* client.imposters.createImposter({
         payload: {
@@ -88,7 +87,7 @@ export const withImposter = <A, E>(
     }),
     (ctx) => testFn(ctx),
     (ctx) =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const client = yield* ImpostersClient
         yield* client.imposters.deleteImposter({
           path: { id: ctx.id as typeof ctx.id & NonEmptyString },
@@ -98,7 +97,7 @@ export const withImposter = <A, E>(
   )
 
 export const makeTestServer = (fullLayer: Layer.Layer<any, any, never>) => {
-  const { handler, dispose } = HttpApiBuilder.toWebHandler(fullLayer as any)
+  const { dispose, handler } = HttpApiBuilder.toWebHandler(fullLayer as any)
   const clientLayer = ImpostersClientLive().pipe(
     Layer.provide(HandlerHttpClientLive(handler))
   )

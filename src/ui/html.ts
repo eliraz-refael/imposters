@@ -4,7 +4,7 @@ export const escapeHtml = (s: string): string =>
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
+    .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;")
 
 /** Marker class for pre-escaped HTML */
@@ -16,7 +16,7 @@ export class SafeHtml {
 export const raw = (s: string): SafeHtml => new SafeHtml(s)
 
 /** Tagged template: auto-escapes interpolations, passes SafeHtml through */
-export const html = (strings: TemplateStringsArray, ...values: unknown[]): SafeHtml => {
+export const html = (strings: TemplateStringsArray, ...values: Array<unknown>): SafeHtml => {
   let result = ""
   for (let i = 0; i < strings.length; i++) {
     result += strings[i]

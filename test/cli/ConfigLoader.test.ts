@@ -1,7 +1,7 @@
-import * as path from "node:path"
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
 import { ConfigLoadError, loadConfigFile } from "imposters/cli/ConfigLoader.js"
+import * as path from "node:path"
+import { describe, expect, it } from "vitest"
 
 const fixturesDir = path.join(__dirname, "..", "fixtures")
 

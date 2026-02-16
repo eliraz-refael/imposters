@@ -1,5 +1,4 @@
 import * as Schema from "effect/Schema"
-import { describe, expect, it } from "vitest"
 import {
   evaluatePredicate,
   evaluatePredicates,
@@ -9,6 +8,7 @@ import {
 import type { RequestContext } from "imposters/matching/RequestMatcher.js"
 import { Stub } from "imposters/schemas/StubSchema.js"
 import type { Predicate } from "imposters/schemas/StubSchema.js"
+import { describe, expect, it } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   method: "GET",
@@ -102,7 +102,9 @@ describe("evaluatePredicate - method", () => {
 
   it("case insensitive equals", () => {
     const ctx = makeCtx({ method: "GET" })
-    expect(evaluatePredicate(ctx, makePredicate({ field: "method", operator: "equals", value: "get", caseSensitive: false }))).toBe(true)
+    expect(
+      evaluatePredicate(ctx, makePredicate({ field: "method", operator: "equals", value: "get", caseSensitive: false }))
+    ).toBe(true)
   })
 })
 
@@ -119,116 +121,157 @@ describe("evaluatePredicate - path", () => {
 
   it("matches evaluates regex on path", () => {
     const ctx = makeCtx({ path: "/users/456" })
-    expect(evaluatePredicate(ctx, makePredicate({ field: "path", operator: "matches", value: "/users/\\d+" }))).toBe(true)
+    expect(evaluatePredicate(ctx, makePredicate({ field: "path", operator: "matches", value: "/users/\\d+" }))).toBe(
+      true
+    )
   })
 })
 
 describe("evaluatePredicate - headers", () => {
   it("equals matches header value exactly", () => {
     const ctx = makeCtx({ headers: { authorization: "Bearer token123" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "headers",
-      operator: "equals",
-      value: { authorization: "Bearer token123" }
-    }))).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "headers",
+        operator: "equals",
+        value: { authorization: "Bearer token123" }
+      })
+    )).toBe(true)
   })
 
   it("contains matches substring in header value", () => {
     const ctx = makeCtx({ headers: { authorization: "Bearer token123" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "headers",
-      operator: "contains",
-      value: { authorization: "token" }
-    }))).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "headers",
+        operator: "contains",
+        value: { authorization: "token" }
+      })
+    )).toBe(true)
   })
 
   it("exists checks header key presence", () => {
     const ctx = makeCtx({ headers: { authorization: "Bearer abc" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "headers",
-      operator: "exists",
-      value: { authorization: true }
-    }))).toBe(true)
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "headers",
-      operator: "exists",
-      value: { "x-missing": true }
-    }))).toBe(false)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "headers",
+        operator: "exists",
+        value: { authorization: true }
+      })
+    )).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "headers",
+        operator: "exists",
+        value: { "x-missing": true }
+      })
+    )).toBe(false)
   })
 
   it("case insensitive header matching", () => {
     const ctx = makeCtx({ headers: { "content-type": "Application/JSON" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "headers",
-      operator: "equals",
-      value: { "content-type": "application/json" },
-      caseSensitive: false
-    }))).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "headers",
+        operator: "equals",
+        value: { "content-type": "application/json" },
+        caseSensitive: false
+      })
+    )).toBe(true)
   })
 })
 
 describe("evaluatePredicate - query", () => {
   it("equals matches query parameter", () => {
     const ctx = makeCtx({ query: { page: "1", limit: "10" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "query",
-      operator: "equals",
-      value: { page: "1" }
-    }))).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "query",
+        operator: "equals",
+        value: { page: "1" }
+      })
+    )).toBe(true)
   })
 
   it("matches validates regex on query values", () => {
     const ctx = makeCtx({ query: { id: "abc123" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "query",
-      operator: "matches",
-      value: { id: "^[a-z]+\\d+$" }
-    }))).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "query",
+        operator: "matches",
+        value: { id: "^[a-z]+\\d+$" }
+      })
+    )).toBe(true)
   })
 })
 
 describe("evaluatePredicate - body", () => {
   it("equals does deep subset match on object body", () => {
     const ctx = makeCtx({ body: { name: "Alice", age: 30, nested: { x: 1 } } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "body",
-      operator: "equals",
-      value: { name: "Alice" }
-    }))).toBe(true)
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "body",
-      operator: "equals",
-      value: { name: "Bob" }
-    }))).toBe(false)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "body",
+        operator: "equals",
+        value: { name: "Alice" }
+      })
+    )).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "body",
+        operator: "equals",
+        value: { name: "Bob" }
+      })
+    )).toBe(false)
   })
 
   it("contains checks substring in JSON.stringify", () => {
     const ctx = makeCtx({ body: { name: "Alice" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "body",
-      operator: "contains",
-      value: "Alice"
-    }))).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "body",
+        operator: "contains",
+        value: "Alice"
+      })
+    )).toBe(true)
   })
 
   it("exists checks body is non-null/undefined", () => {
-    expect(evaluatePredicate(makeCtx({ body: { x: 1 } }), makePredicate({
-      field: "body",
-      operator: "exists"
-    }))).toBe(true)
-    expect(evaluatePredicate(makeCtx({ body: undefined }), makePredicate({
-      field: "body",
-      operator: "exists"
-    }))).toBe(false)
+    expect(evaluatePredicate(
+      makeCtx({ body: { x: 1 } }),
+      makePredicate({
+        field: "body",
+        operator: "exists"
+      })
+    )).toBe(true)
+    expect(evaluatePredicate(
+      makeCtx({ body: undefined }),
+      makePredicate({
+        field: "body",
+        operator: "exists"
+      })
+    )).toBe(false)
   })
 
   it("matches evaluates regex on body JSON", () => {
     const ctx = makeCtx({ body: { name: "Alice" } })
-    expect(evaluatePredicate(ctx, makePredicate({
-      field: "body",
-      operator: "matches",
-      value: "Alice"
-    }))).toBe(true)
+    expect(evaluatePredicate(
+      ctx,
+      makePredicate({
+        field: "body",
+        operator: "matches",
+        value: "Alice"
+      })
+    )).toBe(true)
   })
 })
 

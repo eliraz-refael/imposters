@@ -1,20 +1,33 @@
 import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { ApiLayer } from "imposters/layers/ApiLayer.js"
+import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { FiberManagerLive } from "imposters/server/FiberManager.js"
 import { ImposterServerLive } from "imposters/server/ImposterServer.js"
-import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { AppConfigLive } from "imposters/services/AppConfig.js"
+import { MetricsServiceLive } from "imposters/services/MetricsService.js"
 import { PortAllocatorLive } from "imposters/services/PortAllocator.js"
+import { ProxyServiceLive } from "imposters/services/ProxyService.js"
 import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
 import { UuidLive } from "imposters/services/UuidLive.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
 import { makeAdminUiRouter } from "imposters/ui/admin/AdminUiRouter.js"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
+const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
+
 const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
+  Layer.provide(
+    Layer.mergeAll(
+      FiberManagerLive,
+      ImposterRepositoryLive,
+      NodeServerFactoryLive,
+      RequestLoggerLive,
+      MetricsServiceLive,
+      ProxyServiceWithDeps
+    )
+  )
 )
 const MainLayer = Layer.mergeAll(
   UuidLive,
@@ -23,6 +36,7 @@ const MainLayer = Layer.mergeAll(
   ImposterRepositoryLive,
   FiberManagerLive,
   RequestLoggerLive,
+  MetricsServiceLive,
   ImposterServerWithDeps
 )
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -42,8 +56,7 @@ afterAll(() => {
   dispose()
 })
 
-const adminApi = (path: string, init?: RequestInit) =>
-  apiHandler(new Request(`http://localhost:2525${path}`, init))
+const adminApi = (path: string, init?: RequestInit) => apiHandler(new Request(`http://localhost:2525${path}`, init))
 
 const adminUi = async (path: string, init?: RequestInit): Promise<Response> => {
   const resp = await adminUiHandler(new Request(`http://localhost:2525${path}`, init))

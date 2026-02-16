@@ -1,7 +1,7 @@
-import * as http from "node:http"
 import { Layer } from "effect"
 import { ServerFactory } from "imposters/server/BunServer.js"
 import type { ServerInstance } from "imposters/server/BunServer.js"
+import * as http from "node:http"
 
 export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
   create: (options): ServerInstance => {
@@ -17,7 +17,9 @@ export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
         if (req.method !== "GET" && req.method !== "HEAD") {
           body = await new Promise<string>((resolve) => {
             let data = ""
-            req.on("data", (chunk: Buffer) => { data += chunk.toString() })
+            req.on("data", (chunk: Buffer) => {
+              data += chunk.toString()
+            })
             req.on("end", () => resolve(data))
           })
         }

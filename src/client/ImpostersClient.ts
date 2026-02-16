@@ -1,5 +1,7 @@
-import { FetchHttpClient, HttpApiClient, HttpClient } from "@effect/platform"
-import { Context, Effect, Layer } from "effect"
+import type { HttpClient } from "@effect/platform"
+import { FetchHttpClient, HttpApiClient } from "@effect/platform"
+import type { Effect } from "effect"
+import { Context, Layer } from "effect"
 import { AdminApi } from "../api/AdminApi.js"
 
 export const makeImpostersClient = (baseUrl?: string) =>

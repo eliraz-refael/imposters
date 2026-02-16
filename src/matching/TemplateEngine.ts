@@ -1,4 +1,5 @@
 import { substituteParams } from "../domain/route.js"
+import { processExpressions } from "./ExpressionEvaluator.js"
 import type { RequestContext } from "./RequestMatcher.js"
 
 const flattenObject = (obj: unknown, prefix: string, result: Record<string, string>): void => {
@@ -45,5 +46,9 @@ export const flattenRequestContext = (ctx: RequestContext): Record<string, strin
   return result
 }
 
-export const applyTemplates = (ctx: RequestContext, data: unknown): unknown =>
-  substituteParams(flattenRequestContext(ctx))(data)
+export const applyTemplates = async (ctx: RequestContext, data: unknown): Promise<unknown> => {
+  // Step 1: Apply {{key}} substitution
+  const substituted = substituteParams(flattenRequestContext(ctx))(data)
+  // Step 2: Apply ${expr} JSONata evaluation
+  return processExpressions(ctx, substituted)
+}

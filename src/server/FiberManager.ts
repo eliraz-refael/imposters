@@ -16,11 +16,9 @@ export const FiberManagerLive = Layer.scoped(
     const start = (id: string, effect: Effect.Effect<never, unknown>): Effect.Effect<void> =>
       FiberMap.run(fiberMap, id, effect)
 
-    const stop = (id: string): Effect.Effect<void> =>
-      FiberMap.remove(fiberMap, id)
+    const stop = (id: string): Effect.Effect<void> => FiberMap.remove(fiberMap, id)
 
-    const isRunning = (id: string): Effect.Effect<boolean> =>
-      FiberMap.has(fiberMap, id)
+    const isRunning = (id: string): Effect.Effect<boolean> => FiberMap.has(fiberMap, id)
 
     return { start, stop, isRunning }
   })

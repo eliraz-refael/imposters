@@ -12,7 +12,12 @@ export const makeResponseState = () =>
   Effect.gen(function*() {
     const countersRef = yield* Ref.make<CounterMap>(HashMap.empty())
 
-    const getNextIndex = (imposterId: string, stubId: string, count: number, mode: ResponseMode): Effect.Effect<number> => {
+    const getNextIndex = (
+      imposterId: string,
+      stubId: string,
+      count: number,
+      mode: ResponseMode
+    ): Effect.Effect<number> => {
       const key = `${imposterId}:${stubId}`
       return Ref.modify(countersRef, (counters): CounterResult => {
         const current = HashMap.get(counters, key)
@@ -48,19 +53,19 @@ export const makeResponseState = () =>
     return { getNextIndex, reset }
   })
 
-export const buildResponse = (config: ResponseConfig, ctx: RequestContext): Response => {
+export const buildResponse = async (config: ResponseConfig, ctx: RequestContext): Promise<Response> => {
   const headers = new Headers()
   const responseHeaders = config.headers
   if (responseHeaders !== undefined) {
     for (const [key, val] of Object.entries(responseHeaders)) {
-      const templated = applyTemplates(ctx, val)
+      const templated = await applyTemplates(ctx, val)
       headers.set(key, typeof templated === "string" ? templated : String(templated))
     }
   }
 
   let bodyStr: string | null = null
   if (config.body !== undefined) {
-    const templated = applyTemplates(ctx, config.body)
+    const templated = await applyTemplates(ctx, config.body)
     if (typeof templated === "string") {
       bodyStr = templated
       if (!headers.has("content-type")) {

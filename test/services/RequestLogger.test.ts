@@ -1,12 +1,14 @@
 import { Effect, ManagedRuntime, Queue } from "effect"
 import * as DateTime from "effect/DateTime"
-import { afterAll, describe, expect, it } from "vitest"
-import { RequestLogger, RequestLoggerLive } from "imposters/services/RequestLogger.js"
-import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema.js"
 import { NonEmptyString } from "imposters/schemas/common.js"
+import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema.js"
+import { RequestLogger, RequestLoggerLive } from "imposters/services/RequestLogger.js"
+import { afterAll, describe, expect, it } from "vitest"
 
 const runtime = ManagedRuntime.make(RequestLoggerLive)
-afterAll(async () => { await runtime.dispose() })
+afterAll(async () => {
+  await runtime.dispose()
+})
 
 const makeEntry = (overrides: {
   id?: string
@@ -30,6 +32,7 @@ const makeEntry = (overrides: {
   response: {
     status: overrides.status ?? 200,
     headers: {},
+    proxied: false,
     ...(overrides.matchedStubId !== undefined
       ? { matchedStubId: NonEmptyString.make(overrides.matchedStubId) }
       : {})

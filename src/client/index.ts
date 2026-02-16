@@ -1,7 +1,4 @@
-export {
-  HandlerHttpClientLive,
-  makeHandlerHttpClient
-} from "./HandlerHttpClient.js"
+export { HandlerHttpClientLive, makeHandlerHttpClient } from "./HandlerHttpClient.js"
 
 export {
   ImpostersClient,
@@ -12,13 +9,6 @@ export {
 
 export type { ImpostersClientShape } from "./ImpostersClient.js"
 
-export {
-  makeTestServer,
-  withImposter
-} from "./testing.js"
+export { makeTestServer, withImposter } from "./testing.js"
 
-export type {
-  ImposterTestContext,
-  StubConfig,
-  WithImposterConfig
-} from "./testing.js"
+export type { ImposterTestContext, StubConfig, WithImposterConfig } from "./testing.js"

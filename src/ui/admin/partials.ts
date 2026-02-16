@@ -30,13 +30,19 @@ export const imposterRowPartial = (imp: AdminImposterData): SafeHtml => {
     <td class="py-3 px-4 text-sm">${String(imp.stubCount)}</td>
     <td class="py-3 px-4">
       <div class="flex gap-2 items-center">
-        ${isRunning
-          ? html`<button hx-post="/_ui/imposters/${imp.id}/stop" hx-target="#row-${imp.id}" hx-swap="outerHTML" class="text-orange-600 hover:text-orange-800 text-sm font-medium">Stop</button>`
-          : html`<button hx-post="/_ui/imposters/${imp.id}/start" hx-target="#row-${imp.id}" hx-swap="outerHTML" class="text-green-600 hover:text-green-800 text-sm font-medium">Start</button>`}
+        ${
+    isRunning
+      ? html`<button hx-post="/_ui/imposters/${imp.id}/stop" hx-target="#row-${imp.id}" hx-swap="outerHTML" class="text-orange-600 hover:text-orange-800 text-sm font-medium">Stop</button>`
+      : html`<button hx-post="/_ui/imposters/${imp.id}/start" hx-target="#row-${imp.id}" hx-swap="outerHTML" class="text-green-600 hover:text-green-800 text-sm font-medium">Start</button>`
+  }
         <button hx-delete="/_ui/imposters/${imp.id}" hx-target="#imposter-list" hx-swap="innerHTML" hx-confirm="Delete this imposter?" class="text-red-500 hover:text-red-700 text-sm">Delete</button>
-        ${isRunning
-          ? html`<a href="http://localhost:${String(imp.port)}/_admin" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-sm">Open UI</a>`
-          : html``}
+        ${
+    isRunning
+      ? html`<a href="http://localhost:${
+        String(imp.port)
+      }/_admin" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-sm">Open UI</a>`
+      : html``
+  }
       </div>
     </td>
   </tr>`

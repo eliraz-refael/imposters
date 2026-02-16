@@ -1,5 +1,5 @@
-import * as fs from "node:fs"
 import { Data, Effect, Schema } from "effect"
+import * as fs from "node:fs"
 import { ConfigFile } from "../schemas/ConfigFileSchema.js"
 
 export class ConfigLoadError extends Data.TaggedError("ConfigLoadError")<{
@@ -10,7 +10,7 @@ export class ConfigLoadError extends Data.TaggedError("ConfigLoadError")<{
 export const loadConfigFile = (
   filePath: string
 ): Effect.Effect<Schema.Schema.Type<typeof ConfigFile>, ConfigLoadError> =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const content = yield* Effect.try({
       try: () => fs.readFileSync(filePath, "utf-8"),
       catch: (error) =>

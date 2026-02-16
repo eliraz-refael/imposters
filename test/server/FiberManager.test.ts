@@ -1,14 +1,13 @@
 import * as Effect from "effect/Effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as Ref from "effect/Ref"
-import { afterAll, describe, expect, it } from "vitest"
 import { FiberManager, FiberManagerLive } from "imposters/server/FiberManager.js"
+import { afterAll, describe, expect, it } from "vitest"
 
 const runtime = ManagedRuntime.make(FiberManagerLive)
 afterAll(() => runtime.dispose())
 
-const run = <A>(effect: Effect.Effect<A, unknown, FiberManager>) =>
-  runtime.runPromise(effect)
+const run = <A>(effect: Effect.Effect<A, unknown, FiberManager>) => runtime.runPromise(effect)
 
 describe("FiberManager", () => {
   it("start and isRunning", async () => {
@@ -16,10 +15,13 @@ describe("FiberManager", () => {
       Effect.gen(function*() {
         const fm = yield* FiberManager
 
-        yield* fm.start("fiber1", Effect.gen(function*() {
-          yield* Ref.make(0)
-          return yield* Effect.never
-        }))
+        yield* fm.start(
+          "fiber1",
+          Effect.gen(function*() {
+            yield* Ref.make(0)
+            return yield* Effect.never
+          })
+        )
 
         yield* Effect.sleep("50 millis")
         const running = yield* fm.isRunning("fiber1")
@@ -61,16 +63,22 @@ describe("FiberManager", () => {
         const fm = yield* FiberManager
         const ref = yield* Ref.make("first")
 
-        yield* fm.start("fiber3", Effect.gen(function*() {
-          yield* Ref.set(ref, "first-running")
-          return yield* Effect.never
-        }))
+        yield* fm.start(
+          "fiber3",
+          Effect.gen(function*() {
+            yield* Ref.set(ref, "first-running")
+            return yield* Effect.never
+          })
+        )
         yield* Effect.sleep("10 millis")
 
-        yield* fm.start("fiber3", Effect.gen(function*() {
-          yield* Ref.set(ref, "second-running")
-          return yield* Effect.never
-        }))
+        yield* fm.start(
+          "fiber3",
+          Effect.gen(function*() {
+            yield* Ref.set(ref, "second-running")
+            return yield* Effect.never
+          })
+        )
         yield* Effect.sleep("10 millis")
 
         const val = yield* Ref.get(ref)

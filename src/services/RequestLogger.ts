@@ -1,4 +1,5 @@
-import { Context, Effect, HashMap, Layer, PubSub, Queue, Ref, Scope } from "effect"
+import type { Queue, Scope } from "effect"
+import { Context, Effect, HashMap, Layer, PubSub, Ref } from "effect"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 
 const MAX_ENTRIES = 100
@@ -68,8 +69,7 @@ export const RequestLoggerLive = Layer.scoped(
     const clear = (imposterId: string): Effect.Effect<void> =>
       Ref.update(storeRef, (store) => HashMap.set(store, imposterId, []))
 
-    const subscribe: Effect.Effect<Queue.Dequeue<RequestLogEntry>, never, Scope.Scope> =
-      PubSub.subscribe(pubsub)
+    const subscribe: Effect.Effect<Queue.Dequeue<RequestLogEntry>, never, Scope.Scope> = PubSub.subscribe(pubsub)
 
     const getEntryById = (imposterId: string, entryId: string): Effect.Effect<RequestLogEntry | null> =>
       Ref.get(storeRef).pipe(
@@ -80,8 +80,7 @@ export const RequestLoggerLive = Layer.scoped(
         })
       )
 
-    const removeImposter = (imposterId: string): Effect.Effect<void> =>
-      Ref.update(storeRef, HashMap.remove(imposterId))
+    const removeImposter = (imposterId: string): Effect.Effect<void> => Ref.update(storeRef, HashMap.remove(imposterId))
 
     return { log, getEntries, getCount, clear, subscribe, getEntryById, removeImposter } satisfies RequestLoggerShape
   })

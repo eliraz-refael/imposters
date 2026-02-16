@@ -1,9 +1,9 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { describe, expect } from "vitest"
-import { buildResponse, makeResponseState } from "imposters/matching/ResponseGenerator.js"
 import type { RequestContext } from "imposters/matching/RequestMatcher.js"
+import { buildResponse, makeResponseState } from "imposters/matching/ResponseGenerator.js"
 import type { ResponseConfig } from "imposters/schemas/StubSchema.js"
+import { describe, expect } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   method: "GET",
@@ -31,8 +31,7 @@ describe("makeResponseState", () => {
       expect(i1).toBe(1)
       expect(i2).toBe(2)
       expect(i3).toBe(0) // wraps around
-    })
-  )
+    }))
 
   it.effect("repeat mode sticks to last response", () =>
     Effect.gen(function*() {
@@ -45,8 +44,7 @@ describe("makeResponseState", () => {
       expect(i1).toBe(1)
       expect(i2).toBe(1) // sticks to last
       expect(i3).toBe(1)
-    })
-  )
+    }))
 
   it.effect("random mode returns valid indices", () =>
     Effect.gen(function*() {
@@ -56,8 +54,7 @@ describe("makeResponseState", () => {
         expect(idx).toBeGreaterThanOrEqual(0)
         expect(idx).toBeLessThan(3)
       }
-    })
-  )
+    }))
 
   it.effect("different stubs have independent counters", () =>
     Effect.gen(function*() {
@@ -66,8 +63,7 @@ describe("makeResponseState", () => {
       const b0 = yield* state.getNextIndex("imp1", "stubB", 3, "sequential")
       expect(a0).toBe(0)
       expect(b0).toBe(0)
-    })
-  )
+    }))
 
   it.effect("reset clears counters for an imposter", () =>
     Effect.gen(function*() {
@@ -77,53 +73,50 @@ describe("makeResponseState", () => {
       yield* state.reset("imp1")
       const afterReset = yield* state.getNextIndex("imp1", "stub1", 3, "sequential")
       expect(afterReset).toBe(0)
-    })
-  )
+    }))
 })
 
 describe("buildResponse", () => {
-  it("builds response with status and JSON body", () => {
+  it("builds response with status and JSON body", async () => {
     const config = makeResponse({ status: 201, body: { message: "Created" } })
-    const resp = buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, makeCtx())
     expect(resp.status).toBe(201)
     expect(resp.headers.get("content-type")).toBe("application/json")
   })
 
-  it("builds response with string body", () => {
+  it("builds response with string body", async () => {
     const config = makeResponse({ body: "hello" })
-    const resp = buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, makeCtx())
     expect(resp.headers.get("content-type")).toBe("text/plain")
   })
 
-  it("builds response with custom headers", () => {
+  it("builds response with custom headers", async () => {
     const config = makeResponse({ headers: { "x-custom": "value", "x-id": "123" } })
-    const resp = buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, makeCtx())
     expect(resp.headers.get("x-custom")).toBe("value")
     expect(resp.headers.get("x-id")).toBe("123")
   })
 
-  it("builds response with no body", () => {
+  it("builds response with no body", async () => {
     const config = makeResponse({ status: 204 })
-    const resp = buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, makeCtx())
     expect(resp.status).toBe(204)
   })
 
-  it("applies templates to body", () => {
+  it("applies templates to body", async () => {
     const config = makeResponse({ body: { greeting: "Hello {{request.query.name}}" } })
     const ctx = makeCtx({ query: { name: "Alice" } })
-    const resp = buildResponse(config, ctx)
+    const resp = await buildResponse(config, ctx)
     expect(resp.status).toBe(200)
-    // Verify body has template substitution
-    return resp.text().then((text) => {
-      const parsed = JSON.parse(text)
-      expect(parsed.greeting).toBe("Hello Alice")
-    })
+    const text = await resp.text()
+    const parsed = JSON.parse(text)
+    expect(parsed.greeting).toBe("Hello Alice")
   })
 
-  it("applies templates to header values", () => {
+  it("applies templates to header values", async () => {
     const config = makeResponse({ headers: { "x-method": "{{request.method}}" } })
     const ctx = makeCtx({ method: "POST" })
-    const resp = buildResponse(config, ctx)
+    const resp = await buildResponse(config, ctx)
     expect(resp.headers.get("x-method")).toBe("POST")
   })
 })

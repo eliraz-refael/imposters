@@ -3,14 +3,17 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as Schema from "effect/Schema"
-import { afterAll, describe, expect, it } from "vitest"
 import { ImposterConfig } from "imposters/domain/imposter.js"
 import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { Stub } from "imposters/schemas/StubSchema.js"
 import { FiberManagerLive } from "imposters/server/FiberManager.js"
 import { ImposterServer, ImposterServerLive } from "imposters/server/ImposterServer.js"
+import { MetricsServiceLive } from "imposters/services/MetricsService.js"
+import { ProxyServiceLive } from "imposters/services/ProxyService.js"
 import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
+import { UuidLive } from "imposters/services/UuidLive.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
+import { afterAll, describe, expect, it } from "vitest"
 
 const makeConfig = (id: string, port: number): ImposterConfig =>
   ImposterConfig({ id, name: id, port, status: "stopped", createdAt: DateTime.unsafeNow() })
@@ -32,8 +35,19 @@ const makeStub = (id: string, method: string, path: string, status = 200, body?:
     responses: [{ status, body }]
   })
 
+const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
+
 const TestLayer = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
+  Layer.provide(
+    Layer.mergeAll(
+      FiberManagerLive,
+      ImposterRepositoryLive,
+      NodeServerFactoryLive,
+      RequestLoggerLive,
+      MetricsServiceLive,
+      ProxyServiceWithDeps
+    )
+  )
 )
 
 const FullLayer = Layer.mergeAll(
@@ -46,8 +60,7 @@ const runtime = ManagedRuntime.make(FullLayer)
 afterAll(() => runtime.dispose())
 
 type Deps = ImposterRepository | ImposterServer
-const run = <A>(effect: Effect.Effect<A, unknown, Deps>) =>
-  runtime.runPromise(effect)
+const run = <A>(effect: Effect.Effect<A, unknown, Deps>) => runtime.runPromise(effect)
 
 const fetchJson = (url: string, init?: RequestInit) =>
   fetch(url, init).then(async (r) => ({ status: r.status, body: await r.json() }))
@@ -67,7 +80,7 @@ describe("ImposterServer", () => {
       })
     )
 
-    const { status, body } = await fetchJson("http://localhost:9101/anything")
+    const { body, status } = await fetchJson("http://localhost:9101/anything")
     expect(status).toBe(200)
     expect(body).toEqual({ ok: true })
 
@@ -146,7 +159,7 @@ describe("ImposterServer", () => {
       })
     )
 
-    const { status, body } = await fetchJson("http://localhost:9104/nonexistent")
+    const { body, status } = await fetchJson("http://localhost:9104/nonexistent")
     expect(status).toBe(404)
     expect(body.error).toBe("No matching stub found")
 
@@ -233,11 +246,17 @@ describe("ImposterServer", () => {
         const server = yield* ImposterServer
 
         yield* repo.create(makeConfig("imp-tpl-1", 9107))
-        yield* repo.addStub("imp-tpl-1", Schema.decodeUnknownSync(Stub)({
-          id: "tpl-stub",
-          predicates: [],
-          responses: [{ status: 200, body: { greeting: "Hello {{request.query.name}}", method: "{{request.method}}" } }]
-        }))
+        yield* repo.addStub(
+          "imp-tpl-1",
+          Schema.decodeUnknownSync(Stub)({
+            id: "tpl-stub",
+            predicates: [],
+            responses: [{
+              status: 200,
+              body: { greeting: "Hello {{request.query.name}}", method: "{{request.method}}" }
+            }]
+          })
+        )
 
         yield* server.start("imp-tpl-1")
         yield* Effect.sleep("200 millis")

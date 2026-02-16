@@ -1,22 +1,35 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect, Layer, ManagedRuntime } from "effect"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient.js"
+import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient.js"
+import { makeTestServer, withImposter } from "imposters/client/testing.js"
 import { ApiLayer } from "imposters/layers/ApiLayer.js"
+import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { FiberManagerLive } from "imposters/server/FiberManager.js"
 import { ImposterServerLive } from "imposters/server/ImposterServer.js"
-import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
 import { AppConfigLive } from "imposters/services/AppConfig.js"
+import { MetricsServiceLive } from "imposters/services/MetricsService.js"
 import { PortAllocatorLive } from "imposters/services/PortAllocator.js"
+import { ProxyServiceLive } from "imposters/services/ProxyService.js"
 import { RequestLoggerLive } from "imposters/services/RequestLogger.js"
 import { UuidLive } from "imposters/services/UuidLive.js"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory.js"
-import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient.js"
-import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient.js"
-import { withImposter, makeTestServer } from "imposters/client/testing.js"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
+const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
+
 const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(Layer.mergeAll(FiberManagerLive, ImposterRepositoryLive, NodeServerFactoryLive, RequestLoggerLive))
+  Layer.provide(
+    Layer.mergeAll(
+      FiberManagerLive,
+      ImposterRepositoryLive,
+      NodeServerFactoryLive,
+      RequestLoggerLive,
+      MetricsServiceLive,
+      ProxyServiceWithDeps
+    )
+  )
 )
 const MainLayer = Layer.mergeAll(
   UuidLive,
@@ -25,6 +38,7 @@ const MainLayer = Layer.mergeAll(
   ImposterRepositoryLive,
   FiberManagerLive,
   RequestLoggerLive,
+  MetricsServiceLive,
   ImposterServerWithDeps
 )
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -49,8 +63,7 @@ afterAll(async () => {
   dispose()
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, ImpostersClient>) =>
-  runtime.runPromise(effect)
+const run = <A, E>(effect: Effect.Effect<A, E, ImpostersClient>) => runtime.runPromise(effect)
 
 describe("withImposter", () => {
   it("creates imposter, runs test, cleans up", async () => {
@@ -65,14 +78,12 @@ describe("withImposter", () => {
           }]
         },
         (ctx) =>
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             expect(ctx.port).toBe(9501)
             expect(ctx.id).toBeDefined()
 
             // Hit the imposter directly
-            const resp = yield* Effect.promise(() =>
-              fetch(`http://localhost:${ctx.port}/hello`)
-            )
+            const resp = yield* Effect.promise(() => fetch(`http://localhost:${ctx.port}/hello`))
             expect(resp.status).toBe(200)
             const body = yield* Effect.promise(() => resp.json())
             expect(body).toEqual({ message: "hello from helper" })
@@ -82,7 +93,7 @@ describe("withImposter", () => {
 
     // Verify imposter was cleaned up
     const result = await run(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const client = yield* ImpostersClient
         const list = yield* client.imposters.listImposters({ urlParams: { limit: 50 as any, offset: 0 } })
         return list.imposters.filter((i) => i.port === 9501 as any)
@@ -109,7 +120,7 @@ describe("withImposter", () => {
 
     // Verify cleanup happened
     const result = await run(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const client = yield* ImpostersClient
         const list = yield* client.imposters.listImposters({ urlParams: { limit: 50 as any, offset: 0 } })
         return list.imposters.filter((i) => i.port === 9502 as any)
@@ -121,14 +132,14 @@ describe("withImposter", () => {
 
 describe("makeTestServer", () => {
   it("creates server with handler and client layer", async () => {
-    const { handler: h, dispose: d, clientLayer } = makeTestServer(FullLayer)
+    const { clientLayer, dispose: d, handler: h } = makeTestServer(FullLayer)
     expect(h).toBeDefined()
     expect(d).toBeDefined()
 
     const rt = ManagedRuntime.make(clientLayer)
     try {
       const result = await rt.runPromise(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.healthCheck()
         })

@@ -1,8 +1,8 @@
 import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
-import { describe, expect, it } from "vitest"
 import { ApiLayer } from "imposters/layers/ApiLayer.js"
 import { MainLayer } from "imposters/layers/MainLayer.js"
+import { describe, expect, it } from "vitest"
 
 const makeHandler = () => {
   const fullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -17,7 +17,7 @@ const json = (body: object) => ({
 
 describe("Imposters API", () => {
   it("POST /imposters creates an imposter with auto-assigned port", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/imposters", json({ name: "test-imp" })))
       expect(res.status).toBe(201)
@@ -35,7 +35,7 @@ describe("Imposters API", () => {
   })
 
   it("POST /imposters creates an imposter with specified port", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/imposters", json({ name: "test-port", port: 5555 })))
       expect(res.status).toBe(201)
@@ -47,7 +47,7 @@ describe("Imposters API", () => {
   })
 
   it("POST /imposters with no name auto-generates one", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/imposters", json({})))
       expect(res.status).toBe(201)
@@ -60,7 +60,7 @@ describe("Imposters API", () => {
   })
 
   it("POST /imposters with duplicate port returns 409", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       await handler(new Request("http://localhost/imposters", json({ name: "first", port: 6000 })))
       const res = await handler(new Request("http://localhost/imposters", json({ name: "second", port: 6000 })))
@@ -71,7 +71,7 @@ describe("Imposters API", () => {
   })
 
   it("GET /imposters lists imposters", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       await handler(new Request("http://localhost/imposters", json({ name: "imp1" })))
       await handler(new Request("http://localhost/imposters", json({ name: "imp2" })))
@@ -88,7 +88,7 @@ describe("Imposters API", () => {
   })
 
   it("GET /imposters supports pagination", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       await handler(new Request("http://localhost/imposters", json({ name: "a" })))
       await handler(new Request("http://localhost/imposters", json({ name: "b" })))
@@ -106,7 +106,7 @@ describe("Imposters API", () => {
   })
 
   it("GET /imposters filters by status", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       await handler(new Request("http://localhost/imposters", json({ name: "imp1" })))
 
@@ -124,7 +124,7 @@ describe("Imposters API", () => {
   })
 
   it("GET /imposters/:id returns imposter details", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const createRes = await handler(new Request("http://localhost/imposters", json({ name: "detail-test" })))
       const created = await createRes.json()
@@ -140,7 +140,7 @@ describe("Imposters API", () => {
   })
 
   it("GET /imposters/:id returns 404 for non-existent", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/imposters/nonexistent"))
       expect(res.status).toBe(404)
@@ -150,16 +150,18 @@ describe("Imposters API", () => {
   })
 
   it("PATCH /imposters/:id updates name", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const createRes = await handler(new Request("http://localhost/imposters", json({ name: "original" })))
       const created = await createRes.json()
 
-      const res = await handler(new Request(`http://localhost/imposters/${created.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "updated" })
-      }))
+      const res = await handler(
+        new Request(`http://localhost/imposters/${created.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "updated" })
+        })
+      )
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body.name).toBe("updated")
@@ -169,16 +171,20 @@ describe("Imposters API", () => {
   })
 
   it("PATCH /imposters/:id updates port (swap)", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
-      const createRes = await handler(new Request("http://localhost/imposters", json({ name: "port-swap", port: 7000 })))
+      const createRes = await handler(
+        new Request("http://localhost/imposters", json({ name: "port-swap", port: 7000 }))
+      )
       const created = await createRes.json()
 
-      const res = await handler(new Request(`http://localhost/imposters/${created.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ port: 7001 })
-      }))
+      const res = await handler(
+        new Request(`http://localhost/imposters/${created.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port: 7001 })
+        })
+      )
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body.port).toBe(7001)
@@ -192,13 +198,15 @@ describe("Imposters API", () => {
   })
 
   it("PATCH /imposters/:id returns 404 for non-existent", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
-      const res = await handler(new Request("http://localhost/imposters/nonexistent", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "nope" })
-      }))
+      const res = await handler(
+        new Request("http://localhost/imposters/nonexistent", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "nope" })
+        })
+      )
       expect(res.status).toBe(404)
     } finally {
       await dispose()
@@ -206,7 +214,7 @@ describe("Imposters API", () => {
   })
 
   it("DELETE /imposters/:id deletes a stopped imposter", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const createRes = await handler(new Request("http://localhost/imposters", json({ name: "to-delete" })))
       const created = await createRes.json()
@@ -225,7 +233,7 @@ describe("Imposters API", () => {
   })
 
   it("DELETE /imposters/:id returns 404 for non-existent", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
       const res = await handler(new Request("http://localhost/imposters/nonexistent", { method: "DELETE" }))
       expect(res.status).toBe(404)
@@ -235,9 +243,11 @@ describe("Imposters API", () => {
   })
 
   it("DELETE /imposters/:id releases the port", async () => {
-    const { handler, dispose } = makeHandler()
+    const { dispose, handler } = makeHandler()
     try {
-      const createRes = await handler(new Request("http://localhost/imposters", json({ name: "port-release", port: 8000 })))
+      const createRes = await handler(
+        new Request("http://localhost/imposters", json({ name: "port-release", port: 8000 }))
+      )
       const created = await createRes.json()
 
       await handler(new Request(`http://localhost/imposters/${created.id}`, { method: "DELETE" }))

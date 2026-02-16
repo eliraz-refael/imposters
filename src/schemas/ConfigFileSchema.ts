@@ -1,11 +1,12 @@
 import * as Schema from "effect/Schema"
 import { NonEmptyString, PortNumber } from "./common.js"
-import { CreateStubRequest } from "./StubSchema.js"
+import { CreateStubRequest, ProxyConfig } from "./StubSchema.js"
 
 export const ImposterConfig = Schema.Struct({
   name: Schema.optional(NonEmptyString),
   port: PortNumber,
-  stubs: Schema.optionalWith(Schema.Array(CreateStubRequest), { default: () => [] })
+  stubs: Schema.optionalWith(Schema.Array(CreateStubRequest), { default: () => [] }),
+  proxy: Schema.optional(ProxyConfig)
 })
 export type ImposterConfig = Schema.Schema.Type<typeof ImposterConfig>
 

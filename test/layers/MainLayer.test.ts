@@ -2,14 +2,14 @@ import { it } from "@effect/vitest"
 import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { describe, expect } from "vitest"
 import { ImposterConfig } from "imposters/domain/imposter.js"
 import { MainLayer } from "imposters/layers/MainLayer.js"
 import { ImposterRepository } from "imposters/repositories/ImposterRepository.js"
+import { Stub } from "imposters/schemas/StubSchema.js"
 import { AppConfig } from "imposters/services/AppConfig.js"
 import { PortAllocator } from "imposters/services/PortAllocator.js"
 import { Uuid } from "imposters/services/Uuid.js"
-import { Stub } from "imposters/schemas/StubSchema.js"
+import { describe, expect } from "vitest"
 
 describe("MainLayer", () => {
   it.effect("all services resolve", () =>
@@ -23,8 +23,7 @@ describe("MainLayer", () => {
       expect(config.adminPort).toBe(2525)
       expect(allocator).toBeDefined()
       expect(repo).toBeDefined()
-    }).pipe(Effect.provide(MainLayer))
-  )
+    }).pipe(Effect.provide(MainLayer)))
 
   it.effect("integration: create imposter, allocate port, store in repo, add stub, retrieve", () =>
     Effect.gen(function*() {
@@ -61,6 +60,5 @@ describe("MainLayer", () => {
       expect(record.config.name).toBe("integration-test")
       expect(record.config.port).toBe(port)
       expect(record.stubs).toHaveLength(1)
-    }).pipe(Effect.provide(MainLayer))
-  )
+    }).pipe(Effect.provide(MainLayer)))
 })
