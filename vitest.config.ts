@@ -12,6 +12,7 @@ export default defineConfig({
     alias: {
       "imposters/test": path.join(__dirname, "test"),
       "imposters": path.join(__dirname, "src")
-    }
+    },
+    extensions: [".ts", ".tsx", ".js", ".jsx", ".json"]
   }
 })
