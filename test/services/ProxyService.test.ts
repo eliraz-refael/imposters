@@ -1,8 +1,8 @@
 import { Effect, Layer, ManagedRuntime } from "effect"
-import type { ProxyConfigDomain } from "imposters/domain/imposter.js"
-import type { RequestContext } from "imposters/matching/RequestMatcher.js"
-import { ProxyService, ProxyServiceLive } from "imposters/services/ProxyService.js"
-import { UuidLive } from "imposters/services/UuidLive.js"
+import type { ProxyConfigDomain } from "imposters/domain/imposter"
+import type { RequestContext } from "imposters/matching/RequestMatcher"
+import { ProxyService, ProxyServiceLive } from "imposters/services/ProxyService"
+import { UuidLive } from "imposters/services/UuidLive"
 import * as http from "node:http"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 

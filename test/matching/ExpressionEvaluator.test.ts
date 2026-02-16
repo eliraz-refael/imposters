@@ -1,5 +1,5 @@
-import { evaluateExpression, processExpressions } from "imposters/matching/ExpressionEvaluator.js"
-import type { RequestContext } from "imposters/matching/RequestMatcher.js"
+import { evaluateExpression, processExpressions } from "imposters/matching/ExpressionEvaluator"
+import type { RequestContext } from "imposters/matching/RequestMatcher"
 import { describe, expect, it } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({

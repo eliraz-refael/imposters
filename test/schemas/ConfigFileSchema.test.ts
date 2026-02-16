@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { AdminConfig, ConfigFile, ImposterConfig } from "imposters/schemas/ConfigFileSchema.js"
+import { AdminConfig, ConfigFile, ImposterConfig } from "imposters/schemas/ConfigFileSchema"
 import { describe, expect, it } from "vitest"
 
 const decode = Schema.decodeUnknownSync(ConfigFile)

@@ -6,7 +6,7 @@ import {
   CreateRouteRequest,
   DeleteImposterQuery,
   UpdateImposterRequest
-} from "imposters/schemas/ImposterSchema.js"
+} from "imposters/schemas/ImposterSchema"
 import { describe, expect } from "vitest"
 
 describe("ImposterSchema", () => {

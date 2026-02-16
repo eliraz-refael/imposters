@@ -2,7 +2,7 @@ import type { HttpClient } from "@effect/platform"
 import { FetchHttpClient, HttpApiClient } from "@effect/platform"
 import type { Effect } from "effect"
 import { Context, Layer } from "effect"
-import { AdminApi } from "../api/AdminApi.js"
+import { AdminApi } from "../api/AdminApi"
 
 export const makeImpostersClient = (baseUrl?: string) =>
   HttpApiClient.make(AdminApi, { baseUrl: baseUrl ?? "http://localhost:2525" })

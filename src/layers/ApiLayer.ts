@@ -1,8 +1,8 @@
 import { HttpApiBuilder, HttpApiSwagger, HttpServer } from "@effect/platform"
 import * as Layer from "effect/Layer"
-import { AdminApi } from "../api/AdminApi.js"
-import { ImpostersHandlersLive } from "../api/ImpostersHandlers.js"
-import { SystemHandlersLive } from "../api/SystemHandlers.js"
+import { AdminApi } from "../api/AdminApi"
+import { ImpostersHandlersLive } from "../api/ImpostersHandlers"
+import { SystemHandlersLive } from "../api/SystemHandlers"
 
 const HandlerLayers = Layer.mergeAll(ImpostersHandlersLive, SystemHandlersLive)
 

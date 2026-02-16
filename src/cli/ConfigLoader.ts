@@ -1,6 +1,6 @@
 import { Data, Effect, Schema } from "effect"
 import * as fs from "node:fs"
-import { ConfigFile } from "../schemas/ConfigFileSchema.js"
+import { ConfigFile } from "../schemas/ConfigFileSchema"
 
 export class ConfigLoadError extends Data.TaggedError("ConfigLoadError")<{
   readonly message: string

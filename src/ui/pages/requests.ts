@@ -1,9 +1,9 @@
-import type { ImposterConfig } from "../../domain/imposter.js"
-import type { RequestLogEntry } from "../../schemas/RequestLogSchema.js"
-import { html, raw } from "../html.js"
-import type { SafeHtml } from "../html.js"
-import { layout } from "../layout.js"
-import { requestTablePartial, statusBadge } from "../partials.js"
+import type { ImposterConfig } from "../../domain/imposter"
+import type { RequestLogEntry } from "../../schemas/RequestLogSchema"
+import { html, raw } from "../html"
+import type { SafeHtml } from "../html"
+import { layout } from "../layout"
+import { requestTablePartial, statusBadge } from "../partials"
 
 export interface RequestsPageData {
   readonly config: ImposterConfig

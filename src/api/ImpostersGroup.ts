@@ -7,11 +7,11 @@ import {
   ListImpostersResponse,
   Statistics,
   UpdateImposterRequest
-} from "../schemas/ImposterSchema.js"
-import { RequestLogEntry } from "../schemas/RequestLogSchema.js"
-import { CreateStubRequest, Stub, UpdateStubRequest } from "../schemas/StubSchema.js"
-import { ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors.js"
-import { DeleteImposterUrlParams, ListImpostersUrlParams, ListRequestsUrlParams } from "./ApiSchemas.js"
+} from "../schemas/ImposterSchema"
+import { RequestLogEntry } from "../schemas/RequestLogSchema"
+import { CreateStubRequest, Stub, UpdateStubRequest } from "../schemas/StubSchema"
+import { ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors"
+import { DeleteImposterUrlParams, ListImpostersUrlParams, ListRequestsUrlParams } from "./ApiSchemas"
 
 const createImposter = HttpApiEndpoint.post("createImposter", "/imposters")
   .setPayload(CreateImposterRequest)

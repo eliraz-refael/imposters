@@ -1,9 +1,9 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect, Layer } from "effect"
-import type { NonEmptyString, PortNumber } from "../schemas/common.js"
-import type { CreateStubRequest } from "../schemas/StubSchema.js"
-import { HandlerHttpClientLive } from "./HandlerHttpClient.js"
-import { ImpostersClient, ImpostersClientLive } from "./ImpostersClient.js"
+import type { NonEmptyString, PortNumber } from "../schemas/common"
+import type { CreateStubRequest } from "../schemas/StubSchema"
+import { HandlerHttpClientLive } from "./HandlerHttpClient"
+import { ImpostersClient, ImpostersClientLive } from "./ImpostersClient"
 
 export interface StubConfig {
   readonly predicates?: ReadonlyArray<{

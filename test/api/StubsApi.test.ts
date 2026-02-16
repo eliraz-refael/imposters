@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
-import { ApiLayer } from "imposters/layers/ApiLayer.js"
-import { MainLayer } from "imposters/layers/MainLayer.js"
+import { ApiLayer } from "imposters/layers/ApiLayer"
+import { MainLayer } from "imposters/layers/MainLayer"
 import { describe, expect, it } from "vitest"
 
 const makeHandler = () => {

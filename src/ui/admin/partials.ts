@@ -1,5 +1,5 @@
-import { html } from "../html.js"
-import type { SafeHtml } from "../html.js"
+import { html } from "../html"
+import type { SafeHtml } from "../html"
 
 export interface AdminImposterData {
   readonly id: string

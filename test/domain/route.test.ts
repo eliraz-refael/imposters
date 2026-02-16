@@ -11,8 +11,8 @@ import {
   RouteNotFoundError,
   substituteParams,
   updateRoute
-} from "imposters/domain/route.js"
-import { Uuid } from "imposters/services/Uuid.js"
+} from "imposters/domain/route"
+import { Uuid } from "imposters/services/Uuid"
 import { describe, expect } from "vitest"
 
 const TestUuid = Layer.succeed(Uuid, {

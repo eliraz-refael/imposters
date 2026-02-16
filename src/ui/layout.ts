@@ -1,4 +1,4 @@
-import { html, raw, type SafeHtml } from "./html.js"
+import { html, raw, type SafeHtml } from "./html"
 
 export interface LayoutOpts {
   readonly title: string

@@ -5,7 +5,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as ParseResult from "effect/ParseResult"
 import * as Schema from "effect/Schema"
-import { Uuid } from "../services/Uuid.js"
+import { Uuid } from "../services/Uuid"
 
 // Schemas for validation
 const ImposterNameSchema = Schema.String.pipe(

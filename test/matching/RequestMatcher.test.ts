@@ -4,10 +4,10 @@ import {
   evaluatePredicates,
   extractRequestContext,
   findMatchingStub
-} from "imposters/matching/RequestMatcher.js"
-import type { RequestContext } from "imposters/matching/RequestMatcher.js"
-import { Stub } from "imposters/schemas/StubSchema.js"
-import type { Predicate } from "imposters/schemas/StubSchema.js"
+} from "imposters/matching/RequestMatcher"
+import type { RequestContext } from "imposters/matching/RequestMatcher"
+import { Stub } from "imposters/schemas/StubSchema"
+import type { Predicate } from "imposters/schemas/StubSchema"
 import { describe, expect, it } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({

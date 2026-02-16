@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { Uuid } from "imposters/services/Uuid.js"
-import { UuidLive } from "imposters/services/UuidLive.js"
+import { Uuid } from "imposters/services/Uuid"
+import { UuidLive } from "imposters/services/UuidLive"
 import { describe, expect } from "vitest"
 
 describe("UuidLive", () => {

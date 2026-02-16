@@ -1,8 +1,8 @@
 import { Effect, ManagedRuntime } from "effect"
 import * as DateTime from "effect/DateTime"
-import { NonEmptyString } from "imposters/schemas/common.js"
-import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema.js"
-import { MetricsService, MetricsServiceLive } from "imposters/services/MetricsService.js"
+import { NonEmptyString } from "imposters/schemas/common"
+import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
+import { MetricsService, MetricsServiceLive } from "imposters/services/MetricsService"
 import { afterAll, describe, expect, it } from "vitest"
 
 const runtime = ManagedRuntime.make(MetricsServiceLive)

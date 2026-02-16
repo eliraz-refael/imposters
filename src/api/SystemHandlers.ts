@@ -3,10 +3,10 @@ import * as Clock from "effect/Clock"
 import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import { ImposterRepository } from "../repositories/ImposterRepository.js"
-import { NonEmptyString, PortNumber } from "../schemas/common.js"
-import { AppConfig } from "../services/AppConfig.js"
-import { AdminApi } from "./AdminApi.js"
+import { ImposterRepository } from "../repositories/ImposterRepository"
+import { NonEmptyString, PortNumber } from "../schemas/common"
+import { AppConfig } from "../services/AppConfig"
+import { AdminApi } from "./AdminApi"
 
 export const SystemHandlersLive = HttpApiBuilder.group(AdminApi, "system", (handlers) =>
   handlers

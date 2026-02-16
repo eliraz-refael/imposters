@@ -25,7 +25,7 @@
     "check": "tsc -b tsconfig.json",
     "lint": "eslint \"**/{src,test,examples,scripts,dtslint}/**/*.{ts,mjs}\"",
     "lint-fix": "bun lint --fix",
-    "test": "vitest",
+    "test": "vitest --run",
     "coverage": "vitest --coverage"
   },
   "dependencies": {

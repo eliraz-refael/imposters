@@ -1,9 +1,9 @@
 import * as Effect from "effect/Effect"
 import * as HashMap from "effect/HashMap"
 import * as Ref from "effect/Ref"
-import type { ResponseConfig, ResponseMode } from "../schemas/StubSchema.js"
-import type { RequestContext } from "./RequestMatcher.js"
-import { applyTemplates } from "./TemplateEngine.js"
+import type { ResponseConfig, ResponseMode } from "../schemas/StubSchema"
+import type { RequestContext } from "./RequestMatcher"
+import { applyTemplates } from "./TemplateEngine"
 
 type CounterMap = HashMap.HashMap<string, number>
 type CounterResult = readonly [Effect.Effect<number, never>, CounterMap]

@@ -1,8 +1,8 @@
-import type { ImposterConfig } from "../../domain/imposter.js"
-import type { Stub } from "../../schemas/StubSchema.js"
-import { html, raw } from "../html.js"
-import { layout } from "../layout.js"
-import { stubListPartial } from "../partials.js"
+import type { ImposterConfig } from "../../domain/imposter"
+import type { Stub } from "../../schemas/StubSchema"
+import { html, raw } from "../html"
+import { layout } from "../layout"
+import { stubListPartial } from "../partials"
 
 export interface StubsPageData {
   readonly config: ImposterConfig

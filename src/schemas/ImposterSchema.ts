@@ -8,8 +8,8 @@ import {
   Protocol,
   ProtocolFilter,
   StatusFilter
-} from "./common.js"
-import { ProxyConfig } from "./StubSchema.js"
+} from "./common"
+import { ProxyConfig } from "./StubSchema"
 
 // Create Imposter Request Schema - POST /imposters
 export const CreateImposterRequest = Schema.Struct({

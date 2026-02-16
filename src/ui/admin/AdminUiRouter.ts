@@ -1,6 +1,6 @@
-import { adminDashboardPage } from "./pages/AdminDashboard.js"
-import type { AdminImposterData } from "./partials.js"
-import { adminErrorPartial, imposterListPartial, imposterRowPartial } from "./partials.js"
+import { adminDashboardPage } from "./pages/AdminDashboard"
+import type { AdminImposterData } from "./partials"
+import { adminErrorPartial, imposterListPartial, imposterRowPartial } from "./partials"
 
 export interface AdminUiDeps {
   readonly apiHandler: (request: Request) => Promise<Response>

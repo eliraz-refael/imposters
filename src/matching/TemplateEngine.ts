@@ -1,6 +1,6 @@
-import { substituteParams } from "../domain/route.js"
-import { processExpressions } from "./ExpressionEvaluator.js"
-import type { RequestContext } from "./RequestMatcher.js"
+import { substituteParams } from "../domain/route"
+import { processExpressions } from "./ExpressionEvaluator"
+import type { RequestContext } from "./RequestMatcher"
 
 const flattenObject = (obj: unknown, prefix: string, result: Record<string, string>): void => {
   if (obj === null || obj === undefined) return

@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform"
-import { HealthResponse, ServerInfoResponse } from "../schemas/ImposterSchema.js"
+import { HealthResponse, ServerInfoResponse } from "../schemas/ImposterSchema"
 
 export const SystemGroup = HttpApiGroup.make("system", { topLevel: true })
   .add(

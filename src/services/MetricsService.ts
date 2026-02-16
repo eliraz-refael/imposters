@@ -1,6 +1,6 @@
 import { Context, Effect, HashMap, Layer, Ref } from "effect"
 import * as DateTime from "effect/DateTime"
-import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
+import type { RequestLogEntry } from "../schemas/RequestLogSchema"
 
 const BUFFER_SIZE = 1000
 

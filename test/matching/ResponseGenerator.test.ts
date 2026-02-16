@@ -1,8 +1,8 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import type { RequestContext } from "imposters/matching/RequestMatcher.js"
-import { buildResponse, makeResponseState } from "imposters/matching/ResponseGenerator.js"
-import type { ResponseConfig } from "imposters/schemas/StubSchema.js"
+import type { RequestContext } from "imposters/matching/RequestMatcher"
+import { buildResponse, makeResponseState } from "imposters/matching/ResponseGenerator"
+import type { ResponseConfig } from "imposters/schemas/StubSchema"
 import { describe, expect } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({

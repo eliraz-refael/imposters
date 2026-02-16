@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { NonEmptyString, PaginationQuery, PortNumber, PositiveInteger } from "imposters/schemas/common.js"
+import { NonEmptyString, PaginationQuery, PortNumber, PositiveInteger } from "imposters/schemas/common"
 import { describe, expect } from "vitest"
 
 describe("common schemas", () => {

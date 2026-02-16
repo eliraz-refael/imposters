@@ -2,9 +2,9 @@ import { it } from "@effect/vitest"
 import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { ImposterConfig } from "imposters/domain/imposter.js"
-import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositories/ImposterRepository.js"
-import { Stub } from "imposters/schemas/StubSchema.js"
+import { ImposterConfig } from "imposters/domain/imposter"
+import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositories/ImposterRepository"
+import { Stub } from "imposters/schemas/StubSchema"
 import { describe, expect } from "vitest"
 
 const makeConfig = (id: string, name: string): ImposterConfig =>

@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema"
-import { NonEmptyString } from "./common.js"
+import { NonEmptyString } from "./common"
 
 // Proxy Mode
 export const ProxyMode = Schema.Literal("passthrough", "record")

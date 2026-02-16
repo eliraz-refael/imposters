@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { ConfigLoadError, loadConfigFile } from "imposters/cli/ConfigLoader.js"
+import { ConfigLoadError, loadConfigFile } from "imposters/cli/ConfigLoader"
 import * as path from "node:path"
 import { describe, expect, it } from "vitest"
 

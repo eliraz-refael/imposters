@@ -1,8 +1,8 @@
 import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
-import { buildPaginationMeta, toImposterResponse } from "imposters/api/Conversions.js"
-import { ImposterConfig } from "imposters/domain/imposter.js"
-import type { ImposterRecord } from "imposters/repositories/ImposterRepository.js"
+import { buildPaginationMeta, toImposterResponse } from "imposters/api/Conversions"
+import { ImposterConfig } from "imposters/domain/imposter"
+import type { ImposterRecord } from "imposters/repositories/ImposterRepository"
 import { describe, expect, it } from "vitest"
 
 describe("Conversions", () => {

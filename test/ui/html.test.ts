@@ -1,4 +1,4 @@
-import { escapeHtml, html, raw, SafeHtml } from "imposters/ui/html.js"
+import { escapeHtml, html, raw, SafeHtml } from "imposters/ui/html"
 import { describe, expect, it } from "vitest"
 
 describe("escapeHtml", () => {

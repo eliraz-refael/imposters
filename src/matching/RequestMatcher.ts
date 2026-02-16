@@ -1,4 +1,4 @@
-import type { Predicate, Stub } from "../schemas/StubSchema.js"
+import type { Predicate, Stub } from "../schemas/StubSchema"
 
 export interface RequestContext {
   readonly method: string

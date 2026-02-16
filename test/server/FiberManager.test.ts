@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as Ref from "effect/Ref"
-import { FiberManager, FiberManagerLive } from "imposters/server/FiberManager.js"
+import { FiberManager, FiberManagerLive } from "imposters/server/FiberManager"
 import { afterAll, describe, expect, it } from "vitest"
 
 const runtime = ManagedRuntime.make(FiberManagerLive)

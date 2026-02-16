@@ -2,9 +2,9 @@ import * as Clock from "effect/Clock"
 import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import type { ImposterRecord } from "../repositories/ImposterRepository.js"
-import { NonEmptyString, type PaginationMeta, PortNumber, PositiveInteger } from "../schemas/common.js"
-import type { ImposterResponse } from "../schemas/ImposterSchema.js"
+import type { ImposterRecord } from "../repositories/ImposterRepository"
+import { NonEmptyString, type PaginationMeta, PortNumber, PositiveInteger } from "../schemas/common"
+import type { ImposterResponse } from "../schemas/ImposterSchema"
 
 export const toImposterResponse = (record: ImposterRecord): Effect.Effect<ImposterResponse> =>
   Effect.gen(function*() {

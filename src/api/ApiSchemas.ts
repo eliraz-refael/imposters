@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema"
-import { ImposterStatus, Protocol } from "../schemas/common.js"
+import { ImposterStatus, Protocol } from "../schemas/common"
 
 export const PaginationUrlParams = Schema.Struct({
   limit: Schema.optionalWith(

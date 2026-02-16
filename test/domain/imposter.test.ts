@@ -14,8 +14,8 @@ import {
   PortInUseError,
   updateImposterPort,
   updateImposterStatus
-} from "imposters/domain/imposter.js"
-import { Uuid } from "imposters/services/Uuid.js"
+} from "imposters/domain/imposter"
+import { Uuid } from "imposters/services/Uuid"
 import { describe, expect } from "vitest"
 
 const TestUuid = Layer.succeed(Uuid, {

@@ -1,8 +1,8 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { AppConfig } from "imposters/services/AppConfig.js"
-import { PortAllocator, PortAllocatorLive } from "imposters/services/PortAllocator.js"
+import { AppConfig } from "imposters/services/AppConfig"
+import { PortAllocator, PortAllocatorLive } from "imposters/services/PortAllocator"
 import { describe, expect } from "vitest"
 
 // Use a small port range for testing

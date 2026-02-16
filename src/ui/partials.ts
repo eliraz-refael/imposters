@@ -1,7 +1,7 @@
-import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
-import type { ResponseConfig, Stub } from "../schemas/StubSchema.js"
-import { html } from "./html.js"
-import type { SafeHtml } from "./html.js"
+import type { RequestLogEntry } from "../schemas/RequestLogSchema"
+import type { ResponseConfig, Stub } from "../schemas/StubSchema"
+import { html } from "./html"
+import type { SafeHtml } from "./html"
 
 const predicateSummary = (stub: Stub): string => {
   if (stub.predicates.length === 0) return "catch-all (no predicates)"

@@ -1,10 +1,10 @@
 import { Command, Options } from "@effect/cli"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
-import { HandlerHttpClientLive } from "../client/HandlerHttpClient.js"
-import { ImpostersClient, ImpostersClientLive } from "../client/ImpostersClient.js"
-import { makeCompositeHandler } from "../server/AdminServer.js"
-import { loadConfigFile } from "./ConfigLoader.js"
+import { HandlerHttpClientLive } from "../client/HandlerHttpClient"
+import { ImpostersClient, ImpostersClientLive } from "../client/ImpostersClient"
+import { makeCompositeHandler } from "../server/AdminServer"
+import { loadConfigFile } from "./ConfigLoader"
 
 const configOption = Options.file("config").pipe(
   Options.withAlias("c"),

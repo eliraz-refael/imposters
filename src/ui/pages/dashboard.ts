@@ -1,8 +1,8 @@
-import type { ImposterConfig } from "../../domain/imposter.js"
-import type { RequestLogEntry } from "../../schemas/RequestLogSchema.js"
-import { html, raw } from "../html.js"
-import { layout } from "../layout.js"
-import { requestTablePartial } from "../partials.js"
+import type { ImposterConfig } from "../../domain/imposter"
+import type { RequestLogEntry } from "../../schemas/RequestLogSchema"
+import { html, raw } from "../html"
+import { layout } from "../layout"
+import { requestTablePartial } from "../partials"
 
 export interface DashboardData {
   readonly config: ImposterConfig

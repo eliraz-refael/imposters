@@ -1,5 +1,5 @@
-import type { RequestContext } from "imposters/matching/RequestMatcher.js"
-import { applyTemplates, flattenRequestContext } from "imposters/matching/TemplateEngine.js"
+import type { RequestContext } from "imposters/matching/RequestMatcher"
+import { applyTemplates, flattenRequestContext } from "imposters/matching/TemplateEngine"
 import { describe, expect, it } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({

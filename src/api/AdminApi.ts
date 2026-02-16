@@ -1,6 +1,6 @@
 import { HttpApi } from "@effect/platform"
-import { ImpostersGroup } from "./ImpostersGroup.js"
-import { SystemGroup } from "./SystemGroup.js"
+import { ImpostersGroup } from "./ImpostersGroup"
+import { SystemGroup } from "./SystemGroup"
 
 export const AdminApi = HttpApi.make("admin")
   .add(ImpostersGroup)

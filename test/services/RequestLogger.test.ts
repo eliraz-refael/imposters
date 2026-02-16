@@ -1,8 +1,8 @@
 import { Effect, ManagedRuntime, Queue } from "effect"
 import * as DateTime from "effect/DateTime"
-import { NonEmptyString } from "imposters/schemas/common.js"
-import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema.js"
-import { RequestLogger, RequestLoggerLive } from "imposters/services/RequestLogger.js"
+import { NonEmptyString } from "imposters/schemas/common"
+import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
+import { RequestLogger, RequestLoggerLive } from "imposters/services/RequestLogger"
 import { afterAll, describe, expect, it } from "vitest"
 
 const runtime = ManagedRuntime.make(RequestLoggerLive)

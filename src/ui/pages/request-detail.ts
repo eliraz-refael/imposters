@@ -1,10 +1,10 @@
-import type { ImposterConfig } from "../../domain/imposter.js"
-import type { RequestLogEntry } from "../../schemas/RequestLogSchema.js"
-import type { Stub } from "../../schemas/StubSchema.js"
-import { html, raw } from "../html.js"
-import type { SafeHtml } from "../html.js"
-import { layout } from "../layout.js"
-import { methodBadge, statusBadge, stubCardPartial } from "../partials.js"
+import type { ImposterConfig } from "../../domain/imposter"
+import type { RequestLogEntry } from "../../schemas/RequestLogSchema"
+import type { Stub } from "../../schemas/StubSchema"
+import { html, raw } from "../html"
+import type { SafeHtml } from "../html"
+import { layout } from "../layout"
+import { methodBadge, statusBadge, stubCardPartial } from "../partials"
 
 export interface RequestDetailData {
   readonly config: ImposterConfig

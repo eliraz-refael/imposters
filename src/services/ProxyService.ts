@@ -1,9 +1,9 @@
 import { Context, Data, Effect, Layer } from "effect"
-import type { ProxyConfigDomain } from "../domain/imposter.js"
-import type { RequestContext } from "../matching/RequestMatcher.js"
-import { NonEmptyString } from "../schemas/common.js"
-import type { Stub } from "../schemas/StubSchema.js"
-import { Uuid } from "./Uuid.js"
+import type { ProxyConfigDomain } from "../domain/imposter"
+import type { RequestContext } from "../matching/RequestMatcher"
+import { NonEmptyString } from "../schemas/common"
+import type { Stub } from "../schemas/StubSchema"
+import { Uuid } from "./Uuid"
 
 export class ProxyError extends Data.TaggedError("ProxyError")<{
   readonly targetUrl: string

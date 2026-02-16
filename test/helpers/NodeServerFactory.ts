@@ -1,6 +1,6 @@
 import { Layer } from "effect"
-import { ServerFactory } from "imposters/server/BunServer.js"
-import type { ServerInstance } from "imposters/server/BunServer.js"
+import { ServerFactory } from "imposters/server/BunServer"
+import type { ServerInstance } from "imposters/server/BunServer"
 import * as http from "node:http"
 
 export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {

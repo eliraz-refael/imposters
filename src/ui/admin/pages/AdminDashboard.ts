@@ -1,8 +1,8 @@
-import { html, raw } from "../../html.js"
-import type { SafeHtml } from "../../html.js"
-import { adminLayout } from "../AdminLayout.js"
-import type { AdminImposterData } from "../partials.js"
-import { createFormPartial, imposterListPartial } from "../partials.js"
+import { html, raw } from "../../html"
+import type { SafeHtml } from "../../html"
+import { adminLayout } from "../AdminLayout"
+import type { AdminImposterData } from "../partials"
+import { createFormPartial, imposterListPartial } from "../partials"
 
 export interface AdminDashboardData {
   readonly imposters: ReadonlyArray<AdminImposterData>

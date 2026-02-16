@@ -1,6 +1,6 @@
 import type { Queue, Scope } from "effect"
 import { Context, Effect, HashMap, Layer, PubSub, Ref } from "effect"
-import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
+import type { RequestLogEntry } from "../schemas/RequestLogSchema"
 
 const MAX_ENTRIES = 100
 

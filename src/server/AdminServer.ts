@@ -1,8 +1,8 @@
 import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
-import { ApiLayer } from "../layers/ApiLayer.js"
-import { MainLayer } from "../layers/MainLayer.js"
-import { makeAdminUiRouter } from "../ui/admin/AdminUiRouter.js"
+import { ApiLayer } from "../layers/ApiLayer"
+import { MainLayer } from "../layers/MainLayer"
+import { makeAdminUiRouter } from "../ui/admin/AdminUiRouter"
 
 export const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
 

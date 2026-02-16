@@ -2,7 +2,7 @@ import { it } from "@effect/vitest"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { AppConfig, AppConfigLive } from "imposters/services/AppConfig.js"
+import { AppConfig, AppConfigLive } from "imposters/services/AppConfig"
 import { describe, expect } from "vitest"
 
 describe("AppConfig", () => {
