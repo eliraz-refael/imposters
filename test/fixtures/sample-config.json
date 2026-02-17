@@ -1,0 +1,15 @@
+{
+  "admin": { "port": 2525 },
+  "imposters": [
+    {
+      "name": "Test API",
+      "port": 9500,
+      "stubs": [
+        {
+          "predicates": [{ "field": "path", "operator": "equals", "value": "/hello" }],
+          "responses": [{ "status": 200, "body": { "message": "Hello!" } }]
+        }
+      ]
+    }
+  ]
+}

@@ -12,9 +12,8 @@ in
 pkgs.mkShell {
   # Specify the environment packages (Node.js and Yarn)
   buildInputs = [
-    pkgs.go
-    pkgs.golangci-lint  # Add golintci-lint for Go linting
-    pkgs.figlet  # Add figlet to generate cool ASCII text
+    pkgs.bun
+    pkgs.dprint
   ];
 
 shellHook = ''

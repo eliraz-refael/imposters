@@ -1,0 +1,11 @@
+name: Setup
+description: Perform standard setup and install dependencies using Bun.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Bun
+      uses: oven-sh/setup-bun@v2
+    - name: Install dependencies
+      shell: bash
+      run: bun install
