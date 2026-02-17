@@ -12,6 +12,10 @@
     "type": "git",
     "url": "http://www.github.com/eliraz-refael/imposters.git"
   },
+  "exports": {
+    "./*": "./src/*.ts",
+    "./test/*": "./test/*.ts"
+  },
   "publishConfig": {
     "access": "public",
     "directory": "dist"
