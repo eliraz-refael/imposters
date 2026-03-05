@@ -4,12 +4,13 @@ import * as path from "node:path"
 const distDir = path.resolve(import.meta.dir, "..", "dist")
 const rootDir = path.resolve(import.meta.dir, "..")
 
-const PLATFORM_PACKAGES = {
-  "@imposters/linux-x64": "0.2.1",
-  "@imposters/linux-arm64": "0.2.1",
-  "@imposters/darwin-x64": "0.2.1",
-  "@imposters/darwin-arm64": "0.2.1"
-} as const
+// Version is set to 0.0.0 as placeholder — CI patches it from the git tag
+const PLATFORM_PACKAGES = [
+  "@imposters/linux-x64",
+  "@imposters/linux-arm64",
+  "@imposters/darwin-x64",
+  "@imposters/darwin-arm64"
+] as const
 
 // 1. Copy bin/imposters → dist/bin/imposters
 const distBinDir = path.join(distDir, "bin")
@@ -25,7 +26,10 @@ const distPkgPath = path.join(distDir, "package.json")
 const distPkg = JSON.parse(fs.readFileSync(distPkgPath, "utf-8"))
 
 distPkg.bin = { imposters: "./bin/imposters" }
-distPkg.optionalDependencies = { ...PLATFORM_PACKAGES }
+const version = distPkg.version || "0.0.0"
+distPkg.optionalDependencies = Object.fromEntries(
+  PLATFORM_PACKAGES.map((pkg) => [pkg, version])
+)
 
 fs.writeFileSync(distPkgPath, JSON.stringify(distPkg, null, 2) + "\n")
 

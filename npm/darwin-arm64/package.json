@@ -1,6 +1,6 @@
 {
   "name": "@imposters/darwin-arm64",
-  "version": "0.2.1",
+  "version": "0.0.0",
   "description": "Imposters standalone binary for macOS arm64",
   "license": "MIT",
   "repository": {
