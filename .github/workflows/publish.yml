@@ -1,0 +1,93 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build & Publish
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        uses: ./.github/actions/setup
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build library
+        run: bun run build
+
+      - name: Verify dist
+        run: |
+          test -f dist/package.json
+          test -f dist/bin/imposters
+          node -e "const p = require('./dist/package.json'); if (!p.optionalDependencies) { process.exit(1); }"
+
+      - name: Cross-compile standalone binaries
+        run: |
+          bun build --compile --target=bun-linux-x64 src/Program.ts --outfile /tmp/imposters-linux-x64
+          bun build --compile --target=bun-linux-arm64 src/Program.ts --outfile /tmp/imposters-linux-arm64
+          bun build --compile --target=bun-darwin-x64 src/Program.ts --outfile /tmp/imposters-darwin-x64
+          bun build --compile --target=bun-darwin-arm64 src/Program.ts --outfile /tmp/imposters-darwin-arm64
+
+      - name: Publish platform packages
+        run: |
+          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            dir="npm/${platform}"
+
+            # Set version to match tag
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('${dir}/package.json', 'utf-8'));
+              pkg.version = '${{ steps.version.outputs.version }}';
+              fs.writeFileSync('${dir}/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+
+            # Copy binary into platform package
+            mkdir -p "${dir}/bin"
+            cp "/tmp/imposters-${platform}" "${dir}/bin/imposters"
+            chmod +x "${dir}/bin/imposters"
+
+            # Publish
+            npm publish "${dir}" --provenance --access public
+          done
+        env:
+          NODE_AUTH_TOKEN: ""
+
+      - name: Patch dist version and dependency versions
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('dist/package.json', 'utf-8'));
+            pkg.version = '${{ steps.version.outputs.version }}';
+            for (const dep of Object.keys(pkg.optionalDependencies || {})) {
+              pkg.optionalDependencies[dep] = '${{ steps.version.outputs.version }}';
+            }
+            fs.writeFileSync('dist/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Publish main package
+        run: npm publish dist/ --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ""
