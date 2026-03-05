@@ -85,7 +85,7 @@ jobs:
             cp "/tmp/imposters-${platform}" "${dir}/bin/imposters"
             chmod +x "${dir}/bin/imposters"
 
-            npm publish "${dir}" --provenance --access public
+            npm publish "./${dir}" --provenance --access public
           done
         env:
           NODE_AUTH_TOKEN: ""
