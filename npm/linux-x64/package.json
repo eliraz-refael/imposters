@@ -1,6 +1,6 @@
 {
   "name": "@imposters/linux-x64",
-  "version": "0.1.2",
+  "version": "0.2.1",
   "description": "Imposters standalone binary for Linux x64",
   "license": "MIT",
   "repository": {

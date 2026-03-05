@@ -5,10 +5,10 @@ const distDir = path.resolve(import.meta.dir, "..", "dist")
 const rootDir = path.resolve(import.meta.dir, "..")
 
 const PLATFORM_PACKAGES = {
-  "@imposters/linux-x64": "0.1.2",
-  "@imposters/linux-arm64": "0.1.2",
-  "@imposters/darwin-x64": "0.1.2",
-  "@imposters/darwin-arm64": "0.1.2"
+  "@imposters/linux-x64": "0.2.1",
+  "@imposters/linux-arm64": "0.2.1",
+  "@imposters/darwin-x64": "0.2.1",
+  "@imposters/darwin-arm64": "0.2.1"
 } as const
 
 // 1. Copy bin/imposters → dist/bin/imposters
