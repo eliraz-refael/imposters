@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (e.g. 0.3.0). Leave empty to auto-increment patch."
+        description: "Override version (e.g. 2.0.0). Leave empty to auto-detect from commits."
         required: false
         type: string
 
@@ -51,7 +51,28 @@ jobs:
             MAJOR=$(echo "$CURRENT" | cut -d. -f1)
             MINOR=$(echo "$CURRENT" | cut -d. -f2)
             PATCH=$(echo "$CURRENT" | cut -d. -f3)
-            VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+            # Find the last version tag
+            LAST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "")
+            if [[ -n "$LAST_TAG" ]]; then
+              COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s")
+            else
+              COMMITS=$(git log --pretty=format:"%s")
+            fi
+
+            # Determine bump type from conventional commits
+            BUMP="patch"
+            if echo "$COMMITS" | grep -qiE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE"; then
+              BUMP="major"
+            elif echo "$COMMITS" | grep -qiE "^feat(\(.+\))?:"; then
+              BUMP="minor"
+            fi
+
+            case "$BUMP" in
+              major) VERSION="$((MAJOR + 1)).0.0" ;;
+              minor) VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
+              patch) VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            esac
           fi
 
           # Check if tag already exists
