@@ -3,16 +3,19 @@ name: Publish
 on:
   push:
     branches: [master]
-    tags:
-      - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version (e.g. 2.0.0). Leave empty to auto-detect from commits."
+        required: false
+        type: string
 
 concurrency:
   group: publish
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -23,6 +26,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install dependencies
         uses: ./.github/actions/setup
@@ -39,19 +44,45 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Explicit tag: use that version
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
           else
-            # Push to master: auto-increment patch from latest npm version
             CURRENT=$(npm view imposters version --registry https://registry.npmjs.org 2>/dev/null || echo "0.0.0")
             MAJOR=$(echo "$CURRENT" | cut -d. -f1)
             MINOR=$(echo "$CURRENT" | cut -d. -f2)
             PATCH=$(echo "$CURRENT" | cut -d. -f3)
-            NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
-            echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
+
+            # Find the last version tag
+            LAST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "")
+            if [[ -n "$LAST_TAG" ]]; then
+              COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s")
+            else
+              COMMITS=$(git log --pretty=format:"%s")
+            fi
+
+            # Determine bump type from conventional commits
+            BUMP="patch"
+            if echo "$COMMITS" | grep -qiE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE"; then
+              BUMP="major"
+            elif echo "$COMMITS" | grep -qiE "^feat(\(.+\))?:"; then
+              BUMP="minor"
+            fi
+
+            case "$BUMP" in
+              major) VERSION="$((MAJOR + 1)).0.0" ;;
+              minor) VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
+              patch) VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            esac
           fi
-          echo "Publishing version: $(cat "$GITHUB_OUTPUT" | grep version | cut -d= -f2)"
+
+          # Check if tag already exists
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: ${VERSION}"
 
       - name: Build library
         run: bun run build
@@ -70,7 +101,12 @@ jobs:
             fs.writeFileSync('dist/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-      - name: Publish main package
+      - name: Publish to npm
         run: npm publish dist/ --provenance --access public
         env:
           NODE_AUTH_TOKEN: ""
+
+      - name: Create git tag
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
