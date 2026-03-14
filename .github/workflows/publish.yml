@@ -47,13 +47,21 @@ jobs:
           if [[ -n "${{ inputs.version }}" ]]; then
             VERSION="${{ inputs.version }}"
           else
-            CURRENT=$(npm view imposters version --registry https://registry.npmjs.org 2>/dev/null || echo "0.0.0")
+            # Get version from npm
+            NPM_VERSION=$(npm view imposters version --registry https://registry.npmjs.org 2>/dev/null || echo "0.0.0")
+
+            # Get version from latest git tag
+            LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+            GIT_VERSION="${LAST_TAG#v}"
+            GIT_VERSION="${GIT_VERSION:-0.0.0}"
+
+            # Use the higher version as base
+            CURRENT=$(printf '%s\n%s' "$NPM_VERSION" "$GIT_VERSION" | sort -V | tail -1)
             MAJOR=$(echo "$CURRENT" | cut -d. -f1)
             MINOR=$(echo "$CURRENT" | cut -d. -f2)
             PATCH=$(echo "$CURRENT" | cut -d. -f3)
 
-            # Find the last version tag
-            LAST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "")
+            # Find commits since last tag
             if [[ -n "$LAST_TAG" ]]; then
               COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s")
             else
@@ -110,3 +118,18 @@ jobs:
         run: |
           git tag "v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        run: |
+          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
+          if [[ -n "$LAST_TAG" ]]; then
+            NOTES=$(git log "${LAST_TAG}..HEAD~1" --pretty=format:"- %s" | grep -vE "^- (chore|ci|docs)(\(.+\))?:")
+          else
+            NOTES="Initial release"
+          fi
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --notes "${NOTES:-No notable changes}" \
+            --latest
+        env:
+          GH_TOKEN: ${{ github.token }}
