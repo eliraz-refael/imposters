@@ -60,45 +60,13 @@ jobs:
         run: |
           test -f dist/package.json
           test -f dist/bin/imposters
-          node -e "const p = require('./dist/package.json'); if (!p.optionalDependencies) { process.exit(1); }"
 
-      - name: Cross-compile standalone binaries
-        run: |
-          bun build --compile --target=bun-linux-x64 src/Program.ts --outfile /tmp/imposters-linux-x64
-          bun build --compile --target=bun-linux-arm64 src/Program.ts --outfile /tmp/imposters-linux-arm64
-          bun build --compile --target=bun-darwin-x64 src/Program.ts --outfile /tmp/imposters-darwin-x64
-          bun build --compile --target=bun-darwin-arm64 src/Program.ts --outfile /tmp/imposters-darwin-arm64
-
-      - name: Publish platform packages
-        run: |
-          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
-            dir="npm/${platform}"
-
-            node -e "
-              const fs = require('fs');
-              const pkg = JSON.parse(fs.readFileSync('${dir}/package.json', 'utf-8'));
-              pkg.version = '${{ steps.version.outputs.version }}';
-              fs.writeFileSync('${dir}/package.json', JSON.stringify(pkg, null, 2) + '\n');
-            "
-
-            mkdir -p "${dir}/bin"
-            cp "/tmp/imposters-${platform}" "${dir}/bin/imposters"
-            chmod +x "${dir}/bin/imposters"
-
-            npm publish "./${dir}" --provenance --access public
-          done
-        env:
-          NODE_AUTH_TOKEN: ""
-
-      - name: Patch dist version and dependency versions
+      - name: Patch dist version
         run: |
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('dist/package.json', 'utf-8'));
             pkg.version = '${{ steps.version.outputs.version }}';
-            for (const dep of Object.keys(pkg.optionalDependencies || {})) {
-              pkg.optionalDependencies[dep] = '${{ steps.version.outputs.version }}';
-            }
             fs.writeFileSync('dist/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 

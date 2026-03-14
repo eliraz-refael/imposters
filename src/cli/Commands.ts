@@ -4,6 +4,7 @@ import { Effect, Layer, Option } from "effect"
 import { HandlerHttpClientLive } from "../client/HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "../client/ImpostersClient"
 import { makeCompositeHandler } from "../server/AdminServer"
+import { BunServerFactoryLive, NodeServerFactoryLive, ServerFactory } from "../server/ServerFactory"
 import { loadConfigFile } from "./ConfigLoader"
 
 const configOption = Options.file("config").pipe(
@@ -18,17 +19,24 @@ const portOption = Options.integer("port").pipe(
   Options.optional
 )
 
+const runtimeOption = Options.choice("runtime", ["node", "bun"]).pipe(
+  Options.withDescription("Server runtime: node (default) or bun"),
+  Options.withDefault("node" as const)
+)
+
 const startCommand = Command.make(
   "start",
-  { config: configOption, port: portOption },
-  ({ config, port }) =>
+  { config: configOption, port: portOption, runtime: runtimeOption },
+  ({ config, port, runtime }) =>
     Effect.gen(function*() {
       const adminPort = Option.isSome(port) ? port.value : Number(process.env.ADMIN_PORT ?? 2525)
 
       const { dispose, handler } = makeCompositeHandler(adminPort)
-      const server = Bun.serve({ port: adminPort, fetch: handler })
 
-      console.log(`Imposters admin server running on http://localhost:${server.port}`)
+      const serverFactory = yield* ServerFactory
+      const server = serverFactory.create({ port: adminPort, fetch: handler })
+
+      console.log(`Imposters admin server running on http://localhost:${server.port} (runtime: ${runtime})`)
       console.log(`Admin UI: http://localhost:${server.port}/_ui`)
 
       // Load config and create imposters if config file provided
@@ -101,7 +109,9 @@ const startCommand = Command.make(
         process.on("SIGINT", shutdown)
         process.on("SIGTERM", shutdown)
       })
-    })
+    }).pipe(
+      Effect.provide(runtime === "bun" ? BunServerFactoryLive : NodeServerFactoryLive)
+    )
 )
 
 const command = Command.make("imposters").pipe(

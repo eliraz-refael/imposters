@@ -11,7 +11,7 @@ import { MetricsService } from "../services/MetricsService"
 import { ProxyService } from "../services/ProxyService"
 import { RequestLogger } from "../services/RequestLogger"
 import { makeUiRouter } from "../ui/UiRouter"
-import { ServerFactory } from "./BunServer"
+import { ServerFactory } from "./ServerFactory"
 import { FiberManager } from "./FiberManager"
 
 export class ImposterServerError extends Data.TaggedError("ImposterServerError")<{
