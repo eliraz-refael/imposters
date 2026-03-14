@@ -118,3 +118,18 @@ jobs:
         run: |
           git tag "v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        run: |
+          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
+          if [[ -n "$LAST_TAG" ]]; then
+            NOTES=$(git log "${LAST_TAG}..HEAD~1" --pretty=format:"- %s" | grep -vE "^- (chore|ci|docs)(\(.+\))?:")
+          else
+            NOTES="Initial release"
+          fi
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --notes "${NOTES:-No notable changes}" \
+            --latest
+        env:
+          GH_TOKEN: ${{ github.token }}
