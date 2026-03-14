@@ -120,7 +120,7 @@ const command = Command.make("imposters").pipe(
 
 export const run = Command.run(command, {
   name: "imposters",
-  version: "0.1.0"
+  version: "0.2.0"
 })
 
 export const main = run(process.argv).pipe(
