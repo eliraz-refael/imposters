@@ -3,16 +3,19 @@ name: Publish
 on:
   push:
     branches: [master]
-    tags:
-      - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.3.0). Leave empty to auto-increment patch."
+        required: false
+        type: string
 
 concurrency:
   group: publish
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -23,6 +26,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install dependencies
         uses: ./.github/actions/setup
@@ -39,19 +44,24 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Explicit tag: use that version
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
           else
-            # Push to master: auto-increment patch from latest npm version
             CURRENT=$(npm view imposters version --registry https://registry.npmjs.org 2>/dev/null || echo "0.0.0")
             MAJOR=$(echo "$CURRENT" | cut -d. -f1)
             MINOR=$(echo "$CURRENT" | cut -d. -f2)
             PATCH=$(echo "$CURRENT" | cut -d. -f3)
-            NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
-            echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
+            VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
           fi
-          echo "Publishing version: $(cat "$GITHUB_OUTPUT" | grep version | cut -d= -f2)"
+
+          # Check if tag already exists
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: ${VERSION}"
 
       - name: Build library
         run: bun run build
@@ -70,7 +80,12 @@ jobs:
             fs.writeFileSync('dist/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
-      - name: Publish main package
+      - name: Publish to npm
         run: npm publish dist/ --provenance --access public
         env:
           NODE_AUTH_TOKEN: ""
+
+      - name: Create git tag
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
