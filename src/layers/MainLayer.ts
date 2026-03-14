@@ -1,8 +1,8 @@
 import * as Layer from "effect/Layer"
 import { ImposterRepositoryLive } from "../repositories/ImposterRepository"
-import { BunServerFactoryLive } from "../server/BunServer"
 import { FiberManagerLive } from "../server/FiberManager"
 import { ImposterServerLive } from "../server/ImposterServer"
+import { NodeServerFactoryLive } from "../server/ServerFactory"
 import { AppConfigLive } from "../services/AppConfig"
 import { MetricsServiceLive } from "../services/MetricsService"
 import { PortAllocatorLive } from "../services/PortAllocator"
@@ -22,7 +22,7 @@ const ImposterServerWithDeps = ImposterServerLive.pipe(
     Layer.mergeAll(
       FiberManagerLive,
       ImposterRepositoryLive,
-      BunServerFactoryLive,
+      NodeServerFactoryLive,
       RequestLoggerLive,
       MetricsServiceLive,
       ProxyServiceWithDeps
