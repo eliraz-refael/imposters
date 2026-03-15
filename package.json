@@ -22,7 +22,8 @@
   },
   "scripts": {
     "codegen": "build-utils prepare-v2",
-    "build": "bun codegen && bun build-esm && bun build-annotate && bun build-cjs && build-utils pack-v2 && bun scripts/postbuild.ts",
+    "build": "bun codegen && bun build-esm && bun build-annotate && bun build-cjs && build-utils pack-v2 && bun build-cli && bun scripts/postbuild.ts",
+    "build-cli": "esbuild src/Program.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/bin/cli.cjs --minify --banner:js='#!/usr/bin/env node'",
     "build-esm": "tsc -b tsconfig.build.json",
     "build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
     "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
@@ -56,6 +57,7 @@
     "@typescript-eslint/eslint-plugin": "^8.46.1",
     "@typescript-eslint/parser": "^8.46.1",
     "babel-plugin-annotate-pure-calls": "^0.4.0",
+    "esbuild": "^0.27.4",
     "eslint": "^9.38.0",
     "eslint-import-resolver-typescript": "^3.10.1",
     "eslint-plugin-codegen": "^0.28.0",

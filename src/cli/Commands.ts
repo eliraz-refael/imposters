@@ -1,15 +1,12 @@
 import { Command, Options } from "@effect/cli"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
-import { createRequire } from "node:module"
 import { HandlerHttpClientLive } from "../client/HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "../client/ImpostersClient"
 import { makeCompositeHandler } from "../server/AdminServer"
 import { BunServerFactoryLive, NodeServerFactoryLive, ServerFactory } from "../server/ServerFactory"
 import { loadConfigFile } from "./ConfigLoader"
-
-const require = createRequire(import.meta.url)
-const packageJson = require("imposters/package.json") as { version: string }
+import { version } from "./version"
 
 const configOption = Options.file("config").pipe(
   Options.withAlias("c"),
@@ -124,7 +121,7 @@ const command = Command.make("imposters").pipe(
 
 export const run = Command.run(command, {
   name: "imposters",
-  version: packageJson.version
+  version
 })
 
 export const main = run(process.argv).pipe(

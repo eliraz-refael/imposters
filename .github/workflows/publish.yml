@@ -102,12 +102,18 @@ jobs:
 
       - name: Patch dist version
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Patch package.json
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('dist/package.json', 'utf-8'));
-            pkg.version = '${{ steps.version.outputs.version }}';
+            pkg.version = '${VERSION}';
             fs.writeFileSync('dist/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
+
+          # Patch version in bundled CLI and library source (CJS and ESM)
+          sed -i "s/\"0\.0\.0\"/\"${VERSION}\"/g" dist/bin/cli.cjs dist/dist/cjs/cli/version.js dist/dist/esm/cli/version.js
 
       - name: Publish to npm
         run: npm publish dist/ --provenance --access public

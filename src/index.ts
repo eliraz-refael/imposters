@@ -20,6 +20,8 @@ export * as Commands from "./cli/Commands.js"
 
 export * as ConfigLoader from "./cli/ConfigLoader.js"
 
+export * as version from "./cli/version.js"
+
 export * as HandlerHttpClient from "./client/HandlerHttpClient.js"
 
 export * as ImpostersClient from "./client/ImpostersClient.js"
