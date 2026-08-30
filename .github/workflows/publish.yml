@@ -129,7 +129,7 @@ jobs:
         run: |
           LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
           if [[ -n "$LAST_TAG" ]]; then
-            NOTES=$(git log "${LAST_TAG}..HEAD~1" --pretty=format:"- %s" | grep -vE "^- (chore|ci|docs)(\(.+\))?:")
+            NOTES=$(git log "${LAST_TAG}..HEAD" --pretty=format:"- %s" | grep -vE "^- (chore|ci|docs)(\(.+\))?:" || true)
           else
             NOTES="Initial release"
           fi
