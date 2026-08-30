@@ -1,185 +1,207 @@
-# Imposters - Project Context for Claude
+# Imposters — Project Context for Claude
 
 ## Project Overview
 
-**Imposters** is a service virtualization tool (similar to Mountebank) being built with TypeScript and the [Effect](https://effect.website) library. It allows developers to create mock HTTP services for testing and development purposes.
+**Imposters** is a service virtualization tool — a modern, programmable alternative to the abandoned [Mountebank](http://www.mbtest.org/). It spins up mock HTTP servers ("imposters"), each on its own port, managed centrally through an admin REST API. Built with TypeScript and [Effect](https://effect.website).
 
 ## Current Status
 
-The project is in the **early development phase** - currently porting the architecture to TypeScript with Effect. The domain models and schemas are being established following Effect's best practices.
+**Shipped and published.** The package is live on npm as `imposters` (v0.2.4), released automatically from `master` by GitHub Actions with npm provenance.
 
-### What's Been Implemented
+The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-#### 1. Domain Models (`src/domain/`)
+All three gates pass: `bun check`, `bun lint`, and 322 tests across 39 files.
 
-**Imposter Management** (`imposter.ts`)
-- Core domain types: `ImposterConfig`, `ImposterRef`, `CreateImposterRequest`
-- Tagged errors: `ImposterError`, `PortInUseError`, `ImposterNotFoundError`
-- Functions for creating, updating, and managing imposters
-- Status management: `running`, `stopped`, `starting`, `stopping`
-- Uptime calculation using Effect's `Duration`
-- UUID service integration for ID generation
+### What's implemented
 
-**Routes** (`route.ts`)
-- Route creation with validation
-- Parameter substitution in responses (e.g., `{{userId}}` in response bodies)
-- Support for custom headers, delays, and status codes
-- HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
-- Path validation and schema-based validation
-- Pure functional updates preserving creation metadata
+| Area | Status |
+|---|---|
+| Admin REST API (`HttpApi` + OpenAPI/Swagger) | ✅ |
+| Imposter runtime — per-imposter server as an Effect Fiber | ✅ |
+| Stub matching with predicates | ✅ |
+| Response templating — `{{key}}` substitution + `${expr}` JSONata | ✅ |
+| Response cycling — sequential / random / repeat | ✅ |
+| Hot-reload — stub changes apply with zero downtime | ✅ |
+| Proxy mode — passthrough and record-as-stub | ✅ |
+| Request logging + inspector | ✅ |
+| Metrics / statistics per imposter | ✅ |
+| HTMX UIs — `/_ui` (admin) and `/_admin` (per imposter) | ✅ |
+| Typed client library + `withImposter` test helpers | ✅ |
+| CLI via `@effect/cli`, JSON config file loading | ✅ |
+| Node **and** Bun runtimes (`--runtime` flag) | ✅ |
 
-**Mock Endpoints** (`endpoint.ts`)
-- Integration with `@effect/platform`'s `HttpApiEndpoint`
-- Mock endpoint creation with configurable responses
-- Delay support using Effect's `Duration`
-- Custom headers and status codes
-- Endpoint metadata tracking
+### Not implemented
 
-#### 2. Schema Definitions (`src/schemas/`)
+Disk persistence (imposters are in-memory only and do not survive restart), Mountebank config adapter, OpenAPI spec import, WebSocket mocking, gRPC / multi-protocol.
 
-**Common Schemas** (`common.ts`)
-- Branded types: `NonEmptyString`, `PortNumber`, `PositiveInteger`
-- Enums: `ImposterStatus`, `Protocol` (HTTP, GRPC)
-- Pagination: `PaginationQuery`, `PaginationMeta`
-- Error handling: `ErrorCode`, `ErrorDetails`, `ErrorResponse`
-- DateTime utilities using Effect's `DateTime`
+## Architecture
 
-**API Schemas** (`ImposterSchema.ts`)
-- Complete request/response schemas for the REST API:
-  - `CreateImposterRequest` - POST /imposters
-  - `UpdateImposterRequest` - PATCH /imposters/{id}
-  - `ListImpostersQuery` - GET /imposters (with pagination & filtering)
-  - `ImposterResponse` - Full imposter details
-  - `DeleteImposterResponse`
-  - `HealthResponse` - GET /health
-  - `ServerInfoResponse` - GET /info
-- Statistics and system monitoring schemas
-- Helper functions for creating responses
+```
+                    ┌────────────────────────────┐
+                    │      Admin Server          │
+                    │      (port 2525)           │
+                    │  HttpApi + Swagger + /_ui  │
+                    └─────────────┬──────────────┘
+                                  │ FiberManager (FiberMap)
+              ┌───────────────────┼───────────────────┐
+       ┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
+       │ Imposter A  │     │ Imposter B  │     │ Imposter C  │
+       │ (port 3001) │     │ (port 3002) │     │ (port 3003) │
+       │ Fiber       │     │             │     │             │
+       │ ├ /_admin UI│     │  ...stubs   │     │  ...stubs   │
+       │ ├ stubs     │     │             │     │             │
+       │ └ proxy?    │     │             │     │             │
+       └─────────────┘     └─────────────┘     └─────────────┘
+```
 
-#### 3. Services (`src/services/`)
+### Two different HTTP styles — this is deliberate
 
-**UUID Service** (`Uuid.ts`)
-- Effect Context service for UUID generation
-- Two methods: `generate` (full UUID), `generateShort` (short UUID)
-- Used throughout domain models for ID generation
+- **Admin server** uses `HttpApi` / `HttpApiGroup` / `HttpApiEndpoint` — a statically typed, schema-derived API, served via `HttpApiBuilder.toWebHandler`.
+- **Imposter servers do NOT use `HttpRouter` at all.** There is no router-building step. Each imposter's handler is a plain `async (request: Request) => Response` that: (1) offers the request to the `/_admin` UI router, (2) reads the current stubs from a `Ref`, (3) linearly finds the first stub whose predicates all match, (4) falls back to proxy or 404.
 
-## Architecture Patterns
+  Imposter routes are user-configured at runtime, so a compile-time-typed router buys nothing. Linear matching over a `Ref<ReadonlyArray<Stub>>` is what makes hot-reload trivial.
 
-The codebase follows Effect best practices:
+### Key runtime mechanics
 
-1. **Tagged Types** - Using `Data.tagged` for all domain types (`_tag` discriminator)
-2. **Branded Types** - Schema validation with brands for type safety (`PortNumber`, `NonEmptyString`)
-3. **Tagged Errors** - All errors are tagged for precise error handling
-4. **Effect Workflows** - All operations return `Effect` types for composability
-5. **Schema Validation** - Effect Schema for runtime validation and type inference
-6. **Pure Functions** - Domain logic is pure and composable
-7. **Service Pattern** - Context-based dependency injection (e.g., `UuidService`)
+- **Fiber lifecycle** — `FiberManager` wraps Effect's built-in `FiberMap`. Starting an imposter forks a fiber keyed by imposter id; re-keying auto-interrupts the previous one; closing the scope interrupts everything.
+- **Server lifecycle** — `Effect.acquireRelease` around each server instance, so the finalizer stops the server and releases the port on interrupt.
+- **Hot-reload** — each imposter holds `Ref<ReadonlyArray<Stub>>` and `Ref<ProxyConfig | undefined>`. `updateStubs(id)` / `updateProxyConfig(id)` re-read from the repository and `Ref.set`. The fetch handler reads the `Ref` on every request, so changes take effect immediately with no restart.
+- **Runtime abstraction** — `ServerFactory` is a `Context.Tag` with two implementations: `NodeServerFactoryLive` (`node:http`, the default) and `BunServerFactoryLive` (`Bun.serve`). This exists because **vitest workers run under Node.js even when invoked via Bun**, so tests could not use `Bun.serve` directly. It later became the user-facing `--runtime node|bun` flag.
+- **Repository is pure storage** — `ImposterRepository` holds config + stubs in a `Ref<HashMap>`. No fiber refs, no server handles; those live in `FiberManager` and `ImposterServer`'s internal state map.
 
 ## Project Structure
 
 ```
-imposters/
-├── src/
-│   ├── Program.ts              # Entry point (currently just "Hello World")
-│   ├── domain/                 # Domain models and business logic
-│   │   ├── imposter.ts         # Imposter domain model
-│   │   ├── route.ts            # Route domain model
-│   │   ├── endpoint.ts         # Mock endpoint model
-│   │   └── isValidPath.ts      # (empty placeholder)
-│   ├── schemas/                # API schemas and validation
-│   │   ├── common.ts           # Shared schemas and utilities
-│   │   └── ImposterSchema.ts   # Complete API schemas
-│   └── services/               # Services and infrastructure
-│       └── Uuid.ts             # UUID generation service
-├── test/                       # Test files
-├── package.json                # Dependencies (Effect, @effect/platform, uuid)
-└── README.md                   # Generic Effect template README
+src/
+  Program.ts               # one-liner: import "./cli/Commands.js"
+  index.ts                 # generated barrel (eslint-plugin-codegen)
+  api/
+    AdminApi.ts            # HttpApi.make("admin") — composes the two groups
+    ImpostersGroup.ts      # imposter/stub/request/stats endpoints
+    SystemGroup.ts         # /health, /info (topLevel: true → client root)
+    ImpostersHandlers.ts
+    SystemHandlers.ts
+    ApiSchemas.ts
+    ApiErrors.ts           # Schema.TaggedError types with status annotations
+    Conversions.ts         # domain <-> API shape mapping
+  cli/
+    Commands.ts            # @effect/cli; `imposters start`; runs at module scope
+    ConfigLoader.ts        # JSON config file → imposters + stubs
+    version.ts             # "0.0.0" placeholder, patched by CI at publish
+  client/
+    ImpostersClient.ts     # typed HttpApiClient derived from AdminApi
+    HandlerHttpClient.ts   # in-process HttpClient (no socket) for tests
+    testing.ts             # withImposter, makeTestServer
+    index.ts
+  domain/
+    imposter.ts            # ImposterConfig, status, tagged errors
+    route.ts               # substituteParams — used only by TemplateEngine
+  layers/
+    MainLayer.ts           # service composition
+    ApiLayer.ts            # ApiLive + OpenAPI/Swagger middleware + HttpServer ctx
+  matching/
+    RequestMatcher.ts      # predicate evaluation, findMatchingStub
+    ResponseGenerator.ts   # response selection + buildResponse
+    TemplateEngine.ts      # {{key}} substitution
+    ExpressionEvaluator.ts # ${expr} via JSONata
+  repositories/
+    ImposterRepository.ts  # Ref<HashMap<id, config + stubs>>
+  schemas/
+    common.ts              # branded types, enums, pagination, errors
+    ImposterSchema.ts
+    StubSchema.ts          # Stub, Predicate, ResponseConfig
+    RequestLogSchema.ts
+    ConfigFileSchema.ts
+  server/
+    AdminServer.ts
+    ImposterServer.ts      # the core: start/stop/updateStubs/updateProxyConfig
+    FiberManager.ts        # FiberMap wrapper
+    ServerFactory.ts       # Node + Bun implementations
+  services/
+    AppConfig.ts           # Effect.Config, env-driven
+    PortAllocator.ts       # Ref<HashSet<number>>, TOCTOU-safe
+    ProxyService.ts        # forward + recordAsStub
+    RequestLogger.ts       # bounded per-imposter log + PubSub
+    MetricsService.ts      # counts, percentiles, error rate
+    Uuid.ts / UuidLive.ts
+  ui/
+    UiRouter.ts            # per-imposter /_admin — plain URL matcher, returns Response | null
+    html.ts                # tagged-template engine with auto-escaping
+    layout.ts, partials.ts
+    pages/                 # dashboard, stubs, requests, request-detail
+    admin/                 # global /_ui dashboard on the admin port
+test/                      # mirrors src/, plus test/e2e/ and test/helpers/
 ```
-
-## Dependencies
-
-Key dependencies:
-- `effect` (latest) - Core Effect library
-- `@effect/platform` (^0.84.11) - Platform abstractions including HTTP
-- `uuid` (^11.1.0) - UUID generation
-- `vitest` (^2.1.9) - Testing framework
-- `@effect/vitest` (latest) - Effect integration for Vitest
-
-## What's NOT Implemented Yet
-
-- [ ] Actual HTTP server implementation
-- [ ] Port allocation service
-- [ ] Imposter repository/storage
-- [ ] Route repository/storage
-- [ ] Request matching logic
-- [ ] Response generation with parameter substitution
-- [ ] Statistics collection
-- [ ] Admin API endpoints
-- [ ] Client libraries
-- [ ] OpenAPI generation
-- [ ] Persistence layer
-- [ ] Clustering support
-- [ ] Authentication
-- [ ] Tests (only placeholder test exists)
-
-## Next Steps
-
-The logical next steps for development would be:
-
-1. **Service Implementations**
-   - Implement UUID service with actual uuid library
-   - Create port allocation service
-   - Build in-memory repositories for imposters and routes
-
-2. **HTTP Layer**
-   - Set up HTTP server using `@effect/platform`
-   - Implement admin API endpoints
-   - Build request matching and response generation
-
-3. **Testing**
-   - Write comprehensive tests for domain models
-   - Test schema validation
-   - Integration tests for API endpoints
-
-4. **Storage**
-   - Decide on persistence strategy (in-memory, file-based, database)
-   - Implement repository pattern with Effect
 
 ## Development Commands
 
 ```bash
-# Type check
-bun check
-
-# Build
-bun build
-
-# Run tests (vitest)
-bun run test
-
-# Run with tsx
-bun tsx src/Program.ts
-
-# Lint
-bun lint
+bun check          # tsc -b tsconfig.json
+bun lint           # eslint
+bun lint-fix
+bun run test       # vitest --run (single run, NOT watch; ~32s — files run serially)
+bun coverage
+bun run build      # codegen + esm + cjs + esbuild CLI bundle + postbuild
 ```
 
-## Design Decisions
+Note: `bun test` (Bun's native runner) is **not** the same as `bun run test` (vitest). Always use the latter.
 
-1. **Effect over traditional Promise-based code** - For better composition, error handling, and testability
-2. **Tagged types everywhere** - For runtime type discrimination and better error messages
-3. **Schema-first API design** - All request/response types derived from Effect schemas
-4. **Pure domain models** - Business logic separated from infrastructure
-5. **Branded types for validation** - Compile-time guarantees about validated data
+## Code Standards
 
-## Notes for AI Assistants
+1. **No `any`.** Use `unknown` and narrow via Schema or type guards.
+2. **No type-casting** (`as`, `!`, `<Type>`). Restructure or decode instead. Rare Effect-API exceptions must be commented with why.
+3. **Errors:** `Data.TaggedError` for domain errors; `Schema.TaggedError` for API errors (needed for `HttpApi` status annotations).
+4. **Services:** class-based tags — `class Foo extends Context.Tag("Foo")<Foo, FooShape>() {}`.
+5. **Purity:** no `new Date()` in domain code — use Effect's `Clock` / `DateTime`. No side effects outside `Effect`.
+6. **Schema-first:** all validation through Effect Schema; no manual parsing or unsafe `.make()`.
 
-- This project uses **Effect 3.x** syntax (latest)
-- Follow Effect best practices: prefer `Effect.gen`, use `pipe` for composition
-- All domain types should be tagged with `Data.tagged`
-- All errors should be tagged errors
-- Use Effect Schema for all validation
-- Services should use `Context.GenericTag` or `Context.Tag`
-- Prefer immutable updates over mutation
-- Use Effect's `Duration` for time-related operations
-- Use branded types from schemas for validated data
+### Known deviations (tech debt, not precedent)
+
+Three `any` usages and ~4 non-null assertions survive and should be cleaned up rather than copied:
+
+- `src/server/ServerFactory.ts:75` — `(globalThis as any).Bun.serve`. A previous `src/types/bun.d.ts` declaring the `Bun` global was deleted during the Node-runtime work; restoring it would remove this cast.
+- `src/ui/admin/AdminUiRouter.ts:16` — `toAdminData = (imp: any)`.
+- `src/client/testing.ts:100` — `HttpApiBuilder.toWebHandler(fullLayer as any)`.
+
+## Effect Gotchas (hard-won — read before debugging)
+
+**Schema / core**
+- `ParseError` lives in `effect/ParseResult`, not `effect/Schema`.
+- `String.replace` is curried and returns a function — use native `.replaceAll()`.
+- `Ref.modify` with conditional branches fails inference under `exactOptionalPropertyTypes`. Fix by annotating the callback's return type, e.g. `(store): readonly [Effect<A, E>, Store] => ...`. **Do not** split into `Ref.get` + `Ref.set` — that breaks atomicity.
+- `HashMap.remove(key)` — don't pass explicit type params to the curried form; TS resolves to the wrong overload. Let inference work.
+
+**HttpApi**
+- `HttpApiGroup.prefix("/x")` plus endpoint path `"/"` yields `/x/` — a trailing slash. Put full paths on endpoints instead.
+- `Layer.provideMerge(self)(that)` feeds **self's** output into **that's** input (order reads backwards).
+- Middleware layers (`middlewareOpenApi`, `HttpApiSwagger.layer`) require `Api` — provide it via `Layer.provide(ApiLive)`.
+- `Effect.catchTag` as a standalone helper types the error as `unknown`. Always inline it in a `.pipe()` chain.
+- `HttpApiGroup.make("system", { topLevel: true })` puts endpoints at the client root, not under `.system`.
+- The generated client expects the **decoded** type (with brands), not the encoded form — pass `protocol: "HTTP"`, `adminPath: "/_admin"`, a branded `PortNumber`, etc.
+
+**Testing**
+- **`Layer.scoped` + `it.effect` hangs forever.** `@effect/vitest`'s `it.effect`/`it.scoped` do not clean up scoped layers (`FiberMap` etc.). Use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`.
+- vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`).
+- `runPromise` wraps failures in `FiberFailure` — assert with `String(err).toContain(msg)`, not identity.
+- tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.
+
+**Environment**
+- A local `.npmrc` pins `registry=https://registry.npmjs.org/` to override a global private-registry setting; without it `bun install` hangs. `scripts/postbuild.ts` also copies it into `dist/`, so do not delete it.
+- **If you install through a mirror** (e.g. moving `.npmrc` aside to use a reachable internal registry), bun writes that mirror's tarball URLs into `bun.lock` as the second field of each entry. Upstream CI then cannot resolve them. Strip them before committing — the field should be `""`:
+  ```bash
+  sed -i 's#"https://your-mirror-host/[^"]*"#""#g' bun.lock
+  bun install --frozen-lockfile   # verify it still resolves
+  ```
+
+## Known bugs
+
+- **`ServerFactory` does not synchronise the server lifecycle.** `create()` calls `server.listen(port)` and returns without awaiting `'listening'`; `stop()` calls `server.close()` without awaiting `'close'`. So `ImposterServer.start(id)` resolves before the port is bound, and teardown resolves before it is released. Callers that create → start → request immediately (including the README quick-start) can hit `ECONNREFUSED`. The e2e suites mask it with fixed `setTimeout` sleeps, which is why `vitest.config.ts` must set `fileParallelism: false`. Fixing this should let that flag go.
+
+## Build & Release
+
+- `src/Program.ts` is a one-liner; the real entry point is `src/cli/Commands.ts`, which calls `Command.run` + `NodeRuntime.runMain` at module scope.
+- The CLI ships as an **esbuild CJS bundle** (`dist/bin/cli.cjs`, target node18) because the ESM library build was not usable as a Node `bin`. `bin/imposters` is a three-line shim that `require`s it.
+- `scripts/postbuild.ts` copies the shim into `dist/bin/`, chmods it 755, injects the `bin` field into `dist/package.json`, and copies `.npmrc`.
+- **`src/cli/version.ts` is intentionally `"0.0.0"`.** CI `sed`s the real version into the bundle and both `dist/dist/{cjs,esm}/cli/version.js` at publish time. Do not "fix" it.
+- Publishing uses npm **trusted publishing / OIDC**: `NODE_AUTH_TOKEN: ""` with `id-token: write` and `--provenance`. The empty token is intentional.
+- Version base is the higher of (npm published version, latest git tag), then bumped by scanning conventional commits.

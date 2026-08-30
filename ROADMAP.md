@@ -1,16 +1,16 @@
-# Imposters - Comprehensive Development Roadmap
+# Imposters — Development Roadmap
+
+> **Status as of 2026-08-30:** Phases 0–5 are complete and shipped. The package is published on npm as `imposters` v0.2.4. Phase 6 is partially delivered. See [Phase 6](#phase-6-advanced-features) for what remains.
 
 ## Context
 
 **Imposters** is a service virtualization tool replacing the abandoned Mountebank. It uses TypeScript + Effect, leveraging Effect's Fiber concurrency to spawn mock HTTP servers at runtime. Each imposter runs on its own port as a Fiber, is configurable via a central admin REST API, and serves its own HTMX-based configuration UI.
 
-**Current state:** Early scaffolding on the `port-to-effect` branch. Domain models, schemas, and a UUID service contract exist but have quality issues (duplicate service definitions, bugs in endpoint.ts, no actual server). CI workflows are misaligned (leftover Go pipelines, pnpm instead of Bun).
-
-**Key decisions:**
-- **Runtime:** Bun only (`Bun.serve()` + `HttpApp.toWebHandlerRuntime`)
-- **UI:** HTMX + server-rendered HTML per imposter
-- **Protocol:** HTTP first, architecture open for future GRPC/WS
-- **API:** Clean new design; Mountebank adapter as a future add-on
+**Key decisions (as built):**
+- **Runtime:** Node.js by default, Bun optional — selected via `--runtime node|bun`, abstracted behind a `ServerFactory` tag. (Originally planned as Bun-only; changed in Phase 6 so the published npm package runs anywhere.)
+- **UI:** HTMX + server-rendered HTML, per imposter and globally
+- **Protocol:** HTTP only; architecture is open to future protocols
+- **API:** Clean new design; Mountebank adapter remains a future add-on
 
 ---
 
@@ -20,433 +20,177 @@ These rules apply across ALL phases:
 
 1. **No `any` type.** Every value must be properly typed. Use `unknown` when the type is genuinely unknown, then narrow with Schema validation or type guards.
 2. **No type-casting** (`as`, `!`, `<Type>`). If the type system can't prove it, restructure the code or use Schema decoding. The only exception is the rare case where Effect APIs genuinely require it (and those should be commented with why).
-3. **Errors:** Use `Data.TaggedError` (not `Data.tagged`) for all error types — gives proper stack traces and enables `catchTag`.
-4. **Services:** Use the class-based `Context.Tag` pattern consistently: `class Foo extends Context.Tag("Foo")<Foo, { ... }>() {}`
-5. **Purity:** No `new Date()` in domain code — use Effect's `Clock` service. No side effects outside `Effect`.
+3. **Errors:** `Data.TaggedError` for domain errors; `Schema.TaggedError` for API errors (required for `HttpApi` status annotations).
+4. **Services:** class-based `Context.Tag` pattern: `class Foo extends Context.Tag("Foo")<Foo, { ... }>() {}`
+5. **Purity:** No `new Date()` in domain code — use Effect's `Clock`/`DateTime`. No side effects outside `Effect`.
 6. **Schema-first:** All validation through Effect Schema. No manual parsing or unsafe `.make()` calls.
+
+### Outstanding violations
+
+Standards 1 and 2 have three known breaches that should be repaid:
+
+| Location | Issue |
+|---|---|
+| `src/server/ServerFactory.ts:75` | `(globalThis as any).Bun.serve` — the `src/types/bun.d.ts` global declaration was deleted during the Node-runtime work; restoring it removes this cast |
+| `src/ui/admin/AdminUiRouter.ts:16` | `toAdminData = (imp: any)` — needs a real parameter type |
+| `src/client/testing.ts:100` | `HttpApiBuilder.toWebHandler(fullLayer as any)` |
+
+Plus ~4 non-null assertions (`UiRouter.ts:30`, `ImposterRepository.ts:119`, `RequestLogger.ts:48`, `ImposterServer.ts` response indexing).
 
 ---
 
-## Architecture Overview
+## Architecture as built
 
 ```
-                        ┌─────────────────────┐
-                        │    Admin Server      │
-                        │   (port 2525)        │
-                        │  HttpApi + OpenAPI   │
-                        └────────┬────────────┘
-                                 │ manages via FiberMap
-                 ┌───────────────┼───────────────┐
-                 │               │               │
-          ┌──────▼──────┐ ┌─────▼───────┐ ┌─────▼───────┐
-          │ Imposter A  │ │ Imposter B  │ │ Imposter C  │
-          │ (port 3001) │ │ (port 3002) │ │ (port 3003) │
-          │ Fiber + Bun │ │ Fiber + Bun │ │ Fiber + Bun │
-          │ ┌─────────┐ │ │             │ │             │
-          │ │ Mock     │ │ │  ...stubs   │ │  ...stubs   │
-          │ │ Stubs    │ │ │             │ │             │
-          │ ├─────────┤ │ │             │ │             │
-          │ │ HTMX UI │ │ │             │ │             │
-          │ │ /_admin  │ │ │             │ │             │
-          │ └─────────┘ │ │             │ │             │
-          └─────────────┘ └─────────────┘ └─────────────┘
+                    ┌────────────────────────────┐
+                    │      Admin Server          │
+                    │      (port 2525)           │
+                    │  HttpApi + Swagger + /_ui  │
+                    └─────────────┬──────────────┘
+                                  │ FiberManager (FiberMap)
+              ┌───────────────────┼───────────────────┐
+       ┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
+       │ Imposter A  │     │ Imposter B  │     │ Imposter C  │
+       │ (port 3001) │     │ (port 3002) │     │ (port 3003) │
+       │ Fiber       │     │             │     │             │
+       │ ├ /_admin UI│     │  ...stubs   │     │  ...stubs   │
+       │ ├ stubs     │     │             │     │             │
+       │ └ proxy?    │     │             │     │             │
+       └─────────────┘     └─────────────┘     └─────────────┘
 ```
 
-### Key architectural patterns
+### Where the implementation diverged from the original plan
 
-- **Admin server:** Uses `HttpApi` + `HttpApiBuilder.toWebHandler` (static, typed API)
-- **Imposter servers:** Uses `HttpRouter` + `HttpApp.toWebHandlerRuntime` (dynamic, runtime-built routes). NOT `HttpApi` — imposter routes are user-configured at runtime, not compile-time typed.
-- **Fiber lifecycle:** `FiberMap<ImposterId>` (built-in Effect module) manages all imposter fibers. Automatic interrupt-on-rekey, cleanup on scope close.
-- **Server lifecycle:** `Effect.acquireRelease` for each `Bun.serve()` instance — ensures `server.stop()` on fiber interrupt.
-- **Hot-reload:** Each imposter holds a `Ref<HttpRouter>`. Route changes rebuild the router and atomically swap via `Ref.set`. The fetch handler reads from the `Ref` on every request. Zero downtime.
-- **Repository:** Pure config storage only (imposter config + stubs). No fiber/server refs — those live in `FiberMap`.
+These are deliberate changes, not drift. Anyone reading the older plan should note them:
+
+| Planned | Built | Why |
+|---|---|---|
+| Imposter routing via `HttpRouter` + a `RouterBuilder` module converting `Stub[]` → router | **No `HttpRouter` anywhere.** Each imposter's handler is a plain `async (request: Request) => Response` doing linear predicate matching over `Ref<ReadonlyArray<Stub>>` | Routes are runtime-configured, so a typed router adds no value; linear matching makes hot-reload a single `Ref.set` |
+| Hot-reload by swapping `Ref<HttpRouter>` | Hot-reload by swapping `Ref<ReadonlyArray<Stub>>` and `Ref<ProxyConfig \| undefined>` | Follows from the above |
+| Bun-only, `Bun.serve()` throughout | `ServerFactory` tag with `NodeServerFactoryLive` (default) and `BunServerFactoryLive` | vitest workers run under Node.js even when launched by Bun, so tests could not use `Bun.serve`. Became the `--runtime` flag and made the npm package portable |
+| UI mounted via `HttpRouter.mount` at `/_admin` | Plain URL-prefix matcher returning `Response \| null`, tried before stub matching | No `HttpRouter` to mount into |
+| `src/api/AdminHandlers.ts` | Split into `ImpostersHandlers.ts` + `SystemHandlers.ts`, with groups in `ImpostersGroup.ts` / `SystemGroup.ts` | Size |
 
 ---
 
 ## Data Model: Stubs & Predicates
 
-A critical design insight from Mountebank: the core abstraction is **stubs**, not simple routes. Each stub has:
+The core abstraction is **stubs**, not simple routes. Each stub has:
 
-- **Predicates:** An ordered list of request matchers (method, path, headers, query, body). Combined with AND logic. Support for `equals`, `contains`, `startsWith`, `matches` (regex), `exists`.
-- **Responses:** An ordered list of response configs. Cycled through in order (round-robin by default). Each response has status, headers, body, delay.
-- **Template data:** Response bodies can reference request data — not just path params, but also `request.headers`, `request.query`, `request.body`, `request.path`.
-
-This model must be designed upfront in the schemas to avoid breaking API changes later.
+- **Predicates:** An ordered list of request matchers (method, path, headers, query, body). Combined with AND logic. Operators: `equals`, `contains`, `startsWith`, `matches` (regex), `exists` — all supporting `caseSensitive`.
+- **Responses:** An ordered list of response configs, selected by `responseMode`: `sequential` (round-robin), `random`, or `repeat`. Each response has status, headers, body, delay.
+- **Template data:** Response bodies can reference `request.method`, `request.path`, `request.headers.*`, `request.query.*`, and `request.body.*`.
 
 ```
 Imposter
-  └── Stubs[]
-        ├── predicates: Predicate[]     (AND-combined matchers)
-        │     ├── method: equals "GET"
-        │     ├── path: matches "/users/:id"
-        │     └── headers: contains { "accept": "application/json" }
-        └── responses: ResponseConfig[] (cycled round-robin)
-              ├── { status: 200, body: {"id": "{{request.params.id}}"} }
-              └── { status: 500, body: {"error": "intermittent failure"} }
+  ├── Stubs[]
+  │     ├── predicates: Predicate[]     (AND-combined matchers)
+  │     └── responses: ResponseConfig[] (sequential | random | repeat)
+  └── proxy?: { targetUrl, mode: passthrough | record, ... }
 ```
+
+Stubs are evaluated in order; first match wins. An unmatched request falls through to the proxy if configured, otherwise 404.
 
 ---
 
 ## Phase 0: Cleanup & Foundation ✅ COMPLETE
 
-**Goal:** Fix bugs, remove dead artifacts, establish clean baseline. Keep it tight — don't refactor code that later phases will rewrite.
-
-### Changes
-
-1. ✅ **Fix `package.json`** — rename from `@template/basic` to `imposters`, add `bin` field for future `npx imposters` support
-2. ✅ **Fix `vitest.config.ts`** — update `@template/basic` alias
-3. ✅ **Delete stale CI workflows:**
-   - `.github/workflows/test.yaml` (Go pipeline)
-   - `.github/workflows/release.yaml` (Go binary release)
-   - `.github/workflows/snapshot.yml` (Effect-Ts org specific)
-4. ✅ **Fix `.github/workflows/check.yml`** and `.github/actions/setup/` — use Bun, target `master`
-5. ✅ **`src/domain/imposter.ts`:**
-   - Remove duplicate `UuidService` interface/tag — import from `src/services/Uuid.ts`
-   - Replace `new Date()` with Effect `Clock`
-   - Migrate errors to `Data.TaggedError`
-6. ✅ **Delete `src/domain/endpoint.ts`** entirely — it misuses `HttpApiEndpoint` for dynamic mock routes. Will be replaced by `HttpRouter.makeRoute` in Phase 3.
-7. ✅ **`src/domain/route.ts`:**
-   - Standardize to `Schema.decodeUnknown` (returns Effect, not Either)
-   - Replace `new Date()` with Clock
-   - Migrate errors to `Data.TaggedError`
-8. ✅ **`src/schemas/ImposterSchema.ts`:**
-   - Fix unsafe `.make()` calls — use Schema encoding instead
-   - Add route API schemas: `CreateRouteRequest`, `RouteResponse`, `ListRoutesResponse`
-   - Add `UpdateImposterRequest` fields for `port` and `adminPath`
-9. ✅ **`src/schemas/common.ts`:**
-   - Remove GRPC from `Protocol` enum (HTTP only for now)
-   - Fix `currentDateTime` helper
-10. ✅ **Delete `src/domain/isValidPath.ts`** (empty placeholder)
-11. ✅ **Write unit tests** for domain models and schemas
-12. ✅ **Audit all code for `any` and type-casts** — remove them
-
-### Files deleted
-- `.github/workflows/test.yaml`, `.github/workflows/release.yaml`, `.github/workflows/snapshot.yml`
-- `src/domain/isValidPath.ts`, `src/domain/endpoint.ts`
-
-### Verification
-- ✅ `bun check` passes with zero `any` types
-- ✅ `bun run test` passes with real tests
-- ✅ No duplicate service definitions, no `new Date()`, no type-casts
-- ✅ CI runs on Bun
+Fixed bugs and removed dead artifacts from the original scaffold: deleted the stale Go/Effect-org CI workflows, removed `endpoint.ts` and `isValidPath.ts`, de-duplicated the UUID service, migrated errors to `Data.TaggedError`, replaced `new Date()` with Effect time, standardized on `Schema.decodeUnknown`, and switched CI to Bun on `master`.
 
 ---
 
 ## Phase 1: Core Services & Infrastructure ✅ COMPLETE
 
-**Goal:** Implement foundational Effect services and layers. Design the stub/predicate schemas upfront.
+Stub/predicate schemas (`StubSchema.ts`) designed upfront, plus `UuidLive`, `AppConfig` (env-driven via `Effect.Config`: admin port 2525, port range 3000–4000, max 100 imposters), `PortAllocator` (TOCTOU-safe with bind-failure recovery), `ImposterRepository` (pure `Ref<HashMap>` storage), and `MainLayer` composition.
 
-### 1.1 Stub & Predicate Schemas ✅
+---
 
-Implemented in `src/schemas/StubSchema.ts`:
+## Phase 2: Admin REST API ✅ COMPLETE
+
+`HttpApi.make("admin")` composing `ImpostersGroup` and `SystemGroup` (the latter `topLevel: true`). OpenAPI middleware + Swagger UI wired in `ApiLayer.ts`. Endpoints:
 
 ```
-PredicateOperator: "equals" | "contains" | "startsWith" | "matches" | "exists"
-Predicate: { field, operator, value } — matches against method, path, headers, query, body
-Stub: { predicates: Predicate[], responses: ResponseConfig[], responseMode: "sequential" | "random" | "repeat" }
-ResponseConfig: { status, headers, body, delay }
+GET    /health                                    GET    /info
+POST   /imposters                                 GET    /imposters
+GET    /imposters/:id                             PATCH  /imposters/:id
+DELETE /imposters/:id
+POST   /imposters/:imposterId/stubs               GET    /imposters/:imposterId/stubs
+PUT    /imposters/:imposterId/stubs/:stubId       DELETE /imposters/:imposterId/stubs/:stubId
+GET    /imposters/:id/requests                    DELETE /imposters/:id/requests
+GET    /imposters/:id/stats                       DELETE /imposters/:id/stats
 ```
 
-Response templates can reference: `{{request.params.id}}`, `{{request.headers.authorization}}`, `{{request.query.page}}`, `{{request.body.name}}`.
+---
 
-### 1.2 Services ✅
+## Phase 3: Imposter Runtime + Route Matching ✅ COMPLETE
 
-1. ✅ **UUID Service Implementation** (`src/services/UuidLive.ts`)
-   - `Layer.succeed(Uuid, { generate, generateShort })` using `uuid` package
-
-2. ✅ **App Configuration** (`src/services/AppConfig.ts`)
-   - `class AppConfig extends Context.Tag("AppConfig")<AppConfig, {...}>() {}`
-   - Admin port (default 2525), imposter port range (3000-4000), max imposters, log level
-   - `Effect.Config` + `ConfigProvider`
-
-3. ✅ **Port Allocator** (`src/services/PortAllocator.ts`)
-   - `allocate(preferred?)`, `release(port)`, `isAvailable(port)`
-   - `Ref<HashSet<number>>` for tracking with atomic `Ref.modify`
-   - **Must handle TOCTOU race:** if `Bun.serve()` bind fails, catch the error, release the port in the allocator, propagate `PortInUseError`
-
-4. ✅ **Imposter Repository** (`src/repositories/ImposterRepository.ts`)
-   - **Pure config storage only:** `Ref<HashMap<ImposterId, ImposterConfig & { stubs: Stub[] }>>`
-   - NO fiber refs, NO server refs — those live in `FiberMap`
-   - CRUD for imposters + nested stub management
-   - Concurrent updates: atomic `Ref.modify` with explicit return type annotations
-
-5. ✅ **Layer Composition** (`src/layers/MainLayer.ts`)
-   - Express dependencies: `PortAllocatorLive` depends on `AppConfig`, etc.
-   - Use `Layer.provide` for dependency edges
-
-### Verification
-- ✅ All services implemented with tests (74 tests across 10 files)
-- ✅ Stub/predicate schemas defined and validated
-- ✅ Port allocator handles concurrent allocation + bind failure recovery
-- ✅ Repository stores imposter configs and stubs (pure data, no runtime refs)
+`ImposterServer` exposes `start`/`stop`/`updateStubs`/`updateProxyConfig`/`isRunning`. Fibers are managed by `FiberManager` (a `FiberMap` wrapper); each server instance is wrapped in `Effect.acquireRelease` so interruption stops the server and frees the port. `RequestMatcher` evaluates predicates; `ResponseGenerator` selects and builds responses with delays and templating. Hot-reload works via `Ref` swap with zero downtime.
 
 ---
 
-## Phase 2: Admin REST API
+## Phase 4: Client Library & Developer Experience ✅ COMPLETE
 
-**Goal:** REST API on the admin port for managing imposters and stubs.
-
-### API Design
-
-```
-POST   /imposters                            → Create imposter
-GET    /imposters                            → List (paginated, filterable)
-GET    /imposters/:id                        → Get details
-PATCH  /imposters/:id                        → Update (name, port, status)
-DELETE /imposters/:id                        → Delete
-POST   /imposters/:imposterId/stubs          → Add stub
-GET    /imposters/:imposterId/stubs          → List stubs
-PUT    /imposters/:imposterId/stubs/:stubId  → Update stub
-DELETE /imposters/:imposterId/stubs/:stubId  → Delete stub
-GET    /health                               → Health check
-GET    /info                                 → Server info
-```
-
-### Implementation
-
-1. **API Definition** (`src/api/AdminApi.ts`)
-   - `HttpApi.make("admin")` with `HttpApiGroup` per resource
-   - Uses schemas from `ImposterSchema.ts` and `StubSchema.ts`
-
-2. **Handlers** (`src/api/AdminHandlers.ts`)
-   - `HttpApiBuilder.group(AdminApi, "imposters", ...)` pattern
-   - Delegates to repository + services
-
-3. **Admin Server** (`src/server/AdminServer.ts`)
-   - `HttpApiBuilder.toWebHandler(layer)` → `Bun.serve({ port, fetch: handler })`
-   - Lifecycle via `Effect.acquireRelease` for clean shutdown
-   - OpenAPI auto-generation via `HttpApiBuilder.middlewareOpenApi()`
-
-4. **Entry Point** (`src/Program.ts`)
-   - Top-level `Effect.scoped` providing shared scope for admin + all imposters
-   - Use `Effect.runFork` (no `@effect/platform-bun` dependency needed)
-
-### Done when
-- Admin server starts, all CRUD endpoints work
-- OpenAPI spec served at `/docs`
-- Integration tests pass using `HttpApiClient`
+Typed `ImpostersClient` derived from the `HttpApi` definition, `HandlerHttpClient` for in-process (socket-free) testing, `withImposter` / `makeTestServer` helpers, and JSON config-file loading (`ConfigFileSchema` + `ConfigLoader`) for declarative setup.
 
 ---
 
-## Phase 3: Imposter Runtime + Route Matching
+## Phase 5: Configuration UIs ✅ COMPLETE
 
-**Goal:** Creating an imposter spawns an HTTP server on its port as an Effect Fiber. Stubs match requests and generate responses. This is one phase because an imposter without matching logic can't be meaningfully tested.
-
-### Core components
-
-1. **Fiber Manager** (`src/server/FiberManager.ts`)
-   - Wraps `FiberMap<ImposterId>` (Effect built-in, NOT hand-rolled `Ref<HashMap>`)
-   - `FiberMap.run(map, id, effect)` — forks fiber, auto-interrupts previous if same key
-   - `FiberMap.remove(map, id)` — interrupts and removes
-   - Scoped: closing the scope interrupts all fibers
-
-2. **Router Builder** (`src/server/RouterBuilder.ts`)
-   - Converts `Stub[]` → `HttpRouter` dynamically
-   - Uses `HttpRouter.makeRoute` + `HttpRouter.fromIterable` (not `HttpRouter.route`)
-   - Each stub becomes a handler that: evaluates predicates, selects next response (round-robin), applies delay, substitutes template variables from full request context, returns response
-
-3. **Request Matcher** (`src/matching/RequestMatcher.ts`)
-   - Evaluates predicates against incoming `HttpServerRequest`
-   - Supports: method, path (with `:param` extraction), headers, query params
-   - Predicates combined with AND logic
-   - Returns matched stub + extracted params, or 404
-
-4. **Response Generator** (`src/matching/ResponseGenerator.ts`)
-   - Selects next response from stub's response list (tracks index per stub in `Ref`)
-   - Applies `{{request.params.*}}`, `{{request.headers.*}}`, `{{request.query.*}}`, `{{request.body.*}}` substitution
-   - Applies delay via `Effect.sleep(Duration)`
-   - Builds `HttpServerResponse` with status, headers, body
-
-5. **Imposter Server** (`src/server/ImposterServer.ts`)
-   - `start(id)`: builds initial `HttpRouter`, stores in `Ref<HttpRouter>`, creates web handler via `HttpApp.toWebHandlerRuntime(runtime)(ref-reading-app)`, launches `Bun.serve()` via `Effect.acquireRelease`, forks via `FiberMap.run`
-   - `stop(id)`: `FiberMap.remove` (acquireRelease finalizer calls `server.stop()` + releases port)
-   - `updateRoutes(id)`: rebuilds router from current stubs, atomically swaps `Ref<HttpRouter>` — zero downtime
-
-6. **Fiber supervision:** When a fiber fails (imposter crash), mark imposter as `stopped` with `lastError`, release its port. Use `Effect.onError` or `Effect.ensuring` within the fiber effect.
-
-7. **Graceful shutdown:** The top-level `Effect.scoped` in `Program.ts` owns the `FiberMap` scope. SIGINT/SIGTERM → scope closes → all fibers interrupted → all `acquireRelease` finalizers run → all Bun servers stopped.
-
-### Key Effect patterns
-- `FiberMap` for fiber lifecycle (NOT hand-rolled Ref<HashMap>)
-- `Effect.acquireRelease` for `Bun.serve()` lifecycle
-- `Ref<HttpRouter>` per imposter for hot-reload
-- `HttpRouter.makeRoute` + `HttpRouter.fromIterable` for dynamic routing
-- `HttpApp.toWebHandlerRuntime` for converting router to Bun-compatible handler
-- `HttpRouter.RouteContext` for path parameters
-- `Effect.sleep(Duration)` for response delays
-
-### E2E test plan
-- Create imposter via admin API → send HTTP request to imposter port → verify response matches stub config
-- Create imposter with multiple stubs → verify correct stub matches based on predicates
-- Create stub with multiple responses → verify round-robin cycling
-- Create imposter → add route → verify hot-reload (no restart)
-- Create imposter → stop → verify port freed → create new imposter on same port
-- Create 10 imposters → stop 5 → delete 3 → verify exactly 2 running, ports correctly managed
-- Rapid create/delete cycles → verify no resource leaks
-
-### Done when
-- Imposters spawn as HTTP servers on their ports
-- Predicate matching works (method, path, headers, query)
-- Response cycling works (round-robin)
-- Template substitution works with full request context
-- Hot-reload works (route changes without restart)
-- Lifecycle works (create/start/stop/delete)
-- Clean shutdown stops all fibers
-- E2E tests pass
+Tagged-template HTML engine with auto-escaping (`ui/html.ts`), HTMX from CDN. Per-imposter UI at `/_admin` (dashboard, stubs, requests, request detail) and a global dashboard at `/_ui` on the admin port. Backed by `RequestLogger` (bounded per-imposter buffer + `PubSub` for future SSE) and `MetricsService` (counts, percentiles, error rate).
 
 ---
 
-## Phase 4: Client Library & Developer Experience
+## Phase 6: Advanced Features
 
-**Goal:** Make Imposters usable as a testing tool with a proper client library and programmatic API.
+**Delivered:**
 
-### Components
+| Feature | Notes |
+|---|---|
+| ✅ **CLI** | `@effect/cli`. `imposters start` with `--port/-p`, `--config/-c`, `--runtime node\|bun`. Published to npm with a `bin` entry |
+| ✅ **Dynamic Response Injection** | JSONata via `${expr}`, alongside `{{key}}` substitution |
+| ✅ **Proxy Mode** | `passthrough` and `record` (records live responses as new stubs, hot-reloading them in) |
+| ✅ **Statistics** | Per-imposter request counts, rate, average response time, error rate, breakdowns by method and status |
+| ✅ **npm publishing** | Automated release from `master`: conventional-commit version bump, OIDC/provenance publish, git tag, GitHub release |
 
-1. **Client Library** (`src/client/ImpostersClient.ts`)
-   - Typed client auto-generated from `HttpApi` definition using `HttpApiClient`
-   - Published as `@imposters/client` or included in main package
-   - API: `createImposter()`, `addStub()`, `deleteImposter()`, etc.
-
-2. **Test Helpers** (`src/client/testing.ts`)
-   - `withImposter(config, testFn)` — creates imposter, runs test, tears down
-   - `startImpostersServer(config)` — programmatic server start for test setup files
-   - Integration with vitest setup/teardown
-
-3. **Configuration File Loading**
-   - Accept JSON/YAML config file at startup: `imposters start --config imposters.json`
-   - Config file defines imposters + stubs declaratively
-   - Useful for CI/CD pipelines
-
-### Done when
-- Client library works and is well-typed (no `any`)
-- Test helpers enable easy imposter lifecycle in test suites
-- Config file loading works for declarative setup
-
----
-
-## Phase 5: Per-Imposter Configuration UI
-
-**Goal:** Each imposter serves an HTMX-based web UI at `/_admin`.
-
-Split into sub-phases for manageable delivery:
-
-### 5a: Request Logging Service
-- `RequestLogger` service using `Queue.sliding(100)` per imposter for bounded buffer
-- `PubSub<RequestLogEntry>` for real-time event streaming (enables future SSE)
-- Middleware wrapping imposter routes to capture requests
-- Exposed via admin API: `GET /imposters/:id/requests`
-
-### 5b: Basic UI
-- HTML template engine with tagged template literals + auto-escaping
-- Layout with HTMX loaded from CDN
-- Dashboard page: imposter overview, stub count, request count
-- Stub list page with add/edit/delete via HTMX partials
-
-### 5c: Request Inspector
-- Request log viewer with filtering
-- Request detail view (headers, body, matched stub)
-- Testing tool: send a request from the UI and see the response
-
-### Router integration
-- UI routes mounted at `/_admin` with priority over mock stubs
-- Uses `HttpRouter.mount` to namespace UI routes
-
-### Done when
-- Each imposter serves a web UI at `/_admin`
-- Stubs can be managed through the UI
-- Recent requests are visible and inspectable
-
----
-
-## Phase 6: Advanced Features (prioritized)
-
-**High priority (essential for real usage):**
+**Remaining, roughly in priority order:**
 
 | Feature | Description |
-|---------|-------------|
-| **Persistence** | Save/restore imposter configs to disk via `@effect/platform` `FileSystem`. Imposters survive restart. |
-| **CLI** | `@effect/cli` based: `imposters start`, `imposters create`, `imposters list`. `bin` field in package.json for `npx imposters`. |
-| **Dynamic Response Injection** | Safe expression evaluator (e.g., JSONata) for dynamic response generation beyond template substitution. |
+|---|---|
+| **Persistence** | Imposters are in-memory only and do not survive a restart. Save/restore configs to disk via `@effect/platform` `FileSystem`. This is the biggest functional gap |
+| **Request Recording export/import** | Export recorded requests as JSON and re-import to generate stubs. Proxy `record` mode covers the capture half already |
+| **Mountebank Adapter** | Accept Mountebank-format JSON configs; translation layer for predicates/responses |
+| **OpenAPI Import** | Parse OpenAPI 3.x specs to auto-generate imposters + stubs |
+| **WebSocket Mocking** | Mock WebSocket endpoints with configurable message sequences |
+| **Multi-protocol** | gRPC, TCP as pluggable protocol adapters |
 
-**Medium priority:**
+---
 
-| Feature | Description |
-|---------|-------------|
-| **Proxy Mode** | Forward unmatched requests to real backend, record responses as stubs. The proxy-to-record-to-stub workflow. |
-| **Statistics** | `Effect.Metric` counters and histograms per route/imposter. |
-| **Request Recording** | Export/import recorded requests as JSON, auto-generate stubs. |
-| **Mountebank Adapter** | Accept Mountebank-format JSON configs. Translation layer for predicates/responses. |
+## Maintenance backlog
 
-**Lower priority:**
+Non-feature work that is currently outstanding:
 
-| Feature | Description |
-|---------|-------------|
-| **OpenAPI Import** | Parse OpenAPI 3.x specs to auto-generate imposters + stubs. |
-| **WebSocket Mocking** | Mock WebSocket endpoints with configurable message sequences. |
-| **Multi-protocol** | GRPC, TCP support as pluggable protocol adapters. |
+- **`ServerFactory` does not synchronise the server lifecycle.** `create()` calls `server.listen(port)` without awaiting `'listening'`, and `stop()` calls `server.close()` without awaiting `'close'`. `ImposterServer.start(id)` therefore resolves before the port is bound, and teardown before it is released — so create → start → request can race for real callers, not just tests. The e2e suites hide it behind fixed `setTimeout` sleeps, which forced `fileParallelism: false` in `vitest.config.ts` when vitest 3 began scheduling more files concurrently. Fixing this (make `create`/`stop` awaitable and have `ImposterServer` await them) removes both the flag and the ~26s it costs the suite.
+- **Repay the `any` / non-null-assertion debt** listed under [Code Standards](#code-standards).
+- **TypeScript 7 is blocked on tooling.** 7.0.2 is released, but no published `typescript-eslint` supports it — 8.68.0 still caps at `<6.1.0`. Revisit when typescript-eslint ships TS 7 support; the tsconfig deprecations it will require are already fixed.
+- **vitest 4 is blocked on Effect 4.** The only `@effect/vitest` builds supporting vitest 4 are the `4.0.0-rc` line. Revisit together with the Effect 4 migration.
+- **bun 1.4.0 is not in nixpkgs yet.** `shell.nix` is pinned to a rev providing 1.3.13 and `packageManager` matches it. Bump the rev and that field together once nixpkgs packages 1.4.0.
+
+### Recently completed
+
+- GitHub release for v0.2.3 backfilled; the release step that failed in March is fixed (#15) and verified by the v0.2.4 publish.
+- CI actions moved off deprecated Node 20 (`actions/checkout` and `actions/setup-node` → v7).
+- bun aligned at 1.3.13 across local and CI; nixpkgs pinned instead of tracking `master`.
+- TypeScript 5.9.3 → 6.0.3, typescript-eslint 8.46 → 8.67, vitest 2.1.9 → 3.2.7.
 
 ---
 
 ## Verification Strategy
 
-Each phase must pass:
-1. **`bun check`** — zero type errors, zero `any` types
-2. **`bun test`** — all unit + integration tests pass
-3. **`bun lint`** — no lint violations
-4. **Phase 3+: E2E tests** — admin API → create imposter → hit imposter → verify response
-5. **Phase 3+: Lifecycle tests** — create/stop/delete imposters, verify fiber cleanup and port release
-6. **Phase 3+: Concurrency tests** — concurrent imposter creation, concurrent stub updates
-7. **Phase 5+: Manual smoke test** — open `/_admin` in browser, manage stubs visually
+Every change must pass:
 
----
+1. **`bun check`** — zero type errors
+2. **`bun run test`** — vitest, single-run (currently 322 tests across 39 files, ~32s; files run serially, see the backlog)
+3. **`bun lint`** — no violations
+4. **E2E tests** — `test/e2e/` covers lifecycle, stub matching, hot-reload, proxy mode, request logging, request inspector, statistics, expression templates, and both UIs
 
-## Estimated Project Structure (Phase 5 complete)
-
-```
-src/
-  Program.ts
-  api/
-    AdminApi.ts
-    AdminHandlers.ts
-  client/
-    ImpostersClient.ts
-    testing.ts
-  domain/
-    imposter.ts
-    route.ts
-  layers/
-    MainLayer.ts
-  matching/
-    RequestMatcher.ts
-    ResponseGenerator.ts
-  repositories/
-    ImposterRepository.ts
-  schemas/
-    common.ts
-    ImposterSchema.ts
-    StubSchema.ts
-  server/
-    AdminServer.ts
-    FiberManager.ts
-    ImposterServer.ts
-    RouterBuilder.ts
-  services/
-    AppConfig.ts
-    PortAllocator.ts
-    RequestLogger.ts
-    Uuid.ts
-    UuidLive.ts
-  ui/
-    templates.ts
-    ImposterUI.ts
-    pages/
-      Dashboard.ts
-      Routes.ts
-      Requests.ts
-test/
-  (mirrors src/ structure with .test.ts files)
-  e2e/
-    imposter-lifecycle.test.ts
-    stub-matching.test.ts
-    hot-reload.test.ts
-```
+Note: `bun test` (Bun's native runner) is not the same as `bun run test` (vitest). Use the latter.
