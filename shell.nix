@@ -1,27 +1,24 @@
-{ pkgs ? import (builtins.fetchGit { #
+# Pinned for reproducibility. `ref` alone tracked nixpkgs master, so the bun
+# version drifted with whenever the fetch cache last refreshed. Bump `rev`
+# deliberately when you want a newer toolchain, and keep the `packageManager`
+# field in package.json matching the bun version this rev provides.
+{ pkgs ? import (builtins.fetchGit {
     url = "https://github.com/NixOS/nixpkgs";
-    ref = "refs/heads/master";  # Pin to a specific commit or branch
-  }) { system = "aarch64-darwin"; } }:
+    ref = "refs/heads/master";
+    rev = "1ce428abc77bd3f7dd7ae615d9e381cf081990fd"; # bun 1.3.13
+  }) { } }:
 
-let
-  bold = "e[1m";
-  green = "e[32m";
-  cyan = "e[36m";
-  reset = "e[0m";
-in
 pkgs.mkShell {
-  # Specify the environment packages (Node.js and Yarn)
   buildInputs = [
     pkgs.bun
     pkgs.dprint
+    pkgs.figlet
   ];
 
-shellHook = ''
-    # Set some color codes for text styling
-
-    # Generate ASCII art using figlet
-
-    # Print with colors and ASCII art
-    echo -e "\${green}\${bold}$(figlet "Imposters")\${reset}"
+  shellHook = ''
+    printf '\033[1;32m'
+    figlet "Imposters"
+    printf '\033[0m'
+    echo "bun $(bun --version)  |  node $(node --version 2>/dev/null || echo 'not in shell')"
   '';
 }
