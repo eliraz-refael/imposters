@@ -5,7 +5,7 @@
 { pkgs ? import (builtins.fetchGit {
     url = "https://github.com/NixOS/nixpkgs";
     ref = "refs/heads/master";
-    rev = "1ce428abc77bd3f7dd7ae615d9e381cf081990fd"; # bun 1.3.13
+    rev = "4ba99f3209788ed04f01af38f77ddb803ad6ec63"; # bun 1.4.2
   }) { } }:
 
 pkgs.mkShell {
