@@ -1,3 +1,5 @@
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
 import { adminDashboardPage } from "./pages/AdminDashboard"
 import type { AdminImposterData } from "./partials"
 import { adminErrorPartial, imposterListPartial, imposterRowPartial } from "./partials"
@@ -13,21 +15,35 @@ const htmlResponse = (body: string, status = 200): Response =>
     headers: { "content-type": "text/html; charset=utf-8" }
   })
 
-const toAdminData = (imp: any): AdminImposterData => ({
+// The fields of the admin API's imposter JSON that the dashboard shows
+const ImposterJson = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  port: Schema.Number,
+  status: Schema.String,
+  protocol: Schema.String,
+  endpointCount: Schema.Number
+})
+type ImposterJson = Schema.Schema.Type<typeof ImposterJson>
+const decodeImposter = Schema.decodeUnknownOption(ImposterJson)
+const decodeImposterList = Schema.decodeUnknownOption(Schema.Struct({ imposters: Schema.Array(ImposterJson) }))
+
+const toAdminData = (imp: ImposterJson): AdminImposterData => ({
   id: imp.id,
-  name: imp.name ?? `imposter-${imp.id}`,
+  name: imp.name,
   port: imp.port,
   status: imp.status,
-  protocol: imp.protocol ?? "HTTP",
-  stubCount: imp.stubs?.length ?? imp.endpointCount ?? imp.stubCount ?? 0
+  protocol: imp.protocol,
+  stubCount: imp.endpointCount
 })
 
 const fetchImposters = async (apiHandler: (r: Request) => Promise<Response>): Promise<Array<AdminImposterData>> => {
   const resp = await apiHandler(new Request("http://localhost/imposters?limit=50", { method: "GET" }))
   if (!resp.ok) return []
-  const data = await resp.json()
-  const items = Array.isArray(data) ? data : (data.imposters ?? data.items ?? [])
-  return items.map(toAdminData)
+  return Option.match(decodeImposterList(await resp.json()), {
+    onNone: () => [],
+    onSome: (data) => data.imposters.map(toAdminData)
+  })
 }
 
 const fetchImposter = async (
@@ -36,8 +52,7 @@ const fetchImposter = async (
 ): Promise<AdminImposterData | null> => {
   const resp = await apiHandler(new Request(`http://localhost/imposters/${id}`, { method: "GET" }))
   if (!resp.ok) return null
-  const imp = await resp.json()
-  return toAdminData(imp)
+  return Option.match(decodeImposter(await resp.json()), { onNone: () => null, onSome: toAdminData })
 }
 
 export const makeAdminUiRouter = (deps: AdminUiDeps) => async (request: Request): Promise<Response | null> => {
@@ -67,9 +82,8 @@ export const makeAdminUiRouter = (deps: AdminUiDeps) => async (request: Request)
       const portStr = formData.get("port") as string | null
       const autoStart = formData.get("autoStart") === "on"
 
-      const payload: Record<string, unknown> = {
-        protocol: "HTTP"
-      }
+      // No protocol: the API defaults it to HTTP
+      const payload: Record<string, unknown> = {}
       if (name && name.trim()) payload.name = name.trim()
       if (portStr && portStr.trim()) payload.port = Number(portStr.trim())
 

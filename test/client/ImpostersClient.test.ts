@@ -3,44 +3,10 @@ import { HttpRouter } from "effect/unstable/http"
 import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient"
 import { ApiLayer } from "imposters/layers/ApiLayer"
-import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository"
+import { MainLayer } from "imposters/layers/MainLayer"
 import type { NonEmptyString, PortNumber, PositiveInteger } from "imposters/schemas/common"
-import { FiberManagerLive } from "imposters/server/FiberManager"
-import { ImposterServerLive } from "imposters/server/ImposterServer"
-import { AppConfigLive } from "imposters/services/AppConfig"
-import { MetricsServiceLive } from "imposters/services/MetricsService"
-import { PortAllocatorLive } from "imposters/services/PortAllocator"
-import { ProxyServiceLive } from "imposters/services/ProxyService"
-import { RequestLoggerLive } from "imposters/services/RequestLogger"
-import { UuidLive } from "imposters/services/UuidLive"
-import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
-const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
-
-const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      FiberManagerLive,
-      ImposterRepositoryLive,
-      NodeServerFactoryLive,
-      RequestLoggerLive,
-      MetricsServiceLive,
-      ProxyServiceWithDeps
-    )
-  )
-)
-const MainLayer = Layer.mergeAll(
-  UuidLive,
-  AppConfigLive,
-  PortAllocatorWithDeps,
-  ImposterRepositoryLive,
-  FiberManagerLive,
-  RequestLoggerLive,
-  MetricsServiceLive,
-  ImposterServerWithDeps
-)
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
 
 const port = (n: number) => n as PortNumber

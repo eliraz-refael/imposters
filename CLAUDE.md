@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 367 tests across 41 files.
+All three gates pass: `bun check`, `bun lint`, and 400 tests across 45 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -31,10 +31,11 @@ All three gates pass: `bun check`, `bun lint`, and 367 tests across 41 files.
 | Typed client library + `withImposter` test helpers | ✅ |
 | CLI via `effect/unstable/cli`, JSON config file loading | ✅ |
 | Node **and** Bun runtimes (`--runtime` flag) | ✅ |
+| Imposter extensions — pluggable non-HTTP protocols | ✅ (the extension point; none shipped yet) |
 
 ### Not implemented
 
-Disk persistence (imposters are in-memory only and do not survive restart), Mountebank config adapter, OpenAPI spec import, WebSocket mocking, gRPC / multi-protocol.
+Disk persistence (imposters are in-memory only and do not survive restart), Mountebank config adapter, OpenAPI spec import, WebSocket mocking, gRPC. No non-HTTP protocol ships yet: the extension point exists and S3 is next.
 
 ## Architecture
 
@@ -59,7 +60,7 @@ Disk persistence (imposters are in-memory only and do not survive restart), Moun
 ### Two different HTTP styles — this is deliberate
 
 - **Admin server** uses `HttpApi` / `HttpApiGroup` / `HttpApiEndpoint` — a statically typed, schema-derived API, registered with `HttpApiBuilder.layer` and served via `HttpRouter.toWebHandler`.
-- **Imposter servers do NOT use `HttpRouter` at all.** There is no router-building step. Each imposter's handler is a plain `async (request: Request) => Response` that: (1) offers the request to the `/_admin` UI router, (2) reads the current stubs from a `Ref`, (3) linearly finds the first stub whose predicates all match, (4) falls back to proxy or 404.
+- **Imposter servers do NOT use `HttpRouter` at all.** There is no router-building step. Each imposter's handler is a plain `async (request: Request) => Response` that: (1) offers the request to the `/_admin` UI router, (2) reads the current stubs from a `Ref`, (3) linearly finds the first stub whose predicates all match, (4) falls back to the imposter's extension, proxy or 404 (see Extensions below).
 
   Imposter routes are user-configured at runtime, so a compile-time-typed router buys nothing. Linear matching over a `Ref<ReadonlyArray<Stub>>` is what makes hot-reload trivial.
 
@@ -70,6 +71,16 @@ Disk persistence (imposters are in-memory only and do not survive restart), Moun
 - **Hot-reload** — each imposter holds `Ref<ReadonlyArray<Stub>>` and `Ref<ProxyConfig | undefined>`. `updateStubs(id)` / `updateProxyConfig(id)` re-read from the repository and `Ref.set`. The fetch handler reads the `Ref` on every request, so changes take effect immediately with no restart.
 - **Runtime abstraction** — `ServerFactory` is a `Context.Service` with two implementations: `NodeServerFactoryLive` (`node:http`, the default) and `BunServerFactoryLive` (`Bun.serve`). This exists because **vitest workers run under Node.js even when invoked via Bun**, so tests could not use `Bun.serve` directly. It later became the user-facing `--runtime node|bun` flag.
 - **Repository is pure storage** — `ImposterRepository` holds config + stubs in a `Ref<HashMap>`. No fiber refs, no server handles; those live in `FiberManager` and `ImposterServer`'s internal state map.
+
+### Extensions — how a non-HTTP protocol plugs in
+
+The core must never know a specific protocol (the planned S3 emulator is the first). `src/extensions/Extension.ts` is the only core-owned module: `ImposterExtension = { protocol, make }`, the `Extensions` service, `findExtension`, `supportedProtocols`.
+
+- **Protocol** is a real field, fixed at create: `^[A-Z][A-Z0-9]*$`, default `"HTTP"`. Creating one no extension provides is a 400 `ApiBadRequestError`, and so is `proxy` on a non-HTTP imposter (create or PATCH), since it would never run.
+- **Handler order:** `/_admin` UI → stubs → extension `handle` → proxy → 404. The extension is **terminal**: it answers every unmatched request and renders its own errors. Its responses share the capture/log/metrics path; a defect becomes a 500.
+- **`make({ id, config })` runs on every start**, so per-imposter state (an S3 store) lives in the instance and is lost on stop or restart.
+- **Registration point:** the `extensions` list at the top of `src/cli/Commands.ts`, threaded through `makeCompositeHandler` → `makeFullLayer` → `makeMainLayer(extensions)` so `ImposterServerLive` and both handler groups read one `Extensions`. `Extensions.layer` dies at build on a duplicate, `"HTTP"`, or a malformed protocol. Tests register their own (`test/helpers/TestExtensions.ts`) with `makeTestServer({ extensions })`.
+- **Boundary:** each extension lives in `src/extensions/<name>/`. ESLint `no-restricted-imports` (bottom of `eslint.config.mjs`) forbids importing one from anywhere in `src/` except `src/cli/**`, and one extension from another, in relative and `imposters/...` forms. `generateIndex` excludes `extensions/*/**/*.ts` so the root barrel never pulls one in. Deleting the list entry and the folder leaves a core that compiles and passes.
 
 ## Project Structure
 
@@ -87,19 +98,22 @@ src/
     ApiErrors.ts           # Schema.TaggedError types with status annotations
     Conversions.ts         # domain <-> API shape mapping
   cli/
-    Commands.ts            # effect/unstable/cli; `imposters start`; runs at module scope
-    ConfigLoader.ts        # JSON config file → imposters + stubs
+    Commands.ts            # effect/unstable/cli; `imposters start`; runs at module scope; extension registration point
+    ConfigLoader.ts        # JSON config file → imposters + stubs; any failure exits the CLI non-zero
     version.ts             # "0.0.0" placeholder, patched by CI at publish
   client/
     ImpostersClient.ts     # typed HttpApiClient derived from AdminApi
     HandlerHttpClient.ts   # in-process HttpClient (no socket) for tests
-    testing.ts             # withImposter, makeTestServer
+    testing.ts             # withImposter, makeTestServer({ extensions? })
     index.ts
   domain/
-    imposter.ts            # ImposterConfig, status, tagged errors
+    imposter.ts            # ImposterConfig (incl. protocol), status, tagged errors
     route.ts               # substituteParams — used only by TemplateEngine
+  extensions/
+    Extension.ts           # the extension point (core-owned)
+    <name>/                # one folder per extension; imported only from src/cli/
   layers/
-    MainLayer.ts           # service composition
+    MainLayer.ts           # makeMainLayer(extensions); MainLayer = makeMainLayer([])
     ApiLayer.ts            # HttpApiBuilder.layer + OpenAPI/Swagger + decode-error body + quiet logging
   matching/
     RequestMatcher.ts      # predicate evaluation, findMatchingStub
@@ -161,9 +175,7 @@ Note: `bun test` (Bun's native runner) is **not** the same as `bun run test` (vi
 
 ### Known deviations (tech debt, not precedent)
 
-One `any` usage and ~4 non-null assertions survive and should be cleaned up rather than copied:
-
-- `src/ui/admin/AdminUiRouter.ts:16` — `toAdminData = (imp: any)`.
+No `any` survives. About nine non-null assertions do (regex-match and index access in `AdminUiRouter`, `UiRouter`, `MetricsService`, `RequestMatcher`, `ImposterRepository`, `HandlerHttpClient`), plus the `as` casts in `src/client/testing.ts`. Clean them up rather than copying them.
 
 ## Effect Gotchas (hard-won — read before debugging)
 

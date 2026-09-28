@@ -10,7 +10,7 @@ import {
 } from "../schemas/ImposterSchema"
 import { RequestLogEntry } from "../schemas/RequestLogSchema"
 import { CreateStubRequest, Stub, UpdateStubRequest } from "../schemas/StubSchema"
-import { ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors"
+import { ApiBadRequestError, ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors"
 import { DeleteImposterUrlParams, ListImpostersUrlParams, ListRequestsUrlParams } from "./ApiSchemas"
 
 const IdParams = { id: Schema.String }
@@ -21,7 +21,7 @@ const MessageResponse = Schema.Struct({ message: Schema.String })
 const createImposter = HttpApiEndpoint.post("createImposter", "/imposters", {
   payload: CreateImposterRequest,
   success: ImposterResponse.pipe(HttpApiSchema.status(201)),
-  error: [ApiConflictError, ApiServiceError]
+  error: [ApiBadRequestError, ApiConflictError, ApiServiceError]
 })
 
 const listImposters = HttpApiEndpoint.get("listImposters", "/imposters", {
@@ -39,7 +39,7 @@ const updateImposter = HttpApiEndpoint.patch("updateImposter", "/imposters/:id",
   params: IdParams,
   payload: UpdateImposterRequest,
   success: ImposterResponse,
-  error: [ApiNotFoundError, ApiConflictError, ApiServiceError]
+  error: [ApiBadRequestError, ApiNotFoundError, ApiConflictError, ApiServiceError]
 })
 
 const deleteImposter = HttpApiEndpoint.delete("deleteImposter", "/imposters/:id", {

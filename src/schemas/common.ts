@@ -6,7 +6,12 @@ import * as Schema from "effect/Schema"
 export const ImposterStatus = Schema.Literals(["running", "stopped", "starting", "stopping"])
 export type ImposterStatus = Schema.Schema.Type<typeof ImposterStatus>
 
-export const Protocol = Schema.Literal("HTTP")
+// The built-in protocol. Any other protocol is provided by an imposter extension.
+export const HttpProtocol = "HTTP"
+
+// Uppercase letters and digits, starting with a letter: "HTTP", "S3", ...
+export const ProtocolPattern = /^[A-Z][A-Z0-9]*$/
+export const Protocol = Schema.String.check(Schema.isPattern(ProtocolPattern))
 export type Protocol = Schema.Schema.Type<typeof Protocol>
 
 // Utility schemas for validation

@@ -38,6 +38,14 @@ export * as imposter from "./domain/imposter.js"
  */
 export * as route from "./domain/route.js"
 
+/**
+ * The imposter extension point: how a protocol other than plain HTTP is plugged in.
+ *
+ * An extension lives in its own folder, `src/extensions/<name>/`, and is attached in one
+ * place, the extension list in `src/cli/Commands.ts`. The core only knows this module.
+ */
+export * as Extension from "./extensions/Extension.js"
+
 export * as ApiLayer from "./layers/ApiLayer.js"
 
 export * as MainLayer from "./layers/MainLayer.js"

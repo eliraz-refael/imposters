@@ -7,6 +7,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
 import { ImposterConfig } from "imposters/domain/imposter"
+import { Extensions } from "imposters/extensions/Extension"
 import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositories/ImposterRepository"
 import { Stub } from "imposters/schemas/StubSchema"
 import { FiberManager, FiberManagerLive } from "imposters/server/FiberManager"
@@ -30,7 +31,7 @@ import { describe, expect, it } from "vitest"
 const TIMEOUT = 5000
 
 const makeConfig = (id: string, port: number, status: "running" | "stopped" = "stopped"): ImposterConfig =>
-  ImposterConfig({ id, name: id, port, status, createdAt: DateTime.nowUnsafe() })
+  ImposterConfig({ id, name: id, port, protocol: "HTTP", status, createdAt: DateTime.nowUnsafe() })
 
 const makeCatchAllStub = (id: string, body: unknown) =>
   Schema.decodeUnknownSync(Stub)({ id, predicates: [], responses: [{ status: 200, body }] })
@@ -92,7 +93,8 @@ const runWith = async <A>(
         controlledFactory(options.beforeBind),
         RequestLoggerLive,
         MetricsServiceLive,
-        ProxyServiceLive.pipe(Layer.provide(UuidLive))
+        ProxyServiceLive.pipe(Layer.provide(UuidLive)),
+        Extensions.layer([])
       )
     )
   )

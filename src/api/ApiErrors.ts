@@ -17,3 +17,9 @@ export class ApiServiceError extends Schema.TaggedError<ApiServiceError>()(
   { message: Schema.String },
   { httpApiStatus: 503 }
 ) {}
+
+export class ApiBadRequestError extends Schema.TaggedError<ApiBadRequestError>()(
+  "ApiBadRequestError",
+  { message: Schema.String },
+  { httpApiStatus: 400 }
+) {}

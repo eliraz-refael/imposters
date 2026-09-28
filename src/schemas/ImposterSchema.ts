@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import {
+  HttpProtocol,
   ImposterStatus,
   NonEmptyString,
   NonNegativeInt,
@@ -26,13 +27,14 @@ const NumberRecord = Schema.Record(Schema.String, Schema.Number)
 export const CreateImposterRequest = Schema.Struct({
   name: Schema.optional(NonEmptyString),
   port: Schema.optional(PortNumber),
-  protocol: Protocol.pipe(Schema.withDecodingDefault(Effect.succeed("HTTP" as const))),
+  protocol: Protocol.pipe(Schema.withDecodingDefault(Effect.succeed(HttpProtocol))),
   adminPath: AdminPath.pipe(Schema.withDecodingDefault(Effect.succeed("/_admin"))),
   proxy: Schema.optional(ProxyConfig)
 })
 export type CreateImposterRequest = Schema.Schema.Type<typeof CreateImposterRequest>
 
 // Update Imposter Request Schema - PATCH /imposters/{id}
+// `protocol` is fixed at creation: an imposter's extension instance is built from it.
 export const UpdateImposterRequest = Schema.Struct({
   name: Schema.optional(NonEmptyString),
   status: Schema.optional(ImposterStatus),

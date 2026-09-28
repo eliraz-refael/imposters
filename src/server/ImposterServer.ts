@@ -1,10 +1,11 @@
-import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, HashMap, Layer, Ref } from "effect"
+import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, HashMap, Layer, Option, Ref } from "effect"
 import * as DateTime from "effect/DateTime"
 import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter"
-import { extractRequestContext, findMatchingStub } from "../matching/RequestMatcher"
+import { type ExtensionInstance, Extensions, findExtension } from "../extensions/Extension"
+import { extractRequestContext, findMatchingStub, type RequestContext } from "../matching/RequestMatcher"
 import { buildResponse, makeResponseState } from "../matching/ResponseGenerator"
 import { ImposterRepository } from "../repositories/ImposterRepository"
-import { NonEmptyString } from "../schemas/common"
+import { HttpProtocol, NonEmptyString } from "../schemas/common"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema"
 import type { Stub } from "../schemas/StubSchema"
 import { MetricsService } from "../services/MetricsService"
@@ -35,6 +36,13 @@ interface ImposterState {
   readonly proxyConfigRef: Ref.Ref<ProxyConfigDomain | undefined>
 }
 
+// How a request was answered, for the request log
+interface Outcome {
+  readonly response: Response
+  readonly matchedStubId?: string | undefined
+  readonly proxied: boolean
+}
+
 // Why the server fiber ended before its port was bound: stopped, or died during bind
 const earlyExitReason = (exit: Exit.Exit<never, unknown>): string =>
   Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
@@ -50,12 +58,26 @@ export const ImposterServerLive = Layer.effect(
     const requestLogger = yield* RequestLogger
     const metricsService = yield* MetricsService
     const proxyService = yield* ProxyService
+    const extensions = yield* Extensions
     const stateMapRef = yield* Ref.make<HashMap.HashMap<string, ImposterState>>(HashMap.empty())
+
+    // The API rejects unknown protocols at create, so a miss here means the registration changed underneath
+    const makeExtension = (id: string, config: ImposterConfig): Effect.Effect<ExtensionInstance, ImposterServerError> =>
+      Option.match(findExtension(extensions, config.protocol), {
+        onNone: () =>
+          Effect.fail(
+            new ImposterServerError({ imposterId: id, reason: `No extension provides protocol "${config.protocol}"` })
+          ),
+        onSome: (ext) => ext.make({ id, config })
+      })
 
     const start = (id: string): Effect.Effect<void, ImposterServerError | ImposterNotFoundError> =>
       Effect.gen(function*() {
         const record = yield* repo.get(id)
         const config = record.config
+
+        // A non-HTTP imposter gets a fresh extension instance on every start
+        const extension = config.protocol === HttpProtocol ? undefined : yield* makeExtension(id, config)
 
         // Create per-imposter state
         const stubsRef = yield* Ref.make<ReadonlyArray<Stub>>(record.stubs)
@@ -69,6 +91,55 @@ export const ImposterServerLive = Layer.effect(
         // UI router for /_admin pages
         const uiRouter = makeUiRouter({ id, config, stubsRef, repo, requestLogger, runPromise })
 
+        const fromStub = (stub: Stub, ctx: RequestContext): Effect.Effect<Outcome> =>
+          Effect.gen(function*() {
+            const index = yield* responseState.getNextIndex(id, stub.id, stub.responses.length, stub.responseMode)
+            const responseConfig = stub.responses[index] ?? stub.responses[0]
+            const delay = responseConfig.delay
+            if (delay !== undefined && delay > 0) {
+              yield* Effect.sleep(`${delay} millis`)
+            }
+            const response = yield* Effect.promise(() => buildResponse(responseConfig, ctx))
+            return { response, matchedStubId: stub.id, proxied: false }
+          })
+
+        // Record mode saves the proxied answer as a stub, so the next identical request is served locally
+        const recordStub = (ctx: RequestContext, response: Response): Effect.Effect<void> =>
+          Effect.gen(function*() {
+            const newStub = yield* proxyService.recordAsStub(ctx, response.clone())
+            yield* repo.addStub(id, newStub).pipe(Effect.catch(() => Effect.void))
+            const freshStubs = yield* repo.getStubs(id).pipe(
+              Effect.catch(() => Effect.succeed<ReadonlyArray<Stub>>([]))
+            )
+            yield* Ref.set(stubsRef, freshStubs)
+          })
+
+        const fromProxy = (proxyConfig: ProxyConfigDomain, ctx: RequestContext, url: URL): Effect.Effect<Outcome> =>
+          proxyService.forward(ctx, proxyConfig, url).pipe(
+            Effect.catchTag("ProxyError", (err) =>
+              Effect.succeed(
+                new Response(
+                  JSON.stringify({ error: "Proxy failed", target: err.targetUrl, reason: err.reason }),
+                  { status: 502, headers: { "content-type": "application/json" } }
+                )
+              )),
+            Effect.tap((response) =>
+              proxyConfig.mode === "record" && response.status < 500 ? recordStub(ctx, response) : Effect.void
+            ),
+            Effect.map((response) => ({ response, proxied: true }))
+          )
+
+        const fromExtension = (ext: ExtensionInstance, ctx: RequestContext): Effect.Effect<Outcome> =>
+          ext.handle(ctx).pipe(Effect.map((response) => ({ response, proxied: false })))
+
+        const notFound = (ctx: RequestContext): Outcome => ({
+          response: new Response(
+            JSON.stringify({ error: "No matching stub found", method: ctx.method, path: ctx.path }),
+            { status: 404, headers: { "content-type": "application/json" } }
+          ),
+          proxied: false
+        })
+
         const handler = async (request: Request): Promise<Response> => {
           // Try UI router first (returns null if not a /_admin path)
           const uiResponse = await uiRouter(request)
@@ -78,56 +149,22 @@ export const ImposterServerLive = Layer.effect(
             Effect.gen(function*() {
               const startTime = Date.now()
               const stubs = yield* Ref.get(stubsRef)
+              const proxyConfig = yield* Ref.get(proxyConfigRef)
               const ctx = yield* Effect.promise(() => extractRequestContext(request))
               const stub = findMatchingStub(ctx, stubs)
 
-              let response: Response
-              let proxied = false
-              if (!stub) {
-                const proxyConfig = yield* Ref.get(proxyConfigRef)
-                if (proxyConfig) {
-                  const url = new URL(request.url)
-                  response = yield* proxyService.forward(ctx, proxyConfig, url).pipe(
-                    Effect.catchTag("ProxyError", (err) =>
-                      Effect.succeed(
-                        new Response(
-                          JSON.stringify({ error: "Proxy failed", target: err.targetUrl, reason: err.reason }),
-                          { status: 502, headers: { "content-type": "application/json" } }
-                        )
-                      ))
-                  )
-                  proxied = true
-                  // Record mode: save as stub + update stubsRef
-                  if (proxyConfig.mode === "record" && response.status < 500) {
-                    const responseClone = response.clone()
-                    const newStub = yield* proxyService.recordAsStub(ctx, responseClone)
-                    yield* repo.addStub(id, newStub).pipe(Effect.catch(() => Effect.void))
-                    const freshStubs = yield* repo.getStubs(id).pipe(
-                      Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
-                    )
-                    yield* Ref.set(stubsRef, freshStubs)
-                  }
-                } else {
-                  response = new Response(
-                    JSON.stringify({ error: "No matching stub found", method: ctx.method, path: ctx.path }),
-                    { status: 404, headers: { "content-type": "application/json" } }
-                  )
-                }
-              } else {
-                const responses = stub.responses
-                const index = yield* responseState.getNextIndex(id, stub.id, responses.length, stub.responseMode)
-                const responseConfig = responses[index]!
-                const delay = responseConfig.delay
-                if (delay !== undefined && delay > 0) {
-                  yield* Effect.sleep(`${delay} millis`)
-                }
-                response = yield* Effect.promise(() => buildResponse(responseConfig, ctx))
-              }
+              // Stubs first, then the extension (terminal), then the proxy, then 404
+              const outcome = yield* stub !== undefined
+                ? fromStub(stub, ctx)
+                : extension !== undefined
+                ? fromExtension(extension, ctx)
+                : proxyConfig !== undefined
+                ? fromProxy(proxyConfig, ctx, new URL(request.url))
+                : Effect.succeed(notFound(ctx))
 
               // Capture response for logging; the body is read once, so send the captured copy
-              const captured = yield* Effect.promise(() => captureResponse(response))
-              response = captured.response
-              const respHeaders = captured.headers
+              const captured = yield* Effect.promise(() => captureResponse(outcome.response))
+              const response = captured.response
               const logBody = captured.logBody
 
               const duration = Date.now() - startTime
@@ -144,10 +181,12 @@ export const ImposterServerLive = Layer.effect(
                 },
                 response: {
                   status: response.status,
-                  headers: respHeaders,
+                  headers: captured.headers,
                   ...(logBody !== undefined ? { body: logBody } : {}),
-                  ...(stub ? { matchedStubId: NonEmptyString.make(stub.id) } : {}),
-                  proxied
+                  ...(outcome.matchedStubId !== undefined
+                    ? { matchedStubId: NonEmptyString.make(outcome.matchedStubId) }
+                    : {}),
+                  proxied: outcome.proxied
                 },
                 duration
               }

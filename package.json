@@ -85,6 +85,7 @@
       ],
       "exclude": [
         "types/**/*.d.ts",
+        "extensions/*/**/*.ts",
         "ui/pages/request-detail.ts",
         "ui/partials.ts"
       ]

@@ -12,6 +12,7 @@ const makeConfig = (id: string, name: string): ImposterConfig =>
     id,
     name,
     port: 3000,
+    protocol: "HTTP",
     status: "stopped",
     createdAt: DateTime.nowUnsafe()
   })

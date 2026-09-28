@@ -1,7 +1,9 @@
 import { Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
-import type { NonEmptyString, PortNumber } from "../schemas/common"
+import type { ImposterExtension } from "../extensions/Extension"
+import { HttpProtocol, type NonEmptyString, type PortNumber } from "../schemas/common"
 import type { CreateStubRequest } from "../schemas/StubSchema"
+import { makeFullLayer } from "../server/AdminServer"
 import { HandlerHttpClientLive } from "./HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "./ImpostersClient"
 
@@ -26,7 +28,14 @@ interface ResponseConfigInput {
 export interface WithImposterConfig {
   readonly port?: number
   readonly name?: string
+  /** Defaults to "HTTP"; any other protocol must be registered with `makeTestServer({ extensions })` */
+  readonly protocol?: string
   readonly stubs?: ReadonlyArray<StubConfig>
+}
+
+export interface TestServerOptions {
+  /** Extensions to register, as the CLI's registration point would */
+  readonly extensions?: ReadonlyArray<ImposterExtension>
 }
 
 export interface ImposterTestContext {
@@ -64,7 +73,7 @@ export const withImposter = <A, E>(
         payload: {
           ...(config.port !== undefined ? { port: asPort(config.port) } : {}),
           ...(config.name !== undefined ? { name: asNes(config.name) } : {}),
-          protocol: "HTTP" as const,
+          protocol: config.protocol ?? HttpProtocol,
           adminPath: "/_admin"
         }
       })
@@ -94,8 +103,11 @@ export const withImposter = <A, E>(
       }).pipe(Effect.catch(() => Effect.void))
   )
 
-export const makeTestServer = <E>(fullLayer: Layer.Layer<never, E, HttpRouter.HttpRouter>) => {
-  const { dispose, handler } = HttpRouter.toWebHandler(fullLayer, { disableLogger: true })
+/** An in-process admin API (no admin socket) with the full imposter runtime behind it */
+export const makeTestServer = (options: TestServerOptions = {}) => {
+  const { dispose, handler } = HttpRouter.toWebHandler(makeFullLayer(options.extensions ?? []), {
+    disableLogger: true
+  })
   const clientLayer = ImpostersClientLive().pipe(
     Layer.provide(HandlerHttpClientLive(handler))
   )

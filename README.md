@@ -307,7 +307,7 @@ The `withImposter` helper manages the lifecycle of a test imposter — create, c
 import { withImposter, makeTestServer } from "imposters/client"
 import { Effect } from "effect"
 
-const { clientLayer } = makeTestServer(FullLayer)
+const { clientLayer } = makeTestServer() // or makeTestServer({ extensions: [...] })
 
 const test = withImposter(
   {

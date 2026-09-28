@@ -1,10 +1,12 @@
 import * as Clock from "effect/Clock"
 import * as DateTime from "effect/DateTime"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { ImposterConfig, type ProxyConfigDomain } from "../domain/imposter"
+import { Extensions, findExtension, supportedProtocols } from "../extensions/Extension"
 import { ImposterRepository } from "../repositories/ImposterRepository"
-import { NonEmptyString } from "../schemas/common"
+import { HttpProtocol, NonEmptyString } from "../schemas/common"
 import { ImposterServer } from "../server/ImposterServer"
 import { AppConfig } from "../services/AppConfig"
 import { MetricsService } from "../services/MetricsService"
@@ -12,8 +14,15 @@ import { PortAllocator } from "../services/PortAllocator"
 import { RequestLogger } from "../services/RequestLogger"
 import { Uuid } from "../services/Uuid"
 import { AdminApi } from "./AdminApi"
-import { ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors"
+import { ApiBadRequestError, ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors"
 import { buildPaginationMeta, toImposterResponse } from "./Conversions"
+
+// Extensions are terminal (they answer every unmatched request), so a proxy on one would never run
+const proxyOnExtensionError = (protocol: string) =>
+  new ApiBadRequestError({
+    message:
+      `Proxy is only supported on ${HttpProtocol} imposters; a ${protocol} imposter answers unmatched requests itself`
+  })
 
 export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters", (handlers) =>
   Effect.gen(function*() {
@@ -26,6 +35,16 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
     const uuid = yield* Uuid
     const metricsService = yield* MetricsService
     const requestLogger = yield* RequestLogger
+    const extensions = yield* Extensions
+
+    const checkProtocol = (protocol: string): Effect.Effect<void, ApiBadRequestError> =>
+      protocol === HttpProtocol || Option.isSome(findExtension(extensions, protocol))
+        ? Effect.void
+        : Effect.fail(
+          new ApiBadRequestError({
+            message: `Unknown protocol "${protocol}". Available: ${supportedProtocols(extensions).join(", ")}`
+          })
+        )
 
     return handlers
       .handle("createImposter", ({ payload }) =>
@@ -35,6 +54,11 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
             return yield* Effect.fail(
               new ApiServiceError({ message: `Maximum number of imposters (${config.maxImposters}) reached` })
             )
+          }
+
+          yield* checkProtocol(payload.protocol)
+          if (payload.proxy !== undefined && payload.protocol !== HttpProtocol) {
+            return yield* Effect.fail(proxyOnExtensionError(payload.protocol))
           }
 
           const id = yield* uuid.generateShort
@@ -52,6 +76,7 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
             id,
             name,
             port,
+            protocol: payload.protocol,
             status: "stopped",
             createdAt: DateTime.nowUnsafe(),
             ...(payload.proxy !== undefined ? { proxy: payload.proxy } : {})
@@ -64,10 +89,9 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
         Effect.gen(function*() {
           const all = yield* repo.getAll
 
-          // All imposters are HTTP in Phase 2; protocol filter is for forward compatibility
           const filtered = all
             .filter((r) => query.status === undefined || r.config.status === query.status)
-            .filter(() => query.protocol === undefined || query.protocol === "HTTP")
+            .filter((r) => query.protocol === undefined || r.config.protocol === query.protocol)
 
           filtered.sort((a, b) =>
             DateTime.toEpochMillis(a.config.createdAt) - DateTime.toEpochMillis(b.config.createdAt)
@@ -100,6 +124,10 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
                 new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
               ))
           )
+
+          if (payload.proxy !== undefined && payload.proxy !== null && existing.config.protocol !== HttpProtocol) {
+            return yield* Effect.fail(proxyOnExtensionError(existing.config.protocol))
+          }
 
           const wasRunning = yield* imposterServer.isRunning(params.id)
           const wantsRunning = payload.status === "running"
