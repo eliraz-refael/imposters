@@ -1,6 +1,6 @@
-import { HttpApiBuilder } from "@effect/platform"
 import { Effect, ManagedRuntime } from "effect"
 import * as Layer from "effect/Layer"
+import { HttpRouter } from "effect/unstable/http"
 import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient"
 import { type ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient"
 import { withImposter } from "imposters/client/testing"
@@ -49,7 +49,7 @@ let dispose: () => void
 let clientRuntime: ManagedRuntime.ManagedRuntime<ImpostersClient, never>
 
 beforeAll(() => {
-  const result = HttpApiBuilder.toWebHandler(FullLayer)
+  const result = HttpRouter.toWebHandler(FullLayer)
   adminHandler = result.handler
   dispose = result.dispose
 

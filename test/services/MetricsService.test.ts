@@ -18,7 +18,7 @@ const makeEntry = (overrides: {
 } = {}): RequestLogEntry => ({
   id: NonEmptyString.make(crypto.randomUUID()),
   imposterId: NonEmptyString.make(overrides.imposterId ?? "imp-1"),
-  timestamp: DateTime.unsafeNow(),
+  timestamp: DateTime.nowUnsafe(),
   request: {
     method: overrides.method ?? "GET",
     path: "/test",

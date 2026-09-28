@@ -1,4 +1,4 @@
-import { Context, Data, Effect, HashMap, Layer, Ref, Runtime } from "effect"
+import { Context, Data, Effect, HashMap, Layer, Ref } from "effect"
 import * as DateTime from "effect/DateTime"
 import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter"
 import { extractRequestContext, findMatchingStub } from "../matching/RequestMatcher"
@@ -27,7 +27,7 @@ export interface ImposterServerShape {
   readonly isRunning: (id: string) => Effect.Effect<boolean>
 }
 
-export class ImposterServer extends Context.Tag("ImposterServer")<ImposterServer, ImposterServerShape>() {}
+export class ImposterServer extends Context.Service<ImposterServer, ImposterServerShape>()("ImposterServer") {}
 
 interface ImposterState {
   readonly stubsRef: Ref.Ref<ReadonlyArray<Stub>>
@@ -58,9 +58,9 @@ export const ImposterServerLive = Layer.effect(
         // Store state for hot-reload
         yield* Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef } as ImposterState))
 
-        // Capture runtime for running effects inside fetch handler
-        const rt = yield* Effect.runtime<never>()
-        const runPromise = Runtime.runPromise(rt)
+        // Capture the current services for running effects inside the fetch handler
+        const services = yield* Effect.context<never>()
+        const runPromise = Effect.runPromiseWith(services)
 
         // UI router for /_admin pages
         const uiRouter = makeUiRouter({ id, config, stubsRef, repo, requestLogger, runPromise })
@@ -97,9 +97,9 @@ export const ImposterServerLive = Layer.effect(
                   if (proxyConfig.mode === "record" && response.status < 500) {
                     const responseClone = response.clone()
                     const newStub = yield* proxyService.recordAsStub(ctx, responseClone)
-                    yield* repo.addStub(id, newStub).pipe(Effect.catchAll(() => Effect.void))
+                    yield* repo.addStub(id, newStub).pipe(Effect.catch(() => Effect.void))
                     const freshStubs = yield* repo.getStubs(id).pipe(
-                      Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>))
+                      Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
                     )
                     yield* Ref.set(stubsRef, freshStubs)
                   }
@@ -135,7 +135,7 @@ export const ImposterServerLive = Layer.effect(
               const logEntry: RequestLogEntry = {
                 id: NonEmptyString.make(crypto.randomUUID()),
                 imposterId: NonEmptyString.make(id),
-                timestamp: DateTime.unsafeMake(startTime),
+                timestamp: DateTime.makeUnsafe(startTime),
                 request: {
                   method: ctx.method,
                   path: ctx.path,
@@ -152,12 +152,12 @@ export const ImposterServerLive = Layer.effect(
                 },
                 duration
               }
-              yield* requestLogger.log(logEntry).pipe(Effect.catchAll(() => Effect.void))
-              yield* metricsService.recordRequest(logEntry).pipe(Effect.catchAll(() => Effect.void))
+              yield* requestLogger.log(logEntry).pipe(Effect.catch(() => Effect.void))
+              yield* metricsService.recordRequest(logEntry).pipe(Effect.catch(() => Effect.void))
 
               return response
             }).pipe(
-              Effect.catchAllCause((cause) =>
+              Effect.catchCause((cause) =>
                 Effect.succeed(
                   new Response(
                     JSON.stringify({ error: "Internal server error", details: String(cause) }),
@@ -190,7 +190,7 @@ export const ImposterServerLive = Layer.effect(
               yield* repo.update(id, (r) => ({
                 ...r,
                 config: ImposterConfig({ ...r.config, status: "stopped" })
-              })).pipe(Effect.catchAll(() => Effect.void))
+              })).pipe(Effect.catch(() => Effect.void))
               yield* responseState.reset(id)
             })
           )
@@ -212,13 +212,13 @@ export const ImposterServerLive = Layer.effect(
         yield* repo.update(id, (r) => ({
           ...r,
           config: ImposterConfig({ ...r.config, status: "stopped" })
-        })).pipe(Effect.catchAll(() => Effect.void))
+        })).pipe(Effect.catch(() => Effect.void))
         yield* requestLogger.removeImposter(id)
       })
 
     const updateStubs = (id: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const stubs = yield* repo.getStubs(id).pipe(Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>)))
+        const stubs = yield* repo.getStubs(id).pipe(Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>)))
         const stateMap = yield* Ref.get(stateMapRef)
         const state = HashMap.get(stateMap, id)
         if (state._tag === "Some") {
@@ -228,7 +228,7 @@ export const ImposterServerLive = Layer.effect(
 
     const updateProxyConfig = (id: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const record = yield* repo.get(id).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        const record = yield* repo.get(id).pipe(Effect.catch(() => Effect.succeed(null)))
         if (record === null) return
         const stateMap = yield* Ref.get(stateMapRef)
         const state = HashMap.get(stateMap, id)

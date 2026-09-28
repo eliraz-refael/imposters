@@ -43,7 +43,7 @@ describe("MainLayer", () => {
         name: "integration-test",
         port,
         status: "running",
-        createdAt: DateTime.unsafeNow()
+        createdAt: DateTime.nowUnsafe()
       })
       yield* repo.create(config)
 

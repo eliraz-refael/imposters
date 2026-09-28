@@ -1,5 +1,5 @@
-import { HttpApiBuilder } from "@effect/platform"
 import { Effect, Layer } from "effect"
+import { HttpRouter } from "effect/unstable/http"
 import type { NonEmptyString, PortNumber } from "../schemas/common"
 import type { CreateStubRequest } from "../schemas/StubSchema"
 import { HandlerHttpClientLive } from "./HandlerHttpClient"
@@ -71,13 +71,13 @@ export const withImposter = <A, E>(
 
       for (const stub of config.stubs ?? []) {
         yield* client.imposters.addStub({
-          path: { imposterId: imp.id },
+          params: { imposterId: imp.id },
           payload: toStubPayload(stub)
         })
       }
 
       yield* client.imposters.updateImposter({
-        path: { id: imp.id },
+        params: { id: imp.id },
         payload: { status: "running" }
       })
 
@@ -90,14 +90,14 @@ export const withImposter = <A, E>(
       Effect.gen(function*() {
         const client = yield* ImpostersClient
         yield* client.imposters.deleteImposter({
-          path: { id: ctx.id as typeof ctx.id & NonEmptyString },
-          urlParams: { force: true }
-        }).pipe(Effect.catchAll(() => Effect.void))
-      }).pipe(Effect.catchAll(() => Effect.void))
+          params: { id: ctx.id },
+          query: { force: true }
+        }).pipe(Effect.catch(() => Effect.void))
+      }).pipe(Effect.catch(() => Effect.void))
   )
 
-export const makeTestServer = (fullLayer: Layer.Layer<any, any, never>) => {
-  const { dispose, handler } = HttpApiBuilder.toWebHandler(fullLayer as any)
+export const makeTestServer = <E>(fullLayer: Layer.Layer<never, E, HttpRouter.HttpRouter>) => {
+  const { dispose, handler } = HttpRouter.toWebHandler(fullLayer, { disableLogger: true })
   const clientLayer = ImpostersClientLive().pipe(
     Layer.provide(HandlerHttpClientLive(handler))
   )

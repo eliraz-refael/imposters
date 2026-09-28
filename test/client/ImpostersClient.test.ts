@@ -1,5 +1,5 @@
-import { HttpApiBuilder } from "@effect/platform"
 import { Effect, Layer, ManagedRuntime } from "effect"
+import { HttpRouter } from "effect/unstable/http"
 import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient"
 import { ApiLayer } from "imposters/layers/ApiLayer"
@@ -53,7 +53,7 @@ let dispose: () => void
 let runtime: ManagedRuntime.ManagedRuntime<ImpostersClient, never>
 
 beforeAll(() => {
-  const result = HttpApiBuilder.toWebHandler(FullLayer)
+  const result = HttpRouter.toWebHandler(FullLayer)
   handler = result.handler
   dispose = result.dispose
 
@@ -111,7 +111,7 @@ describe("ImpostersClient", () => {
       const fetched = await run(
         Effect.gen(function*() {
           const client = yield* ImpostersClient
-          return yield* client.imposters.getImposter({ path: { id } })
+          return yield* client.imposters.getImposter({ params: { id } })
         })
       )
       expect(fetched.id).toBe(id)
@@ -121,7 +121,7 @@ describe("ImpostersClient", () => {
       const listed = await run(
         Effect.gen(function*() {
           const client = yield* ImpostersClient
-          return yield* client.imposters.listImposters({ urlParams: { limit: posInt(50), offset: 0 } })
+          return yield* client.imposters.listImposters({ query: { limit: posInt(50), offset: 0 } })
         })
       )
       expect(listed.imposters.length).toBeGreaterThanOrEqual(1)
@@ -132,7 +132,7 @@ describe("ImpostersClient", () => {
         Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.updateImposter({
-            path: { id },
+            params: { id },
             payload: { name: nes("Updated Name") }
           })
         })
@@ -144,8 +144,8 @@ describe("ImpostersClient", () => {
         Effect.gen(function*() {
           const client = yield* ImpostersClient
           return yield* client.imposters.deleteImposter({
-            path: { id },
-            urlParams: { force: false }
+            params: { id },
+            query: { force: false }
           })
         })
       )
@@ -166,7 +166,7 @@ describe("ImpostersClient", () => {
           Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.addStub({
-              path: { imposterId: imp.id },
+              params: { imposterId: imp.id },
               payload: {
                 predicates: [],
                 responses: [{ status: 200, body: { ok: true } }],
@@ -182,7 +182,7 @@ describe("ImpostersClient", () => {
         const stubs = await run(
           Effect.gen(function*() {
             const client = yield* ImpostersClient
-            return yield* client.imposters.listStubs({ path: { imposterId: imp.id } })
+            return yield* client.imposters.listStubs({ params: { imposterId: imp.id } })
           })
         )
         expect(stubs.length).toBe(1)
@@ -192,7 +192,7 @@ describe("ImpostersClient", () => {
           Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.updateStub({
-              path: { imposterId: imp.id, stubId: stub.id },
+              params: { imposterId: imp.id, stubId: stub.id },
               payload: { responses: [{ status: 201, body: { updated: true } }] }
             })
           })
@@ -204,7 +204,7 @@ describe("ImpostersClient", () => {
           Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.deleteStub({
-              path: { imposterId: imp.id, stubId: stub.id }
+              params: { imposterId: imp.id, stubId: stub.id }
             })
           })
         )
@@ -214,8 +214,8 @@ describe("ImpostersClient", () => {
           Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.deleteImposter({
-              path: { id: imp.id },
-              urlParams: { force: false }
+              params: { id: imp.id },
+              query: { force: false }
             })
           })
         )
@@ -226,9 +226,9 @@ describe("ImpostersClient", () => {
       const result = await run(
         Effect.gen(function*() {
           const client = yield* ImpostersClient
-          return yield* client.imposters.getImposter({ path: { id: "nonexistent" } }).pipe(
+          return yield* client.imposters.getImposter({ params: { id: "nonexistent" } }).pipe(
             Effect.map(() => "should-not-reach" as const),
-            Effect.catchAll(() => Effect.succeed("error" as const))
+            Effect.catch(() => Effect.succeed("error" as const))
           )
         })
       )
@@ -249,7 +249,7 @@ describe("ImpostersClient", () => {
             const client = yield* ImpostersClient
             return yield* client.imposters.createImposter({ payload: impPayload(9403) }).pipe(
               Effect.map(() => "should-not-reach" as const),
-              Effect.catchAll(() => Effect.succeed("conflict" as const))
+              Effect.catch(() => Effect.succeed("conflict" as const))
             )
           })
         )
@@ -259,8 +259,8 @@ describe("ImpostersClient", () => {
           Effect.gen(function*() {
             const client = yield* ImpostersClient
             return yield* client.imposters.deleteImposter({
-              path: { id: imp.id },
-              urlParams: { force: false }
+              params: { id: imp.id },
+              query: { force: false }
             })
           })
         )

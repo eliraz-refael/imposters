@@ -4,33 +4,30 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import { pipe } from "effect/Function"
 import * as Option from "effect/Option"
-import type * as ParseResult from "effect/ParseResult"
 import * as Schema from "effect/Schema"
 import { Uuid } from "../services/Uuid"
 
-const HttpMethodSchema = Schema.Literal("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
+const HttpMethodSchema = Schema.Literals(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 
-const StatusCodeSchema = Schema.Number.pipe(Schema.int(), Schema.between(100, 599))
+const StatusCodeSchema = Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 }))
 
-const DelaySchema = Schema.Number.pipe(Schema.int(), Schema.between(0, 60000))
+const DelaySchema = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 60000 }))
 
-const PathSchema = Schema.String.pipe(
-  Schema.startsWith("/"),
-  Schema.pattern(/^\/[a-zA-Z0-9\-._~!$&'()*+,;=:@/{}[\]]*$/)
+const PathSchema = Schema.String.check(
+  Schema.isStartsWith("/"),
+  Schema.isPattern(/^\/[a-zA-Z0-9\-._~!$&'()*+,;=:@/{}[\]]*$/)
 )
 
 const ResponseSchema = Schema.Struct({
-  status: Schema.optionalWith(StatusCodeSchema, { default: () => 200 }),
-  headers: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.String })
-  ),
+  status: StatusCodeSchema.pipe(Schema.withDecodingDefault(Effect.succeed(200))),
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   body: Schema.Unknown
 })
 
 const CreateRouteRequestSchema = Schema.Struct({
   id: Schema.optional(Schema.String),
   path: PathSchema,
-  method: Schema.optionalWith(HttpMethodSchema, { default: () => "GET" }),
+  method: HttpMethodSchema.pipe(Schema.withDecodingDefault(Effect.succeed("GET" as const))),
   response: ResponseSchema,
   delay: Schema.optional(DelaySchema)
 })
@@ -45,7 +42,7 @@ export interface Route {
   readonly createdAt: DateTime.Utc
 }
 
-export const Route = Data.tagged<Route>("Route")
+export const { Route } = Data.taggedEnum<Route>()
 
 export interface Response {
   readonly _tag: "Response"
@@ -54,7 +51,7 @@ export interface Response {
   readonly body: unknown
 }
 
-export const Response = Data.tagged<Response>("Response")
+export const { Response } = Data.taggedEnum<Response>()
 
 export interface CreateRouteRequest {
   readonly _tag: "CreateRouteRequest"
@@ -69,7 +66,7 @@ export interface CreateRouteRequest {
   readonly delay?: number
 }
 
-export const CreateRouteRequest = Data.tagged<CreateRouteRequest>("CreateRouteRequest")
+export const { CreateRouteRequest } = Data.taggedEnum<CreateRouteRequest>()
 
 // Tagged errors
 export class RouteError extends Data.TaggedError("RouteError")<{
@@ -89,8 +86,8 @@ export class RouteNotFoundError extends Data.TaggedError("RouteNotFoundError")<{
  */
 export const parseCreateRouteRequest = (
   input: unknown
-): Effect.Effect<typeof CreateRouteRequestSchema.Type, ParseResult.ParseError> =>
-  Schema.decodeUnknown(CreateRouteRequestSchema)(input)
+): Effect.Effect<typeof CreateRouteRequestSchema.Type, Schema.SchemaError> =>
+  Schema.decodeUnknownEffect(CreateRouteRequestSchema)(input)
 
 /**
  * Creates a new route from validated input
@@ -104,7 +101,7 @@ export const createRoute = (
 
     const response = Response({
       status: validatedInput.response.status,
-      headers: Option.fromNullable(validatedInput.response.headers),
+      headers: Option.fromNullishOr(validatedInput.response.headers),
       body: validatedInput.response.body
     })
 
@@ -115,10 +112,10 @@ export const createRoute = (
       response,
       delay: pipe(
         validatedInput.delay,
-        Option.fromNullable,
+        Option.fromNullishOr,
         Option.map(Duration.millis)
       ),
-      createdAt: DateTime.unsafeNow()
+      createdAt: DateTime.nowUnsafe()
     })
   })
 
@@ -250,6 +247,6 @@ export const createMinimalRoute = (path: string) => (method: typeof HttpMethodSc
         body: { message: "OK" }
       }),
       delay: Option.none(),
-      createdAt: DateTime.unsafeNow()
+      createdAt: DateTime.nowUnsafe()
     })
   })

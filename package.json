@@ -34,10 +34,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@effect/cli": "^0.72.0",
-    "@effect/platform": "^0.94.4",
-    "@effect/platform-node": "^0.104.0",
-    "effect": "^3.19.16",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "effect": "4.0.0-rc.117",
     "jsonata": "^2.1.0",
     "uuid": "^11.1.0"
   },
@@ -48,8 +46,8 @@
     "@babel/plugin-transform-modules-commonjs": "^7.27.1",
     "@effect/build-utils": "^0.7.9",
     "@effect/eslint-plugin": "^0.2.0",
-    "@effect/language-service": "^0.1.0",
-    "@effect/vitest": "^0.25.0",
+    "@effect/language-service": "^0.87.2",
+    "@effect/vitest": "4.0.0-rc.115",
     "@eslint/compat": "1.1.1",
     "@eslint/eslintrc": "3.1.0",
     "@eslint/js": "9.10.0",
@@ -67,7 +65,8 @@
     "eslint-plugin-sort-destructure-keys": "^2.0.0",
     "tsx": "^4.20.6",
     "typescript": "~6.0.3",
-    "vitest": "^3.2.7"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   },
   "effect": {
     "generateExports": {

@@ -13,7 +13,7 @@ export interface ServerFactoryShape {
   }) => ServerInstance
 }
 
-export class ServerFactory extends Context.Tag("ServerFactory")<ServerFactory, ServerFactoryShape>() {}
+export class ServerFactory extends Context.Service<ServerFactory, ServerFactoryShape>()("ServerFactory") {}
 
 export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
   create: (options): ServerInstance => {

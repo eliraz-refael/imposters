@@ -17,7 +17,7 @@ export interface PortAllocatorShape {
   readonly isAvailable: (port: number) => Effect.Effect<boolean>
 }
 
-export class PortAllocator extends Context.Tag("PortAllocator")<PortAllocator, PortAllocatorShape>() {}
+export class PortAllocator extends Context.Service<PortAllocator, PortAllocatorShape>()("PortAllocator") {}
 
 export const PortAllocatorLive = Layer.effect(
   PortAllocator,

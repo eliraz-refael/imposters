@@ -29,7 +29,7 @@ export const loadConfigFile = (
         })
     })
 
-    return yield* Schema.decodeUnknown(ConfigFile)(json).pipe(
+    return yield* Schema.decodeUnknownEffect(ConfigFile)(json).pipe(
       Effect.mapError(
         (error) =>
           new ConfigLoadError({

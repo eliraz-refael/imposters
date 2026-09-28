@@ -1,7 +1,6 @@
 import { it } from "@effect/vitest"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import { AppConfig, AppConfigLive } from "imposters/services/AppConfig"
 import { describe, expect } from "vitest"
 
@@ -16,7 +15,7 @@ describe("AppConfig", () => {
       expect(config.logLevel).toBe("info")
     }).pipe(
       Effect.provide(AppConfigLive),
-      Effect.provide(Layer.setConfigProvider(ConfigProvider.fromMap(new Map())))
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))
     ))
 
   it.effect("custom env vars override defaults", () =>
@@ -27,13 +26,13 @@ describe("AppConfig", () => {
       expect(config.logLevel).toBe("debug")
     }).pipe(
       Effect.provide(AppConfigLive),
-      Effect.provide(Layer.setConfigProvider(ConfigProvider.fromMap(
-        new Map([
-          ["ADMIN_PORT", "9999"],
-          ["PORT_RANGE_MIN", "5000"],
-          ["LOG_LEVEL", "debug"]
-        ])
-      )))
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({
+        env: {
+          ADMIN_PORT: "9999",
+          PORT_RANGE_MIN: "5000",
+          LOG_LEVEL: "debug"
+        }
+      })))
     ))
 
   it.effect("fails with ConfigError for invalid values", () =>
@@ -41,11 +40,9 @@ describe("AppConfig", () => {
       const result = yield* Effect.flip(
         AppConfig.pipe(
           Effect.provide(AppConfigLive),
-          Effect.provide(Layer.setConfigProvider(ConfigProvider.fromMap(
-            new Map([
-              ["ADMIN_PORT", "not-a-number"]
-            ])
-          )))
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({
+            env: { ADMIN_PORT: "not-a-number" }
+          })))
         )
       )
       expect(result._tag).toBe("ConfigError")

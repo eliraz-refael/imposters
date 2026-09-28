@@ -13,7 +13,7 @@ const makeConfig = (id: string, name: string): ImposterConfig =>
     name,
     port: 3000,
     status: "stopped",
-    createdAt: DateTime.unsafeNow()
+    createdAt: DateTime.nowUnsafe()
   })
 
 const makeStub = (id: string) =>

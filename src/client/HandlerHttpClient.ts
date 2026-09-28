@@ -1,5 +1,5 @@
-import { HttpClient, HttpClientResponse } from "@effect/platform"
 import { Effect, Layer } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 
 export const makeHandlerHttpClient = (
   handler: (request: Request) => Promise<Response>

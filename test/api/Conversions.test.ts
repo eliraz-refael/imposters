@@ -13,7 +13,7 @@ describe("Conversions", () => {
         name: "my-imposter",
         port: 3000,
         status: "stopped",
-        createdAt: DateTime.unsafeNow()
+        createdAt: DateTime.nowUnsafe()
       })
       const record: ImposterRecord = { config, stubs: [] }
 
@@ -36,7 +36,7 @@ describe("Conversions", () => {
         name: "with-stubs",
         port: 3001,
         status: "stopped",
-        createdAt: DateTime.unsafeNow()
+        createdAt: DateTime.nowUnsafe()
       })
       const record: ImposterRecord = {
         config,

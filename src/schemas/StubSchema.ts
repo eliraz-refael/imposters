@@ -1,42 +1,42 @@
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { NonEmptyString } from "./common"
 
 // Proxy Mode
-export const ProxyMode = Schema.Literal("passthrough", "record")
+export const ProxyMode = Schema.Literals(["passthrough", "record"])
 export type ProxyMode = Schema.Schema.Type<typeof ProxyMode>
 
 // Proxy Configuration
 export const ProxyConfig = Schema.Struct({
-  targetUrl: Schema.String.pipe(Schema.pattern(/^https?:\/\//)),
-  mode: Schema.optionalWith(ProxyMode, { default: () => "passthrough" as const }),
-  addHeaders: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
-  removeHeaders: Schema.optionalWith(Schema.Array(Schema.String), { default: () => [] as const }),
-  followRedirects: Schema.optionalWith(Schema.Boolean, { default: () => true }),
-  timeout: Schema.optionalWith(
-    Schema.Number.pipe(Schema.int(), Schema.between(100, 60000)),
-    { default: () => 10000 }
+  targetUrl: Schema.String.check(Schema.isPattern(/^https?:\/\//)),
+  mode: ProxyMode.pipe(Schema.withDecodingDefault(Effect.succeed("passthrough" as const))),
+  addHeaders: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  removeHeaders: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.sync(() => []))),
+  followRedirects: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  timeout: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 60000 })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(10000))
   )
 })
 export type ProxyConfig = Schema.Schema.Type<typeof ProxyConfig>
 
 // Predicate operators for matching incoming requests
-export const PredicateOperator = Schema.Literal(
+export const PredicateOperator = Schema.Literals([
   "equals",
   "contains",
   "startsWith",
   "matches",
   "exists"
-)
+])
 export type PredicateOperator = Schema.Schema.Type<typeof PredicateOperator>
 
 // Which part of the request to match against
-export const PredicateField = Schema.Literal(
+export const PredicateField = Schema.Literals([
   "method",
   "path",
   "headers",
   "query",
   "body"
-)
+])
 export type PredicateField = Schema.Schema.Type<typeof PredicateField>
 
 // A single predicate matcher
@@ -44,23 +44,22 @@ export const Predicate = Schema.Struct({
   field: PredicateField,
   operator: PredicateOperator,
   value: Schema.Unknown,
-  caseSensitive: Schema.optionalWith(Schema.Boolean, { default: () => true })
+  caseSensitive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true)))
 })
 export type Predicate = Schema.Schema.Type<typeof Predicate>
 
 // How to cycle through responses
-export const ResponseMode = Schema.Literal("sequential", "random", "repeat")
+export const ResponseMode = Schema.Literals(["sequential", "random", "repeat"])
 export type ResponseMode = Schema.Schema.Type<typeof ResponseMode>
 
 // A single response configuration
 export const ResponseConfig = Schema.Struct({
-  status: Schema.optionalWith(
-    Schema.Number.pipe(Schema.int(), Schema.between(100, 599)),
-    { default: () => 200 }
+  status: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(200))
   ),
-  headers: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   body: Schema.optional(Schema.Unknown),
-  delay: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(0, 60000)))
+  delay: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 60000 })))
 })
 export type ResponseConfig = Schema.Schema.Type<typeof ResponseConfig>
 
@@ -69,15 +68,15 @@ export const Stub = Schema.Struct({
   id: NonEmptyString,
   predicates: Schema.Array(Predicate),
   responses: Schema.NonEmptyArray(ResponseConfig),
-  responseMode: Schema.optionalWith(ResponseMode, { default: () => "sequential" as const })
+  responseMode: ResponseMode.pipe(Schema.withDecodingDefault(Effect.succeed("sequential" as const)))
 })
 export type Stub = Schema.Schema.Type<typeof Stub>
 
 // API request to create a stub (id is auto-generated)
 export const CreateStubRequest = Schema.Struct({
-  predicates: Schema.optionalWith(Schema.Array(Predicate), { default: () => [] as const }),
+  predicates: Schema.Array(Predicate).pipe(Schema.withDecodingDefault(Effect.sync(() => []))),
   responses: Schema.NonEmptyArray(ResponseConfig),
-  responseMode: Schema.optionalWith(ResponseMode, { default: () => "sequential" as const })
+  responseMode: ResponseMode.pipe(Schema.withDecodingDefault(Effect.succeed("sequential" as const)))
 })
 export type CreateStubRequest = Schema.Schema.Type<typeof CreateStubRequest>
 

@@ -3,21 +3,17 @@ import * as Data from "effect/Data"
 import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import type * as ParseResult from "effect/ParseResult"
 import * as Schema from "effect/Schema"
 import { Uuid } from "../services/Uuid"
 
 // Schemas for validation
-const ImposterNameSchema = Schema.String.pipe(
-  Schema.minLength(1),
-  Schema.maxLength(100),
-  Schema.pattern(/^[a-zA-Z0-9-_]+$/)
+const ImposterNameSchema = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(100),
+  Schema.isPattern(/^[a-zA-Z0-9-_]+$/)
 )
 
-const PortSchema = Schema.Number.pipe(
-  Schema.int(),
-  Schema.between(1024, 65535)
-)
+const PortSchema = Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65535 }))
 
 type ImposterStatus = "running" | "stopped" | "starting" | "stopping"
 
@@ -46,7 +42,7 @@ export interface ImposterConfig {
   readonly proxy?: ProxyConfigDomain | undefined
 }
 
-export const ImposterConfig = Data.tagged<ImposterConfig>("ImposterConfig")
+export const { ImposterConfig } = Data.taggedEnum<ImposterConfig>()
 
 export interface CreateImposterRequest {
   readonly _tag: "CreateImposterRequest"
@@ -54,7 +50,7 @@ export interface CreateImposterRequest {
   readonly port?: number
 }
 
-export const CreateImposterRequest = Data.tagged<CreateImposterRequest>("CreateImposterRequest")
+export const { CreateImposterRequest } = Data.taggedEnum<CreateImposterRequest>()
 
 export interface ImposterRef {
   readonly _tag: "ImposterRef"
@@ -63,7 +59,7 @@ export interface ImposterRef {
   readonly endpointCount: number
 }
 
-export const ImposterRef = Data.tagged<ImposterRef>("ImposterRef")
+export const { ImposterRef } = Data.taggedEnum<ImposterRef>()
 
 // Tagged errors
 export class ImposterError extends Data.TaggedError("ImposterError")<{
@@ -84,8 +80,8 @@ export class ImposterNotFoundError extends Data.TaggedError("ImposterNotFoundErr
  */
 export const parseCreateImposterRequest = (
   input: unknown
-): Effect.Effect<typeof CreateImposterRequestSchema.Type, ParseResult.ParseError> =>
-  Schema.decodeUnknown(CreateImposterRequestSchema)(input)
+): Effect.Effect<typeof CreateImposterRequestSchema.Type, Schema.SchemaError> =>
+  Schema.decodeUnknownEffect(CreateImposterRequestSchema)(input)
 
 /**
  * Creates a new imposter configuration from validated input
@@ -103,7 +99,7 @@ export const createImposterConfig = (
       name,
       port: validatedInput.port ?? 0, // Will be assigned by port allocator if 0
       status: "starting",
-      createdAt: DateTime.unsafeNow()
+      createdAt: DateTime.nowUnsafe()
     })
   })
 

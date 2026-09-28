@@ -65,7 +65,7 @@ describe("imposter domain", () => {
   describe("calculateUptime", () => {
     it.effect("returns positive duration", () =>
       Effect.gen(function*() {
-        const startTime = DateTime.unsafeNow()
+        const startTime = yield* DateTime.now
         const uptime = yield* calculateUptime(startTime)
         expect(Duration.toMillis(uptime)).toBeGreaterThanOrEqual(0)
       }))

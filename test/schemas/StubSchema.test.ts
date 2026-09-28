@@ -8,27 +8,27 @@ describe("StubSchema", () => {
   describe("ResponseConfig", () => {
     it.effect("defaults status to 200", () =>
       Effect.gen(function*() {
-        const config = yield* Schema.decodeUnknown(ResponseConfig)({})
+        const config = yield* Schema.decodeUnknownEffect(ResponseConfig)({})
         expect(config.status).toBe(200)
       }))
 
     it.effect("accepts custom status", () =>
       Effect.gen(function*() {
-        const config = yield* Schema.decodeUnknown(ResponseConfig)({ status: 404 })
+        const config = yield* Schema.decodeUnknownEffect(ResponseConfig)({ status: 404 })
         expect(config.status).toBe(404)
       }))
 
     it.effect("rejects invalid status", () =>
       Effect.gen(function*() {
-        const result = yield* Effect.flip(Schema.decodeUnknown(ResponseConfig)({ status: 999 }))
-        expect(result._tag).toBe("ParseError")
+        const result = yield* Effect.flip(Schema.decodeUnknownEffect(ResponseConfig)({ status: 999 }))
+        expect(result._tag).toBe("SchemaError")
       }))
   })
 
   describe("Predicate", () => {
     it.effect("decodes valid predicate", () =>
       Effect.gen(function*() {
-        const predicate = yield* Schema.decodeUnknown(Predicate)({
+        const predicate = yield* Schema.decodeUnknownEffect(Predicate)({
           field: "path",
           operator: "equals",
           value: "/test"
@@ -41,20 +41,20 @@ describe("StubSchema", () => {
     it.effect("rejects invalid operator", () =>
       Effect.gen(function*() {
         const result = yield* Effect.flip(
-          Schema.decodeUnknown(Predicate)({
+          Schema.decodeUnknownEffect(Predicate)({
             field: "path",
             operator: "invalid",
             value: "/test"
           })
         )
-        expect(result._tag).toBe("ParseError")
+        expect(result._tag).toBe("SchemaError")
       }))
   })
 
   describe("Stub", () => {
     it.effect("decodes valid stub", () =>
       Effect.gen(function*() {
-        const stub = yield* Schema.decodeUnknown(Stub)({
+        const stub = yield* Schema.decodeUnknownEffect(Stub)({
           id: "stub-1",
           predicates: [{ field: "path", operator: "equals", value: "/test" }],
           responses: [{ status: 200, body: { ok: true } }]
@@ -68,20 +68,20 @@ describe("StubSchema", () => {
     it.effect("rejects empty responses array", () =>
       Effect.gen(function*() {
         const result = yield* Effect.flip(
-          Schema.decodeUnknown(Stub)({
+          Schema.decodeUnknownEffect(Stub)({
             id: "stub-1",
             predicates: [],
             responses: []
           })
         )
-        expect(result._tag).toBe("ParseError")
+        expect(result._tag).toBe("SchemaError")
       }))
   })
 
   describe("CreateStubRequest", () => {
     it.effect("defaults predicates to empty and responseMode to sequential", () =>
       Effect.gen(function*() {
-        const request = yield* Schema.decodeUnknown(CreateStubRequest)({
+        const request = yield* Schema.decodeUnknownEffect(CreateStubRequest)({
           responses: [{ body: "hello" }]
         })
         expect(request.predicates).toEqual([])

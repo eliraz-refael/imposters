@@ -35,10 +35,10 @@ export interface ImposterRepositoryShape {
   ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
 }
 
-export class ImposterRepository extends Context.Tag("ImposterRepository")<
+export class ImposterRepository extends Context.Service<
   ImposterRepository,
   ImposterRepositoryShape
->() {}
+>()("ImposterRepository") {}
 
 export const ImposterRepositoryLive = Layer.effect(
   ImposterRepository,

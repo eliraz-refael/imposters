@@ -1,12 +1,12 @@
-import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
+import { HttpRouter } from "effect/unstable/http"
 import { ApiLayer } from "imposters/layers/ApiLayer"
 import { MainLayer } from "imposters/layers/MainLayer"
 import { describe, expect, it } from "vitest"
 
 const makeHandler = () => {
   const fullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
-  return HttpApiBuilder.toWebHandler(fullLayer)
+  return HttpRouter.toWebHandler(fullLayer)
 }
 
 const json = (body: object) => ({
@@ -255,6 +255,33 @@ describe("Imposters API", () => {
       // Port should be available again
       const res2 = await handler(new Request("http://localhost/imposters", json({ name: "reuse", port: 8000 })))
       expect(res2.status).toBe(201)
+    } finally {
+      await dispose()
+    }
+  })
+
+  it("POST /imposters with an invalid payload returns a descriptive 400", async () => {
+    const { dispose, handler } = makeHandler()
+    try {
+      const res = await handler(new Request("http://localhost/imposters", json({ port: 80 })))
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body._tag).toBe("HttpApiDecodeError")
+      expect(body.kind).toBe("Payload")
+      expect(body.issues).toEqual([{ path: ["port"], message: expect.stringContaining("1024") }])
+    } finally {
+      await dispose()
+    }
+  })
+
+  it("GET /imposters with an invalid query param returns a descriptive 400", async () => {
+    const { dispose, handler } = makeHandler()
+    try {
+      const res = await handler(new Request("http://localhost/imposters?limit=abc"))
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.kind).toBe("Query")
+      expect(body.issues[0].path).toEqual(["limit"])
     } finally {
       await dispose()
     }

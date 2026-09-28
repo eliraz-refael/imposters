@@ -1,6 +1,6 @@
-import { Command, Options } from "@effect/cli"
-import { NodeContext, NodeRuntime } from "@effect/platform-node"
+import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
+import { Command, Flag } from "effect/unstable/cli"
 import { HandlerHttpClientLive } from "../client/HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "../client/ImpostersClient"
 import { makeCompositeHandler } from "../server/AdminServer"
@@ -8,21 +8,21 @@ import { BunServerFactoryLive, NodeServerFactoryLive, ServerFactory } from "../s
 import { loadConfigFile } from "./ConfigLoader"
 import { version } from "./version"
 
-const configOption = Options.file("config").pipe(
-  Options.withAlias("c"),
-  Options.withDescription("Path to JSON config file"),
-  Options.optional
+const configOption = Flag.File("config").pipe(
+  Flag.withAlias("c"),
+  Flag.withDescription("Path to JSON config file"),
+  Flag.optional
 )
 
-const portOption = Options.integer("port").pipe(
-  Options.withAlias("p"),
-  Options.withDescription("Admin server port (default: 2525)"),
-  Options.optional
+const portOption = Flag.Int("port").pipe(
+  Flag.withAlias("p"),
+  Flag.withDescription("Admin server port (default: 2525)"),
+  Flag.optional
 )
 
-const runtimeOption = Options.choice("runtime", ["node", "bun"]).pipe(
-  Options.withDescription("Server runtime: node (default) or bun"),
-  Options.withDefault("node" as const)
+const runtimeOption = Flag.Literals("runtime", ["node", "bun"]).pipe(
+  Flag.withDescription("Server runtime: node (default) or bun"),
+  Flag.withDefault("node" as const)
 )
 
 const startCommand = Command.make(
@@ -66,7 +66,7 @@ const startCommand = Command.make(
                     protocol: "HTTP" as const,
                     adminPath: "/_admin"
                   }
-                }).pipe(Effect.catchAll((e) => {
+                }).pipe(Effect.catch((e) => {
                   console.error(`Failed to create imposter on port ${imp.port}: ${e}`)
                   return Effect.succeed(null)
                 }))
@@ -75,18 +75,18 @@ const startCommand = Command.make(
 
                 for (const stub of imp.stubs) {
                   yield* client.imposters.addStub({
-                    path: { imposterId: created.id },
+                    params: { imposterId: created.id },
                     payload: stub
-                  }).pipe(Effect.catchAll((e) => {
+                  }).pipe(Effect.catch((e) => {
                     console.error(`Failed to add stub: ${e}`)
                     return Effect.void
                   }))
                 }
 
                 yield* client.imposters.updateImposter({
-                  path: { id: created.id },
+                  params: { id: created.id },
                   payload: { status: "running" as const }
-                }).pipe(Effect.catchAll((e) => {
+                }).pipe(Effect.catch((e) => {
                   console.error(`Failed to start imposter ${created.id}: ${e}`)
                   return Effect.void
                 }))
@@ -100,7 +100,7 @@ const startCommand = Command.make(
       }
 
       // Keep running until interrupted
-      yield* Effect.async<never, never>(() => {
+      yield* Effect.callback<never, never>(() => {
         const shutdown = () => {
           console.log("Shutting down...")
           server.stop(true)
@@ -119,12 +119,9 @@ const command = Command.make("imposters").pipe(
   Command.withSubcommands([startCommand])
 )
 
-export const run = Command.run(command, {
-  name: "imposters",
-  version
-})
+export const run = Command.run(command, { version })
 
-export const main = run(process.argv).pipe(
-  Effect.provide(NodeContext.layer),
+export const main = run.pipe(
+  Effect.provide(NodeServices.layer),
   NodeRuntime.runMain
 )
