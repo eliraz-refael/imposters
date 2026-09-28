@@ -136,7 +136,7 @@ test/                      # mirrors src/, plus test/e2e/ and test/helpers/
 ## Development Commands
 
 ```bash
-bun check          # tsc -b tsconfig.json
+bun check          # tsc -b tsconfig.json — runs TypeScript 7 (native); see "Two TypeScript installs" under Environment
 bun lint           # eslint
 bun lint-fix
 bun run test       # vitest --run (single run, NOT watch; ~32s — files run serially)
@@ -186,6 +186,7 @@ Three `any` usages and ~4 non-null assertions survive and should be cleaned up r
 - tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.
 
 **Environment**
+- **Two TypeScript installs, on purpose.** `typescript` (`~6.0.3`) keeps its real name because typescript-eslint and `@effect/language-service` need the JavaScript compiler API, which TypeScript 7 no longer ships (`require("typescript")` on TS 7 exposes only `version`). TypeScript 7 (native Go compiler, ~7x faster here) is installed under the alias `@typescript/native` (`npm:typescript@~7.0.2`) and drives `bun check` and `build-esm` **by explicit path** (`node node_modules/@typescript/native/bin/tsc`). `node_modules/.bin/tsc` currently resolves to TS 7 and `.bin/tsserver` to TS 6, but the scripts deliberately do not depend on which package wins that bin collision. Microsoft's recommended `@typescript/typescript6` shim does **not** work under bun: its inner `typescript@^6` dependency resolves back to the shim itself. Collapse to a single TS 7 once typescript-eslint supports the TS 7.1 API (typescript-eslint issue #10940).
 - A local `.npmrc` pins `registry=https://registry.npmjs.org/` to override a global private-registry setting; without it `bun install` hangs. `scripts/postbuild.ts` also copies it into `dist/`, so do not delete it.
 - **If you install through a mirror** (e.g. moving `.npmrc` aside to use a reachable internal registry), bun writes that mirror's tarball URLs into `bun.lock` as the second field of each entry. Upstream CI then cannot resolve them. Strip them before committing — the field should be `""`:
   ```bash
