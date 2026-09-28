@@ -71,6 +71,7 @@ const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   headers: { "content-type": "application/json", host: "localhost:3000" },
   query: { key: "value" },
   body: undefined,
+  rawBody: new Uint8Array(0),
   ...overrides
 })
 
@@ -106,7 +107,11 @@ describe("ProxyService", () => {
       await runtime.runPromise(
         Effect.gen(function*() {
           const proxy = yield* ProxyService
-          const ctx = makeCtx({ method: "POST", body: { name: "test" } })
+          const ctx = makeCtx({
+            method: "POST",
+            body: { name: "test" },
+            rawBody: new TextEncoder().encode("{\"name\":\"test\"}")
+          })
           const config = makeConfig()
           const url = new URL("http://localhost:3000/api/create")
           const response = yield* proxy.forward(ctx, config, url)

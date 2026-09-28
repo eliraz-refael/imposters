@@ -265,4 +265,34 @@ describe("E2E: Stub Matching", () => {
       await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
+
+  // Regression: the request-log capture used to rebuild every response as `new Response("", ...)`,
+  // which throws for null-body statuses and turned them into 500s
+  it("serves null-body statuses (204, 304) instead of a 500", async () => {
+    const imp = await createImposter(9208)
+    await addStub(imp.id, {
+      predicates: [{ field: "path", operator: "equals", value: "/no-content" }],
+      responses: [{ status: 204 }]
+    })
+    await addStub(imp.id, {
+      predicates: [{ field: "path", operator: "equals", value: "/not-modified" }],
+      responses: [{ status: 304, headers: { etag: "\"v1\"" } }]
+    })
+
+    await startImposter(imp.id)
+    await new Promise((r) => setTimeout(r, 150))
+
+    try {
+      const noContent = await fetch("http://localhost:9208/no-content", { method: "DELETE" })
+      expect(noContent.status).toBe(204)
+      expect(await noContent.text()).toBe("")
+
+      const notModified = await fetch("http://localhost:9208/not-modified")
+      expect(notModified.status).toBe(304)
+      expect(notModified.headers.get("etag")).toBe("\"v1\"")
+    } finally {
+      await stopImposter(imp.id)
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  }, 10000)
 })

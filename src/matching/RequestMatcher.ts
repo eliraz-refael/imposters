@@ -5,7 +5,33 @@ export interface RequestContext {
   readonly path: string
   readonly headers: Record<string, string>
   readonly query: Record<string, string>
+  /** Parsed view for predicates and templates: a JSON value, UTF-8 text, or `undefined` for empty or binary bodies */
   readonly body: unknown
+  /** The exact request bytes, whatever the content type. Backed by a plain `ArrayBuffer`, so it is a valid `BodyInit` */
+  readonly rawBody: Uint8Array<ArrayBuffer>
+}
+
+/**
+ * Strict UTF-8 decode: `undefined` when the bytes are not valid UTF-8, i.e. binary.
+ * `partial` tolerates a multi-byte character cut off at the end, for decoding a truncated prefix.
+ */
+export const decodeUtf8 = (bytes: Uint8Array, partial = false): string | undefined => {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: partial })
+  } catch {
+    return undefined
+  }
+}
+
+export const decodeBody = (contentType: string, bytes: Uint8Array): unknown => {
+  if (bytes.length === 0) return undefined
+  const text = decodeUtf8(bytes)
+  if (text === undefined || !contentType.includes("application/json")) return text
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
 }
 
 export const extractRequestContext = async (request: Request): Promise<RequestContext> => {
@@ -23,22 +49,10 @@ export const extractRequestContext = async (request: Request): Promise<RequestCo
     query[key] = value
   })
 
-  let body: unknown
-  if (request.body) {
-    const contentType = request.headers.get("content-type") ?? ""
-    const text = await request.text()
-    if (contentType.includes("application/json")) {
-      try {
-        body = JSON.parse(text)
-      } catch {
-        body = text
-      }
-    } else {
-      body = text === "" ? undefined : text
-    }
-  }
+  const rawBody = request.body ? new Uint8Array(await request.arrayBuffer()) : new Uint8Array(0)
+  const body = decodeBody(request.headers.get("content-type") ?? "", rawBody)
 
-  return { method, path, headers, query, body }
+  return { method, path, headers, query, body, rawBody }
 }
 
 const normalize = (s: string, caseSensitive: boolean): string => caseSensitive ? s : s.toLowerCase()

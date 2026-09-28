@@ -11,6 +11,7 @@ const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   headers: {},
   query: {},
   body: undefined,
+  rawBody: new Uint8Array(0),
   ...overrides
 })
 
@@ -101,6 +102,13 @@ describe("buildResponse", () => {
     const config = makeResponse({ status: 204 })
     const resp = await buildResponse(config, makeCtx())
     expect(resp.status).toBe(204)
+  })
+
+  it.each([204, 205, 304])("drops a configured body for null-body status %i instead of throwing", async (status) => {
+    const config = makeResponse({ status, body: { ignored: true } })
+    const resp = await buildResponse(config, makeCtx())
+    expect(resp.status).toBe(status)
+    expect(resp.body).toBeNull()
   })
 
   it("applies templates to body", async () => {

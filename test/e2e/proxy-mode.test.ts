@@ -53,11 +53,17 @@ beforeAll(async () => {
   upstreamServer = http.createServer((req, res) => {
     const url = new URL(req.url!, `http://localhost`)
 
-    let _body = ""
+    const chunks: Array<Buffer> = []
     req.on("data", (chunk: Buffer) => {
-      _body += chunk.toString()
+      chunks.push(chunk)
     })
     req.on("end", () => {
+      if (url.pathname === "/echo") {
+        res.writeHead(200, { "content-type": "application/octet-stream" })
+        res.end(Buffer.concat(chunks))
+        return
+      }
+
       if (url.pathname === "/error") {
         res.writeHead(500, { "content-type": "application/json" })
         res.end(JSON.stringify({ error: "upstream error" }))
@@ -138,6 +144,33 @@ describe("E2E: Proxy Mode", () => {
       expect(body.method).toBe("GET")
       expect(body.path).toBe("/api/data")
       expect(body.query).toEqual({ key: "value" })
+    } finally {
+      await stopImposter(imp.id)
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  }, 10000)
+
+  it("passthrough forwards a binary body to upstream byte-identically", async () => {
+    const imp = await createImposterWithProxy(9507, {
+      targetUrl: `http://localhost:${upstreamPort}`,
+      mode: "passthrough"
+    })
+
+    await startImposter(imp.id)
+    await new Promise((r) => setTimeout(r, 150))
+
+    // A JPEG header followed by every byte value, well past one socket chunk
+    const sent = Uint8Array.from({ length: 128 * 1024 }, (_, i) => i % 256)
+    sent.set([0xff, 0xd8, 0xff, 0xe0])
+
+    try {
+      const resp = await fetch("http://localhost:9507/echo", {
+        method: "POST",
+        headers: { "content-type": "image/jpeg" },
+        body: sent
+      })
+      expect(resp.status).toBe(200)
+      expect(new Uint8Array(await resp.arrayBuffer())).toEqual(sent)
     } finally {
       await stopImposter(imp.id)
       await new Promise((r) => setTimeout(r, 100))
