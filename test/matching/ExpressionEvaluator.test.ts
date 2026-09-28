@@ -8,6 +8,7 @@ const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   headers: { "content-type": "application/json", authorization: "Bearer abc" },
   query: { name: "Alice", page: "2" },
   body: { price: 10, quantity: 3, items: ["a", "b", "c"] },
+  rawBody: new Uint8Array(0),
   ...overrides
 })
 

@@ -15,6 +15,16 @@ export interface ServerFactoryShape {
 
 export class ServerFactory extends Context.Service<ServerFactory, ServerFactoryShape>()("ServerFactory") {}
 
+// Collects the raw chunks: decoding each chunk to a string would corrupt binary bodies and
+// multi-byte characters split across chunk boundaries
+const readBody = (req: http.IncomingMessage): Promise<Uint8Array<ArrayBuffer>> =>
+  new Promise((resolve, reject) => {
+    const chunks: Array<Buffer> = []
+    req.on("data", (chunk: Buffer) => chunks.push(chunk))
+    req.on("end", () => resolve(Buffer.concat(chunks)))
+    req.on("error", reject)
+  })
+
 export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
   create: (options): ServerInstance => {
     const server = http.createServer(async (req, res) => {
@@ -25,21 +35,12 @@ export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
           if (val) headers.set(key, Array.isArray(val) ? val.join(", ") : val)
         }
 
-        let body: string | undefined
-        if (req.method !== "GET" && req.method !== "HEAD") {
-          body = await new Promise<string>((resolve) => {
-            let data = ""
-            req.on("data", (chunk: Buffer) => {
-              data += chunk.toString()
-            })
-            req.on("end", () => resolve(data))
-          })
-        }
+        const body = req.method !== "GET" && req.method !== "HEAD" ? await readBody(req) : undefined
 
         const request = new Request(url, {
           method: req.method ?? "GET",
           headers,
-          ...(body !== undefined && body !== "" ? { body } : {})
+          ...(body !== undefined && body.length > 0 ? { body } : {})
         })
 
         const response = await options.fetch(request)
@@ -49,8 +50,7 @@ export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
           respHeaders[key] = val
         })
         res.writeHead(response.status, respHeaders)
-        const respBody = await response.text()
-        res.end(respBody)
+        res.end(new Uint8Array(await response.arrayBuffer()))
       } catch (err) {
         res.writeHead(500)
         res.end(JSON.stringify({ error: "Internal server error", details: String(err) }))

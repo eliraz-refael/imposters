@@ -72,11 +72,8 @@ export const ProxyServiceLive = Layer.effect(
           }
         }
 
-        // Build body
-        let body: string | undefined
-        if (ctx.body !== undefined && ctx.body !== null) {
-          body = typeof ctx.body === "string" ? ctx.body : JSON.stringify(ctx.body)
-        }
+        // Forward the exact request bytes, so binary uploads survive and content-length still matches
+        const body = ctx.rawBody.length > 0 ? ctx.rawBody : undefined
 
         const response = yield* Effect.tryPromise({
           try: (signal) =>

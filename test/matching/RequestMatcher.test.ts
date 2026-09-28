@@ -1,5 +1,8 @@
+import { it } from "@effect/vitest"
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import {
+  decodeBody,
   evaluatePredicate,
   evaluatePredicates,
   extractRequestContext,
@@ -8,7 +11,7 @@ import {
 import type { RequestContext } from "imposters/matching/RequestMatcher"
 import { Stub } from "imposters/schemas/StubSchema"
 import type { Predicate } from "imposters/schemas/StubSchema"
-import { describe, expect, it } from "vitest"
+import { describe, expect } from "vitest"
 
 const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   method: "GET",
@@ -16,6 +19,7 @@ const makeCtx = (overrides: Partial<RequestContext> = {}): RequestContext => ({
   headers: {},
   query: {},
   body: undefined,
+  rawBody: new Uint8Array(0),
   ...overrides
 })
 
@@ -70,6 +74,85 @@ describe("extractRequestContext", () => {
     const ctx = await extractRequestContext(req)
     expect(ctx.headers["authorization"]).toBe("Bearer abc")
     expect(ctx.headers["x-custom"]).toBe("value")
+  })
+})
+
+const postBody = (contentType: string, body: Uint8Array<ArrayBuffer>) =>
+  new Request("http://localhost:3000/upload", { method: "POST", headers: { "content-type": contentType }, body })
+
+const utf8 = (s: string) => new TextEncoder().encode(s)
+
+// A JPEG header: 0xff is never valid in UTF-8
+const jpegHeader = new Uint8Array([0xff, 0xd8, 0xff, 0xe0])
+
+describe("extractRequestContext - binary-safe bodies", () => {
+  it.effect.prop(
+    "rawBody is exactly the bytes sent, whatever the content type",
+    {
+      bytes: Schema.Uint8Array,
+      contentType: Schema.Literals(["application/octet-stream", "application/json", "text/plain"])
+    },
+    ({ bytes, contentType }) =>
+      Effect.gen(function*() {
+        const sent = new Uint8Array(bytes)
+        const ctx = yield* Effect.promise(() => extractRequestContext(postBody(contentType, sent)))
+        expect(ctx.rawBody).toEqual(sent)
+      }),
+    { arbitrary: { runs: 50 } }
+  )
+
+  it.effect.prop(
+    "text/plain body is the UTF-8 text sent (lone surrogates arrive as U+FFFD)",
+    { s: Schema.String },
+    ({ s }) =>
+      Effect.gen(function*() {
+        const ctx = yield* Effect.promise(() => extractRequestContext(postBody("text/plain", utf8(s))))
+        expect(ctx.body).toBe(s === "" ? undefined : new TextDecoder().decode(utf8(s)))
+      }),
+    { arbitrary: { runs: 50 } }
+  )
+
+  it.effect.prop(
+    "application/json body round-trips a JSON value",
+    { value: Schema.Json },
+    ({ value }) =>
+      Effect.gen(function*() {
+        const text = JSON.stringify(value)
+        const ctx = yield* Effect.promise(() => extractRequestContext(postBody("application/json", utf8(text))))
+        expect(JSON.stringify(ctx.body)).toBe(text)
+      }),
+    { arbitrary: { runs: 50 } }
+  )
+
+  it("binary body has no parsed view, but keeps its bytes", async () => {
+    const ctx = await extractRequestContext(postBody("image/jpeg", new Uint8Array(jpegHeader)))
+    expect(ctx.body).toBeUndefined()
+    expect(ctx.rawBody).toEqual(jpegHeader)
+  })
+
+  it("request without a body has an empty rawBody", async () => {
+    const ctx = await extractRequestContext(new Request("http://localhost:3000/users"))
+    expect(ctx.body).toBeUndefined()
+    expect(ctx.rawBody).toEqual(new Uint8Array(0))
+  })
+})
+
+describe("decodeBody", () => {
+  it("is undefined for empty bytes", () => {
+    expect(decodeBody("application/json", new Uint8Array(0))).toBeUndefined()
+  })
+
+  it("is undefined for non-UTF-8 bytes, even when labelled JSON or text", () => {
+    expect(decodeBody("application/json", jpegHeader)).toBeUndefined()
+    expect(decodeBody("text/plain", jpegHeader)).toBeUndefined()
+  })
+
+  it("falls back to text for malformed JSON", () => {
+    expect(decodeBody("application/json", utf8("{not json"))).toBe("{not json")
+  })
+
+  it("keeps JSON-looking text as text when not labelled JSON", () => {
+    expect(decodeBody("text/plain", utf8("{\"a\":1}"))).toBe("{\"a\":1}")
   })
 })
 

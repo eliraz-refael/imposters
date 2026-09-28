@@ -12,6 +12,7 @@ import { ProxyService } from "../services/ProxyService"
 import { RequestLogger } from "../services/RequestLogger"
 import { makeUiRouter } from "../ui/UiRouter"
 import { FiberManager } from "./FiberManager"
+import { captureResponse } from "./ResponseCapture"
 import { ServerFactory } from "./ServerFactory"
 
 export class ImposterServerError extends Data.TaggedError("ImposterServerError")<{
@@ -120,16 +121,11 @@ export const ImposterServerLive = Layer.effect(
                 response = yield* Effect.promise(() => buildResponse(responseConfig, ctx))
               }
 
-              // Capture response for logging
-              const respText = yield* Effect.promise(() => response.text())
-              const respHeaders: Record<string, string> = {}
-              response.headers.forEach((val, key) => {
-                respHeaders[key] = val
-              })
-              // Reconstruct since .text() consumed body
-              response = new Response(respText, { status: response.status, headers: response.headers })
-
-              const logBody = respText.length > 10240 ? respText.slice(0, 10240) : (respText || undefined)
+              // Capture response for logging; the body is read once, so send the captured copy
+              const captured = yield* Effect.promise(() => captureResponse(response))
+              response = captured.response
+              const respHeaders = captured.headers
+              const logBody = captured.logBody
 
               const duration = Date.now() - startTime
               const logEntry: RequestLogEntry = {

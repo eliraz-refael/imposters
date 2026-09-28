@@ -53,6 +53,11 @@ export const makeResponseState = () =>
     return { getNextIndex, reset }
   })
 
+// The Fetch spec forbids a body on these statuses: `new Response("", { status: 204 })` throws
+const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([204, 205, 304])
+
+export const isNullBodyStatus = (status: number): boolean => NULL_BODY_STATUSES.has(status)
+
 export const buildResponse = async (config: ResponseConfig, ctx: RequestContext): Promise<Response> => {
   const headers = new Headers()
   const responseHeaders = config.headers
@@ -79,7 +84,7 @@ export const buildResponse = async (config: ResponseConfig, ctx: RequestContext)
     }
   }
 
-  return new Response(bodyStr, {
+  return new Response(isNullBodyStatus(config.status) ? null : bodyStr, {
     status: config.status,
     headers
   })
