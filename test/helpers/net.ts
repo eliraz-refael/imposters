@@ -20,12 +20,16 @@ export const probeConnect = (port: number): Promise<"connected" | "refused"> =>
 
 // GET over a brand-new connection (agent: false), so every call exercises the
 // listener rather than reusing a socket from an earlier request.
-export const httpGet = (port: number, path: string): Promise<{ status: number; body: string }> =>
+export const httpGet = (
+  port: number,
+  path: string
+): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> =>
   new Promise((resolve, reject) => {
     const req = http.get({ host: "127.0.0.1", port, path, agent: false }, (res) => {
       const chunks: Array<Buffer> = []
       res.on("data", (chunk: Buffer) => chunks.push(chunk))
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }))
+      res.on("end", () =>
+        resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8"), headers: res.headers }))
       res.on("error", reject)
     })
     req.on("error", reject)

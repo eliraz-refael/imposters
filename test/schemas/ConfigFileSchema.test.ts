@@ -11,7 +11,13 @@ describe("ConfigFileSchema", () => {
     it("decodes minimal config (port only)", () => {
       const result = decodeImposter({ port: 9500 })
       expect(result.port).toBe(9500)
+      expect(result.protocol).toBe("HTTP")
       expect(result.stubs).toEqual([])
+    })
+
+    it("decodes an explicit protocol and rejects a malformed one", () => {
+      expect(decodeImposter({ port: 9500, protocol: "S3" }).protocol).toBe("S3")
+      expect(() => decodeImposter({ port: 9500, protocol: "s3" })).toThrow()
     })
 
     it("decodes full config with stubs", () => {

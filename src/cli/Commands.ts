@@ -2,11 +2,16 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
 import { HandlerHttpClientLive } from "../client/HandlerHttpClient"
-import { ImpostersClient, ImpostersClientLive } from "../client/ImpostersClient"
+import { ImpostersClientLive } from "../client/ImpostersClient"
+import { Extensions, type ImposterExtension } from "../extensions/Extension"
 import { makeCompositeHandler } from "../server/AdminServer"
 import { BunServerFactoryLive, NodeServerFactoryLive, ServerFactory } from "../server/ServerFactory"
-import { loadConfigFile } from "./ConfigLoader"
+import { createConfiguredImposters, loadConfigFile } from "./ConfigLoader"
 import { version } from "./version"
+
+// Extension registration point: the one place an extension is attached. Import it from
+// src/extensions/<name>/ and add it here (e.g. S3Extension); removing it is a one-line change.
+const extensions: ReadonlyArray<ImposterExtension> = []
 
 const configOption = Flag.File("config").pipe(
   Flag.withAlias("c"),
@@ -32,7 +37,35 @@ const startCommand = Command.make(
     Effect.gen(function*() {
       const adminPort = Option.isSome(port) ? port.value : Number(process.env.ADMIN_PORT ?? 2525)
 
-      const { dispose, handler } = makeCompositeHandler(adminPort)
+      // A registration mistake is fatal. The admin handler builds its layers in the background,
+      // so without this check it would only show up as every admin request failing.
+      yield* Effect.scoped(Layer.build(Extensions.layer(extensions))).pipe(
+        Effect.catchDefect((defect) =>
+          Effect.sync(() => {
+            console.error(defect instanceof Error ? defect.message : String(defect))
+            return process.exit(1)
+          })
+        )
+      )
+
+      const { dispose, handler } = makeCompositeHandler(adminPort, extensions)
+
+      // A config that does not load completely is fatal. It loads through the in-process handler
+      // before the admin port binds, so once the admin server answers, every imposter is up.
+      if (Option.isSome(config)) {
+        const clientLayer = ImpostersClientLive(`http://localhost:${adminPort}`).pipe(
+          Layer.provide(HandlerHttpClientLive(handler))
+        )
+        yield* loadConfigFile(config.value).pipe(
+          Effect.andThen((configData) => createConfiguredImposters(configData.imposters)),
+          Effect.provide(clientLayer),
+          Effect.catchTag("ConfigLoadError", (e) =>
+            Effect.sync(() => {
+              console.error(`Failed to load config: ${e.message}`)
+              return process.exit(1)
+            }))
+        )
+      }
 
       const serverFactory = yield* ServerFactory
       // A bind failure (port in use, Bun runtime missing) is fatal: report it plainly and exit
@@ -46,65 +79,6 @@ const startCommand = Command.make(
 
       console.log(`Imposters admin server running on http://localhost:${server.port} (runtime: ${runtime})`)
       console.log(`Admin UI: http://localhost:${server.port}/_ui`)
-
-      // Load config and create imposters if config file provided
-      if (Option.isSome(config)) {
-        const configData = yield* loadConfigFile(config.value).pipe(
-          Effect.catchTag("ConfigLoadError", (e) =>
-            Effect.sync(() => {
-              console.error(`Warning: ${e.message}`)
-              return null
-            }))
-        )
-
-        if (configData !== null && configData.imposters.length > 0) {
-          const clientLayer = ImpostersClientLive(`http://localhost:${server.port}`).pipe(
-            Layer.provide(HandlerHttpClientLive(handler))
-          )
-
-          yield* Effect.provide(
-            Effect.gen(function*() {
-              const client = yield* ImpostersClient
-              for (const imp of configData.imposters) {
-                const created = yield* client.imposters.createImposter({
-                  payload: {
-                    port: imp.port,
-                    ...(imp.name !== undefined ? { name: imp.name } : {}),
-                    protocol: "HTTP" as const,
-                    adminPath: "/_admin"
-                  }
-                }).pipe(Effect.catch((e) => {
-                  console.error(`Failed to create imposter on port ${imp.port}: ${e}`)
-                  return Effect.succeed(null)
-                }))
-
-                if (created === null) continue
-
-                for (const stub of imp.stubs) {
-                  yield* client.imposters.addStub({
-                    params: { imposterId: created.id },
-                    payload: stub
-                  }).pipe(Effect.catch((e) => {
-                    console.error(`Failed to add stub: ${e}`)
-                    return Effect.void
-                  }))
-                }
-
-                yield* client.imposters.updateImposter({
-                  params: { id: created.id },
-                  payload: { status: "running" as const }
-                }).pipe(Effect.catch((e) => {
-                  console.error(`Failed to start imposter ${created.id}: ${e}`)
-                  return Effect.void
-                }))
-
-                console.log(`Created imposter "${imp.name ?? created.id}" on port ${imp.port}`)
-              }
-            }),
-            clientLayer
-          )
-        }
-      }
 
       // Keep running until interrupted
       yield* Effect.callback<never, never>(() => {

@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as Schema from "effect/Schema"
 import { ImposterConfig } from "imposters/domain/imposter"
+import { Extensions } from "imposters/extensions/Extension"
 import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositories/ImposterRepository"
 import { Stub } from "imposters/schemas/StubSchema"
 import { FiberManagerLive } from "imposters/server/FiberManager"
@@ -17,7 +18,7 @@ import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
 import { afterAll, describe, expect, it } from "vitest"
 
 const makeConfig = (id: string, port: number): ImposterConfig =>
-  ImposterConfig({ id, name: id, port, status: "stopped", createdAt: DateTime.nowUnsafe() })
+  ImposterConfig({ id, name: id, port, protocol: "HTTP", status: "stopped", createdAt: DateTime.nowUnsafe() })
 
 const makeCatchAllStub = (id: string, status = 200, body?: unknown) =>
   Schema.decodeUnknownSync(Stub)({
@@ -46,7 +47,8 @@ const TestLayer = ImposterServerLive.pipe(
       NodeServerFactoryLive,
       RequestLoggerLive,
       MetricsServiceLive,
-      ProxyServiceWithDeps
+      ProxyServiceWithDeps,
+      Extensions.layer([])
     )
   )
 )

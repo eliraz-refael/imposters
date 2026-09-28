@@ -12,6 +12,7 @@ describe("Conversions", () => {
         id: "test-123",
         name: "my-imposter",
         port: 3000,
+        protocol: "HTTP",
         status: "stopped",
         createdAt: DateTime.nowUnsafe()
       })
@@ -35,6 +36,7 @@ describe("Conversions", () => {
         id: "test-456",
         name: "with-stubs",
         port: 3001,
+        protocol: "HTTP",
         status: "stopped",
         createdAt: DateTime.nowUnsafe()
       })

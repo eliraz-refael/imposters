@@ -4,6 +4,7 @@ import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { HttpProtocol, Protocol } from "../schemas/common"
 import { Uuid } from "../services/Uuid"
 
 // Schemas for validation
@@ -19,7 +20,8 @@ type ImposterStatus = "running" | "stopped" | "starting" | "stopping"
 
 const CreateImposterRequestSchema = Schema.Struct({
   name: Schema.optional(ImposterNameSchema),
-  port: Schema.optional(PortSchema)
+  port: Schema.optional(PortSchema),
+  protocol: Schema.optional(Protocol)
 })
 
 export interface ProxyConfigDomain {
@@ -37,6 +39,8 @@ export interface ImposterConfig {
   readonly id: string
   readonly name: string
   readonly port: number
+  /** "HTTP", or the protocol of the extension that answers unmatched requests */
+  readonly protocol: string
   readonly status: ImposterStatus
   readonly createdAt: DateTime.Utc
   readonly proxy?: ProxyConfigDomain | undefined
@@ -98,6 +102,7 @@ export const createImposterConfig = (
       id,
       name,
       port: validatedInput.port ?? 0, // Will be assigned by port allocator if 0
+      protocol: validatedInput.protocol ?? HttpProtocol,
       status: "starting",
       createdAt: DateTime.nowUnsafe()
     })

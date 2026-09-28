@@ -17,6 +17,44 @@ const compat = new FlatCompat({
   allConfig: js.configs.all
 })
 
+// Extension boundary. An extension lives in src/extensions/<name>/ and is attached only at
+// the composition root (src/cli/**), so deleting that line and the folder leaves a working
+// core. Anything may import src/extensions/Extension.ts; tests are unrestricted.
+//
+// `(^|/)extensions/X` for any X but Extension catches both `../extensions/s3/...` and the
+// `imposters/extensions/s3/...` alias. Inside an extension, a relative import that climbs
+// exactly to src/extensions/ and then names anything but Extension reaches a sibling
+// extension; how many `../` that takes depends on the file's depth, so there is one block
+// per depth. Import your own extension's files with `./`.
+const intoAnExtension = "(^|/)extensions/(?!Extension(\\.js)?$)"
+const notExtensionModule = "(?!\\.\\./|Extension(\\.js)?$)"
+const extensionBoundary = (patterns) => ({ "no-restricted-imports": ["error", { patterns }] })
+const MAX_EXTENSION_DEPTH = 6
+const extensionBoundaryConfigs = [
+  {
+    files: ["src/**/*.ts"],
+    ignores: ["src/extensions/**", "src/cli/**"],
+    rules: extensionBoundary([{
+      regex: intoAnExtension,
+      message: "Only the composition root (src/cli/**) may import an extension; the core depends on src/extensions/Extension.ts alone."
+    }])
+  },
+  {
+    files: ["src/extensions/*.ts"],
+    rules: extensionBoundary([{
+      regex: `${intoAnExtension}|^\\./[^/]+/`,
+      message: "The core-owned extension modules must not import an extension."
+    }])
+  },
+  ...Array.from({ length: MAX_EXTENSION_DEPTH }, (_, depth) => ({
+    files: [`src/extensions/*/${"*/".repeat(depth)}*.ts`],
+    rules: extensionBoundary([{
+      regex: `${intoAnExtension}|^(\\./)?(\\.\\./){${depth + 1}}${notExtensionModule}`,
+      message: "Extensions must not import each other (import your own files with ./, the core with ../)."
+    }])
+  }))
+]
+
 export default [
   {
     ignores: ["**/dist", "**/build", "**/docs", "**/*.md"]
@@ -116,5 +154,6 @@ export default [
         }
       }]
     }
-  }
+  },
+  ...extensionBoundaryConfigs
 ]

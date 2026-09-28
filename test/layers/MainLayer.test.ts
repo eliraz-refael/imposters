@@ -42,6 +42,7 @@ describe("MainLayer", () => {
         id,
         name: "integration-test",
         port,
+        protocol: "HTTP",
         status: "running",
         createdAt: DateTime.nowUnsafe()
       })

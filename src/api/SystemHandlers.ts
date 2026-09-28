@@ -3,6 +3,7 @@ import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { Extensions, supportedProtocols } from "../extensions/Extension"
 import { ImposterRepository } from "../repositories/ImposterRepository"
 import { NonEmptyString, PortNumber } from "../schemas/common"
 import { AppConfig } from "../services/AppConfig"
@@ -14,6 +15,7 @@ export const SystemHandlersLive = HttpApiBuilder.group(AdminApi, "system", (hand
     // inside a handler becomes a per-request requirement instead.
     const repo = yield* ImposterRepository
     const config = yield* AppConfig
+    const protocols = supportedProtocols(yield* Extensions)
 
     return handlers
       .handle("healthCheck", () =>
@@ -58,7 +60,7 @@ export const SystemHandlersLive = HttpApiBuilder.group(AdminApi, "system", (hand
               version: NonEmptyString.make("0.0.0"),
               buildTime: now,
               platform: NonEmptyString.make(process.platform),
-              protocols: ["HTTP" as const]
+              protocols
             },
             configuration: {
               maxImposters: config.maxImposters,

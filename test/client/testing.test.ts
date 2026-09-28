@@ -4,43 +4,9 @@ import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient"
 import { makeTestServer, withImposter } from "imposters/client/testing"
 import { ApiLayer } from "imposters/layers/ApiLayer"
-import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository"
-import { FiberManagerLive } from "imposters/server/FiberManager"
-import { ImposterServerLive } from "imposters/server/ImposterServer"
-import { AppConfigLive } from "imposters/services/AppConfig"
-import { MetricsServiceLive } from "imposters/services/MetricsService"
-import { PortAllocatorLive } from "imposters/services/PortAllocator"
-import { ProxyServiceLive } from "imposters/services/ProxyService"
-import { RequestLoggerLive } from "imposters/services/RequestLogger"
-import { UuidLive } from "imposters/services/UuidLive"
-import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
+import { MainLayer } from "imposters/layers/MainLayer"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-const PortAllocatorWithDeps = PortAllocatorLive.pipe(Layer.provide(AppConfigLive))
-const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
-
-const ImposterServerWithDeps = ImposterServerLive.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      FiberManagerLive,
-      ImposterRepositoryLive,
-      NodeServerFactoryLive,
-      RequestLoggerLive,
-      MetricsServiceLive,
-      ProxyServiceWithDeps
-    )
-  )
-)
-const MainLayer = Layer.mergeAll(
-  UuidLive,
-  AppConfigLive,
-  PortAllocatorWithDeps,
-  ImposterRepositoryLive,
-  FiberManagerLive,
-  RequestLoggerLive,
-  MetricsServiceLive,
-  ImposterServerWithDeps
-)
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
 
 let handler: (request: Request) => Promise<Response>
@@ -132,7 +98,7 @@ describe("withImposter", () => {
 
 describe("makeTestServer", () => {
   it("creates server with handler and client layer", async () => {
-    const { clientLayer, dispose: d, handler: h } = makeTestServer(FullLayer)
+    const { clientLayer, dispose: d, handler: h } = makeTestServer()
     expect(h).toBeDefined()
     expect(d).toBeDefined()
 

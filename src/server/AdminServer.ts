@@ -1,16 +1,23 @@
 import * as Layer from "effect/Layer"
 import { HttpRouter } from "effect/unstable/http"
+import type { ImposterExtension } from "../extensions/Extension"
 import { ApiLayer } from "../layers/ApiLayer"
-import { MainLayer } from "../layers/MainLayer"
+import { makeMainLayer } from "../layers/MainLayer"
 import { makeAdminUiRouter } from "../ui/admin/AdminUiRouter"
 
-export const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
+// Extensions default to none, so existing callers keep a plain-HTTP server
+export const makeFullLayer = (extensions: ReadonlyArray<ImposterExtension> = []) =>
+  ApiLayer.pipe(Layer.provide(makeMainLayer(extensions)))
+
+// Plain HTTP only, as before extensions existed
+export const FullLayer = makeFullLayer()
 
 // disableLogger also silences requests that match no route (v3 logged nothing).
-export const makeWebHandler = () => HttpRouter.toWebHandler(FullLayer, { disableLogger: true })
+export const makeWebHandler = (extensions: ReadonlyArray<ImposterExtension> = []) =>
+  HttpRouter.toWebHandler(makeFullLayer(extensions), { disableLogger: true })
 
-export const makeCompositeHandler = (adminPort: number) => {
-  const { dispose, handler: apiHandler } = makeWebHandler()
+export const makeCompositeHandler = (adminPort: number, extensions: ReadonlyArray<ImposterExtension> = []) => {
+  const { dispose, handler: apiHandler } = makeWebHandler(extensions)
   const adminUiRouter = makeAdminUiRouter({ apiHandler, adminPort })
 
   const handler = async (request: Request): Promise<Response> => {

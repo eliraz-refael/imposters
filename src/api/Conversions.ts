@@ -15,7 +15,7 @@ export const toImposterResponse = (record: ImposterRecord): Effect.Effect<Impost
       id: NonEmptyString.make(config.id),
       name: NonEmptyString.make(config.name),
       port: PortNumber.make(config.port),
-      protocol: "HTTP" as const,
+      protocol: config.protocol,
       status: config.status,
       endpointCount: record.stubs.length,
       createdAt: config.createdAt,
