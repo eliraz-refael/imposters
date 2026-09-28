@@ -6,9 +6,9 @@ export interface FiberManagerShape {
   readonly isRunning: (id: string) => Effect.Effect<boolean>
 }
 
-export class FiberManager extends Context.Tag("FiberManager")<FiberManager, FiberManagerShape>() {}
+export class FiberManager extends Context.Service<FiberManager, FiberManagerShape>()("FiberManager") {}
 
-export const FiberManagerLive = Layer.scoped(
+export const FiberManagerLive = Layer.effect(
   FiberManager,
   Effect.gen(function*() {
     const fiberMap = yield* FiberMap.make<string>()

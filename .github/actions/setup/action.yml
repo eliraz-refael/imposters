@@ -4,6 +4,12 @@ description: Perform standard setup and install dependencies using Bun.
 runs:
   using: composite
   steps:
+    # vitest runs its workers on Node, and vitest 5 requires Node ^22.12.
+    # Pin it rather than relying on the runner image's default.
+    - name: Install Node
+      uses: actions/setup-node@v7
+      with:
+        node-version: 22
     - name: Install Bun
       uses: oven-sh/setup-bun@v2
     - name: Install dependencies

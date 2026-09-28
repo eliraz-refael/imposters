@@ -1,5 +1,5 @@
-import { HttpApiBuilder } from "@effect/platform"
 import { Effect, Layer, ManagedRuntime } from "effect"
+import { HttpRouter } from "effect/unstable/http"
 import { HandlerHttpClientLive } from "imposters/client/HandlerHttpClient"
 import { ImpostersClient, ImpostersClientLive } from "imposters/client/ImpostersClient"
 import { makeTestServer, withImposter } from "imposters/client/testing"
@@ -48,7 +48,7 @@ let dispose: () => void
 let runtime: ManagedRuntime.ManagedRuntime<ImpostersClient, never>
 
 beforeAll(() => {
-  const result = HttpApiBuilder.toWebHandler(FullLayer)
+  const result = HttpRouter.toWebHandler(FullLayer)
   handler = result.handler
   dispose = result.dispose
 
@@ -95,7 +95,7 @@ describe("withImposter", () => {
     const result = await run(
       Effect.gen(function*() {
         const client = yield* ImpostersClient
-        const list = yield* client.imposters.listImposters({ urlParams: { limit: 50 as any, offset: 0 } })
+        const list = yield* client.imposters.listImposters({ query: { limit: 50 as any, offset: 0 } })
         return list.imposters.filter((i) => i.port === 9501 as any)
       })
     )
@@ -122,7 +122,7 @@ describe("withImposter", () => {
     const result = await run(
       Effect.gen(function*() {
         const client = yield* ImpostersClient
-        const list = yield* client.imposters.listImposters({ urlParams: { limit: 50 as any, offset: 0 } })
+        const list = yield* client.imposters.listImposters({ query: { limit: 50 as any, offset: 0 } })
         return list.imposters.filter((i) => i.port === 9502 as any)
       })
     )

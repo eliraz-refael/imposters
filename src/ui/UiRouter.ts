@@ -102,10 +102,10 @@ export const makeUiRouter = (deps: UiDeps) => async (request: Request): Promise<
       return await deps.runPromise(
         Effect.gen(function*() {
           yield* deps.repo.addStub(deps.id, stub).pipe(
-            Effect.catchAll(() => Effect.void)
+            Effect.catch(() => Effect.void)
           )
           const updated = yield* deps.repo.getStubs(deps.id).pipe(
-            Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>))
+            Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
           )
           yield* Ref.set(deps.stubsRef, updated)
           return htmlResponse(stubListPartial(updated).value)
@@ -122,10 +122,10 @@ export const makeUiRouter = (deps: UiDeps) => async (request: Request): Promise<
     return deps.runPromise(
       Effect.gen(function*() {
         yield* deps.repo.removeStub(deps.id, deleteStubId).pipe(
-          Effect.catchAll(() => Effect.void)
+          Effect.catch(() => Effect.void)
         )
         const updated = yield* deps.repo.getStubs(deps.id).pipe(
-          Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>))
+          Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
         )
         yield* Ref.set(deps.stubsRef, updated)
         return htmlResponse(stubListPartial(updated).value)
@@ -149,9 +149,9 @@ export const makeUiRouter = (deps: UiDeps) => async (request: Request): Promise<
             ...(predicatesRaw ? { predicates: JSON.parse(predicatesRaw) } : {}),
             ...(responsesRaw ? { responses: JSON.parse(responsesRaw) } : {}),
             ...(responseMode ? { responseMode: responseMode as Stub["responseMode"] } : {})
-          })).pipe(Effect.catchAll(() => Effect.void))
+          })).pipe(Effect.catch(() => Effect.void))
           const updated = yield* deps.repo.getStubs(deps.id).pipe(
-            Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>))
+            Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
           )
           yield* Ref.set(deps.stubsRef, updated)
           return htmlResponse(stubListPartial(updated).value)
@@ -260,7 +260,7 @@ export const makeUiRouter = (deps: UiDeps) => async (request: Request): Promise<
           if (entry.response.matchedStubId) {
             try {
               const stubs = yield* deps.repo.getStubs(deps.id).pipe(
-                Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<Stub>))
+                Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
               )
               matchedStub = stubs.find((s) => s.id === entry.response.matchedStubId) ?? null
             } catch {

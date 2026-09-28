@@ -94,7 +94,7 @@ export interface MetricsServiceShape {
   readonly resetStats: (imposterId: string) => Effect.Effect<void>
 }
 
-export class MetricsService extends Context.Tag("MetricsService")<MetricsService, MetricsServiceShape>() {}
+export class MetricsService extends Context.Service<MetricsService, MetricsServiceShape>()("MetricsService") {}
 
 export const MetricsServiceLive = Layer.effect(
   MetricsService,

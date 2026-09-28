@@ -1,5 +1,5 @@
-import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
+import { HttpRouter } from "effect/unstable/http"
 import { ApiLayer } from "imposters/layers/ApiLayer"
 import { ImposterRepositoryLive } from "imposters/repositories/ImposterRepository"
 import { FiberManagerLive } from "imposters/server/FiberManager"
@@ -44,7 +44,7 @@ let adminHandler: (request: Request) => Promise<Response>
 let dispose: () => void
 
 beforeAll(() => {
-  const result = HttpApiBuilder.toWebHandler(FullLayer)
+  const result = HttpRouter.toWebHandler(FullLayer)
   adminHandler = result.handler
   dispose = result.dispose
 })

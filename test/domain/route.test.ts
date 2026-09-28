@@ -60,10 +60,10 @@ describe("route domain", () => {
         expect(route.response.status).toBe(200)
       }).pipe(Effect.provide(TestUuid)))
 
-    it.effect("fails with ParseError for invalid input", () =>
+    it.effect("fails with SchemaError for invalid input", () =>
       Effect.gen(function*() {
         const result = yield* Effect.flip(newRoute({ path: "no-slash", response: { body: null } }))
-        expect(result._tag).toBe("ParseError")
+        expect(result._tag).toBe("SchemaError")
       }).pipe(Effect.provide(TestUuid)))
   })
 

@@ -16,7 +16,7 @@ import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
 import { afterAll, describe, expect, it } from "vitest"
 
 const makeConfig = (id: string, port: number): ImposterConfig =>
-  ImposterConfig({ id, name: id, port, status: "stopped", createdAt: DateTime.unsafeNow() })
+  ImposterConfig({ id, name: id, port, status: "stopped", createdAt: DateTime.nowUnsafe() })
 
 const makeCatchAllStub = (id: string, status = 200, body?: unknown) =>
   Schema.decodeUnknownSync(Stub)({

@@ -1,4 +1,4 @@
-import type { Queue, Scope } from "effect"
+import type { Scope } from "effect"
 import { Context, Effect, HashMap, Layer, PubSub, Ref } from "effect"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema"
 
@@ -12,14 +12,14 @@ export interface RequestLoggerShape {
   ) => Effect.Effect<ReadonlyArray<RequestLogEntry>>
   readonly getCount: (imposterId: string) => Effect.Effect<number>
   readonly clear: (imposterId: string) => Effect.Effect<void>
-  readonly subscribe: Effect.Effect<Queue.Dequeue<RequestLogEntry>, never, Scope.Scope>
+  readonly subscribe: Effect.Effect<PubSub.Subscription<RequestLogEntry>, never, Scope.Scope>
   readonly getEntryById: (imposterId: string, entryId: string) => Effect.Effect<RequestLogEntry | null>
   readonly removeImposter: (imposterId: string) => Effect.Effect<void>
 }
 
-export class RequestLogger extends Context.Tag("RequestLogger")<RequestLogger, RequestLoggerShape>() {}
+export class RequestLogger extends Context.Service<RequestLogger, RequestLoggerShape>()("RequestLogger") {}
 
-export const RequestLoggerLive = Layer.scoped(
+export const RequestLoggerLive = Layer.effect(
   RequestLogger,
   Effect.gen(function*() {
     const storeRef = yield* Ref.make(HashMap.empty<string, Array<RequestLogEntry>>())
@@ -69,7 +69,7 @@ export const RequestLoggerLive = Layer.scoped(
     const clear = (imposterId: string): Effect.Effect<void> =>
       Ref.update(storeRef, (store) => HashMap.set(store, imposterId, []))
 
-    const subscribe: Effect.Effect<Queue.Dequeue<RequestLogEntry>, never, Scope.Scope> = PubSub.subscribe(pubsub)
+    const subscribe: Effect.Effect<PubSub.Subscription<RequestLogEntry>, never, Scope.Scope> = PubSub.subscribe(pubsub)
 
     const getEntryById = (imposterId: string, entryId: string): Effect.Effect<RequestLogEntry | null> =>
       Ref.get(storeRef).pipe(

@@ -1,7 +1,9 @@
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import {
   ImposterStatus,
   NonEmptyString,
+  NonNegativeInt,
   PaginationMeta,
   PaginationQuery,
   PortNumber,
@@ -11,15 +13,21 @@ import {
 } from "./common"
 import { ProxyConfig } from "./StubSchema"
 
+const AdminPath = Schema.String.check(Schema.isStartsWith("/"))
+const HttpMethod = Schema.Literals(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+const StatusCode = Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 }))
+const DelayMs = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 60000 }))
+const NonNegativeNumber = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
+const StringRecord = Schema.Record(Schema.String, Schema.String)
+const NumberRecord = Schema.Record(Schema.String, Schema.Number)
+
 // Create Imposter Request Schema - POST /imposters
 export const CreateImposterRequest = Schema.Struct({
   name: Schema.optional(NonEmptyString),
   port: Schema.optional(PortNumber),
-  protocol: Schema.optionalWith(Protocol, { default: () => "HTTP" as const }),
-  adminPath: Schema.optionalWith(
-    Schema.String.pipe(Schema.startsWith("/")),
-    { default: () => "/_admin" }
-  ),
+  protocol: Protocol.pipe(Schema.withDecodingDefault(Effect.succeed("HTTP" as const))),
+  adminPath: AdminPath.pipe(Schema.withDecodingDefault(Effect.succeed("/_admin"))),
   proxy: Schema.optional(ProxyConfig)
 })
 export type CreateImposterRequest = Schema.Schema.Type<typeof CreateImposterRequest>
@@ -29,7 +37,7 @@ export const UpdateImposterRequest = Schema.Struct({
   name: Schema.optional(NonEmptyString),
   status: Schema.optional(ImposterStatus),
   port: Schema.optional(PortNumber),
-  adminPath: Schema.optional(Schema.String.pipe(Schema.startsWith("/"))),
+  adminPath: Schema.optional(AdminPath),
   proxy: Schema.optional(Schema.NullOr(ProxyConfig))
 })
 export type UpdateImposterRequest = Schema.Schema.Type<typeof UpdateImposterRequest>
@@ -44,33 +52,27 @@ export type ListImpostersQuery = Schema.Schema.Type<typeof ListImpostersQuery>
 
 // Route API Schemas
 export const CreateRouteRequest = Schema.Struct({
-  path: Schema.String.pipe(Schema.startsWith("/")),
-  method: Schema.optionalWith(
-    Schema.Literal("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"),
-    { default: () => "GET" as const }
-  ),
+  path: AdminPath,
+  method: HttpMethod.pipe(Schema.withDecodingDefault(Effect.succeed("GET" as const))),
   response: Schema.Struct({
-    status: Schema.optionalWith(
-      Schema.Number.pipe(Schema.int(), Schema.between(100, 599)),
-      { default: () => 200 }
-    ),
-    headers: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+    status: StatusCode.pipe(Schema.withDecodingDefault(Effect.succeed(200))),
+    headers: Schema.optional(StringRecord),
     body: Schema.optional(Schema.Unknown)
   }),
-  delay: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(0, 60000)))
+  delay: Schema.optional(DelayMs)
 })
 export type CreateRouteRequest = Schema.Schema.Type<typeof CreateRouteRequest>
 
 export const RouteResponse = Schema.Struct({
   id: NonEmptyString,
   path: NonEmptyString,
-  method: Schema.Literal("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"),
+  method: HttpMethod,
   response: Schema.Struct({
-    status: Schema.Number.pipe(Schema.int(), Schema.between(100, 599)),
-    headers: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
+    status: StatusCode,
+    headers: Schema.optional(StringRecord),
     body: Schema.optional(Schema.Unknown)
   }),
-  delay: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.between(0, 60000))),
+  delay: Schema.optional(DelayMs),
   createdAt: Schema.DateTimeUtc
 })
 export type RouteResponse = Schema.Schema.Type<typeof RouteResponse>
@@ -86,26 +88,20 @@ export const EndpointSummary = Schema.Struct({
   id: NonEmptyString,
   path: NonEmptyString,
   method: NonEmptyString,
-  status: Schema.Number.pipe(Schema.int(), Schema.between(100, 599)),
+  status: StatusCode,
   hasDelay: Schema.Boolean,
-  delayMs: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.nonNegative()))
+  delayMs: Schema.optional(NonNegativeInt)
 })
 export type EndpointSummary = Schema.Schema.Type<typeof EndpointSummary>
 
 // Statistics Schema
 export const Statistics = Schema.Struct({
-  totalRequests: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
-  requestsPerMinute: Schema.Number.pipe(Schema.nonNegative()),
-  averageResponseTime: Schema.Number.pipe(Schema.nonNegative()),
-  errorRate: Schema.Number.pipe(Schema.between(0, 1)),
-  requestsByMethod: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: Schema.Number }),
-    { default: () => ({}) }
-  ),
-  requestsByStatusCode: Schema.optionalWith(
-    Schema.Record({ key: Schema.String, value: Schema.Number }),
-    { default: () => ({}) }
-  ),
+  totalRequests: NonNegativeInt,
+  requestsPerMinute: NonNegativeNumber,
+  averageResponseTime: NonNegativeNumber,
+  errorRate: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  requestsByMethod: NumberRecord.pipe(Schema.withDecodingDefault(Effect.sync(() => ({})))),
+  requestsByStatusCode: NumberRecord.pipe(Schema.withDecodingDefault(Effect.sync(() => ({})))),
   lastRequestAt: Schema.optional(Schema.DateTimeUtc),
   p50ResponseTime: Schema.optional(Schema.Number),
   p95ResponseTime: Schema.optional(Schema.Number),
@@ -120,7 +116,7 @@ export const ImposterResponse = Schema.Struct({
   port: PortNumber,
   protocol: Protocol,
   status: ImposterStatus,
-  endpointCount: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
+  endpointCount: NonNegativeInt,
   createdAt: Schema.DateTimeUtc,
   adminUrl: NonEmptyString,
   adminPath: NonEmptyString,
@@ -140,7 +136,7 @@ export type ListImpostersResponse = Schema.Schema.Type<typeof ListImpostersRespo
 
 // Delete Imposter Query Schema - DELETE /imposters/{id}
 export const DeleteImposterQuery = Schema.Struct({
-  force: Schema.optionalWith(Schema.Boolean, { default: () => false })
+  force: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false)))
 })
 export type DeleteImposterQuery = Schema.Schema.Type<typeof DeleteImposterQuery>
 
@@ -161,16 +157,16 @@ export type MemoryInfo = Schema.Schema.Type<typeof MemoryInfo>
 
 // System Imposters Summary Schema
 export const ImpostersSummary = Schema.Struct({
-  total: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
-  running: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
-  stopped: Schema.Number.pipe(Schema.int(), Schema.nonNegative())
+  total: NonNegativeInt,
+  running: NonNegativeInt,
+  stopped: NonNegativeInt
 })
 export type ImpostersSummary = Schema.Schema.Type<typeof ImpostersSummary>
 
 // System Ports Summary Schema
 export const PortsSummary = Schema.Struct({
-  available: Schema.Number.pipe(Schema.int(), Schema.nonNegative()),
-  allocated: Schema.Number.pipe(Schema.int(), Schema.nonNegative())
+  available: NonNegativeInt,
+  allocated: NonNegativeInt
 })
 export type PortsSummary = Schema.Schema.Type<typeof PortsSummary>
 
@@ -184,7 +180,7 @@ export type SystemInfo = Schema.Schema.Type<typeof SystemInfo>
 
 // Health Response Schema - GET /health
 export const HealthResponse = Schema.Struct({
-  status: Schema.Literal("healthy", "unhealthy"),
+  status: Schema.Literals(["healthy", "unhealthy"]),
   timestamp: Schema.DateTimeUtc,
   version: NonEmptyString,
   uptime: Schema.String, // Formatted duration
@@ -194,13 +190,13 @@ export type HealthResponse = Schema.Schema.Type<typeof HealthResponse>
 
 // Server Configuration Schema
 export const ServerConfiguration = Schema.Struct({
-  maxImposters: Schema.Number.pipe(Schema.int(), Schema.positive()),
+  maxImposters: PositiveInt,
   portRange: Schema.Struct({
     min: PortNumber,
     max: PortNumber
   }),
-  defaultTimeout: Schema.Number.pipe(Schema.int(), Schema.positive()),
-  logLevel: Schema.Literal("debug", "info", "warn", "error")
+  defaultTimeout: PositiveInt,
+  logLevel: Schema.Literals(["debug", "info", "warn", "error"])
 })
 export type ServerConfiguration = Schema.Schema.Type<typeof ServerConfiguration>
 

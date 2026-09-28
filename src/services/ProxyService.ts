@@ -35,7 +35,7 @@ export interface ProxyServiceShape {
   ) => Effect.Effect<Stub>
 }
 
-export class ProxyService extends Context.Tag("ProxyService")<ProxyService, ProxyServiceShape>() {}
+export class ProxyService extends Context.Service<ProxyService, ProxyServiceShape>()("ProxyService") {}
 
 export const ProxyServiceLive = Layer.effect(
   ProxyService,
@@ -88,9 +88,10 @@ export const ProxyServiceLive = Layer.effect(
               signal
             }),
           catch: (err) => new ProxyError({ targetUrl, reason: `Failed to reach target: ${err}`, cause: err })
-        }).pipe(Effect.timeoutFail({
+        }).pipe(Effect.timeoutOrElse({
           duration: `${config.timeout} millis`,
-          onTimeout: () => new ProxyError({ targetUrl, reason: `Request timed out after ${config.timeout}ms` })
+          orElse: () =>
+            Effect.fail(new ProxyError({ targetUrl, reason: `Request timed out after ${config.timeout}ms` }))
         }))
 
         return response

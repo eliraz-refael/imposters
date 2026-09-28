@@ -1,5 +1,5 @@
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform"
 import * as Schema from "effect/Schema"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/unstable/httpapi"
 import {
   CreateImposterRequest,
   DeleteImposterResponse,
@@ -13,79 +13,92 @@ import { CreateStubRequest, Stub, UpdateStubRequest } from "../schemas/StubSchem
 import { ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors"
 import { DeleteImposterUrlParams, ListImpostersUrlParams, ListRequestsUrlParams } from "./ApiSchemas"
 
-const createImposter = HttpApiEndpoint.post("createImposter", "/imposters")
-  .setPayload(CreateImposterRequest)
-  .addSuccess(ImposterResponse, { status: 201 })
-  .addError(ApiConflictError)
-  .addError(ApiServiceError)
+const IdParams = { id: Schema.String }
+const ImposterIdParams = { imposterId: Schema.String }
+const StubParams = { imposterId: Schema.String, stubId: Schema.String }
+const MessageResponse = Schema.Struct({ message: Schema.String })
 
-const listImposters = HttpApiEndpoint.get("listImposters", "/imposters")
-  .setUrlParams(ListImpostersUrlParams)
-  .addSuccess(ListImpostersResponse)
+const createImposter = HttpApiEndpoint.post("createImposter", "/imposters", {
+  payload: CreateImposterRequest,
+  success: ImposterResponse.pipe(HttpApiSchema.status(201)),
+  error: [ApiConflictError, ApiServiceError]
+})
 
-const getImposter = HttpApiEndpoint.get("getImposter")`/imposters/${HttpApiSchema.param("id", Schema.String)}`
-  .addSuccess(ImposterResponse)
-  .addError(ApiNotFoundError)
+const listImposters = HttpApiEndpoint.get("listImposters", "/imposters", {
+  query: ListImpostersUrlParams,
+  success: ListImpostersResponse
+})
 
-const updateImposter = HttpApiEndpoint.patch("updateImposter")`/imposters/${HttpApiSchema.param("id", Schema.String)}`
-  .setPayload(UpdateImposterRequest)
-  .addSuccess(ImposterResponse)
-  .addError(ApiNotFoundError)
-  .addError(ApiConflictError)
-  .addError(ApiServiceError)
+const getImposter = HttpApiEndpoint.get("getImposter", "/imposters/:id", {
+  params: IdParams,
+  success: ImposterResponse,
+  error: ApiNotFoundError
+})
 
-const deleteImposter = HttpApiEndpoint.del("deleteImposter")`/imposters/${HttpApiSchema.param("id", Schema.String)}`
-  .setUrlParams(DeleteImposterUrlParams)
-  .addSuccess(DeleteImposterResponse)
-  .addError(ApiNotFoundError)
-  .addError(ApiConflictError)
+const updateImposter = HttpApiEndpoint.patch("updateImposter", "/imposters/:id", {
+  params: IdParams,
+  payload: UpdateImposterRequest,
+  success: ImposterResponse,
+  error: [ApiNotFoundError, ApiConflictError, ApiServiceError]
+})
 
-const addStub = HttpApiEndpoint.post("addStub")`/imposters/${HttpApiSchema.param("imposterId", Schema.String)}/stubs`
-  .setPayload(CreateStubRequest)
-  .addSuccess(Stub, { status: 201 })
-  .addError(ApiNotFoundError)
+const deleteImposter = HttpApiEndpoint.delete("deleteImposter", "/imposters/:id", {
+  params: IdParams,
+  query: DeleteImposterUrlParams,
+  success: DeleteImposterResponse,
+  error: [ApiNotFoundError, ApiConflictError]
+})
 
-const listStubs = HttpApiEndpoint.get("listStubs")`/imposters/${HttpApiSchema.param("imposterId", Schema.String)}/stubs`
-  .addSuccess(Schema.Array(Stub))
-  .addError(ApiNotFoundError)
+const addStub = HttpApiEndpoint.post("addStub", "/imposters/:imposterId/stubs", {
+  params: ImposterIdParams,
+  payload: CreateStubRequest,
+  success: Stub.pipe(HttpApiSchema.status(201)),
+  error: ApiNotFoundError
+})
 
-const updateStub = HttpApiEndpoint.put("updateStub")`/imposters/${
-  HttpApiSchema.param("imposterId", Schema.String)
-}/stubs/${HttpApiSchema.param("stubId", Schema.String)}`
-  .setPayload(UpdateStubRequest)
-  .addSuccess(Stub)
-  .addError(ApiNotFoundError)
+const listStubs = HttpApiEndpoint.get("listStubs", "/imposters/:imposterId/stubs", {
+  params: ImposterIdParams,
+  success: Schema.Array(Stub),
+  error: ApiNotFoundError
+})
 
-const deleteStub = HttpApiEndpoint.del("deleteStub")`/imposters/${
-  HttpApiSchema.param("imposterId", Schema.String)
-}/stubs/${HttpApiSchema.param("stubId", Schema.String)}`
-  .addSuccess(Stub)
-  .addError(ApiNotFoundError)
+const updateStub = HttpApiEndpoint.put("updateStub", "/imposters/:imposterId/stubs/:stubId", {
+  params: StubParams,
+  payload: UpdateStubRequest,
+  success: Stub,
+  error: ApiNotFoundError
+})
 
-const listRequests = HttpApiEndpoint.get("listRequests")`/imposters/${
-  HttpApiSchema.param("id", Schema.String)
-}/requests`
-  .setUrlParams(ListRequestsUrlParams)
-  .addSuccess(Schema.Array(RequestLogEntry))
-  .addError(ApiNotFoundError)
+const deleteStub = HttpApiEndpoint.delete("deleteStub", "/imposters/:imposterId/stubs/:stubId", {
+  params: StubParams,
+  success: Stub,
+  error: ApiNotFoundError
+})
 
-const clearRequests = HttpApiEndpoint.del("clearRequests")`/imposters/${
-  HttpApiSchema.param("id", Schema.String)
-}/requests`
-  .addSuccess(Schema.Struct({ message: Schema.String }))
-  .addError(ApiNotFoundError)
+const listRequests = HttpApiEndpoint.get("listRequests", "/imposters/:id/requests", {
+  params: IdParams,
+  query: ListRequestsUrlParams,
+  success: Schema.Array(RequestLogEntry),
+  error: ApiNotFoundError
+})
 
-const getImposterStats = HttpApiEndpoint.get("getImposterStats")`/imposters/${
-  HttpApiSchema.param("id", Schema.String)
-}/stats`
-  .addSuccess(Statistics)
-  .addError(ApiNotFoundError)
+const clearRequests = HttpApiEndpoint.delete("clearRequests", "/imposters/:id/requests", {
+  params: IdParams,
+  success: MessageResponse,
+  error: ApiNotFoundError
+})
 
-const resetImposterStats = HttpApiEndpoint.del("resetImposterStats")`/imposters/${
-  HttpApiSchema.param("id", Schema.String)
-}/stats`
-  .addSuccess(Schema.Struct({ message: Schema.String }))
-  .addError(ApiNotFoundError)
+const getImposterStats = HttpApiEndpoint.get("getImposterStats", "/imposters/:id/stats", {
+  params: IdParams,
+  success: Statistics,
+  error: ApiNotFoundError
+})
+
+const resetImposterStats = HttpApiEndpoint.delete("resetImposterStats", "/imposters/:id/stats", {
+  params: IdParams,
+  success: MessageResponse,
+  error: ApiNotFoundError
+})
 
 export const ImpostersGroup = HttpApiGroup.make("imposters")
   .add(createImposter)

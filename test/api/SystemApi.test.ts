@@ -1,12 +1,12 @@
-import { HttpApiBuilder } from "@effect/platform"
 import * as Layer from "effect/Layer"
+import { HttpRouter } from "effect/unstable/http"
 import { ApiLayer } from "imposters/layers/ApiLayer"
 import { MainLayer } from "imposters/layers/MainLayer"
 import { describe, expect, it } from "vitest"
 
 const makeHandler = () => {
   const fullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
-  return HttpApiBuilder.toWebHandler(fullLayer)
+  return HttpRouter.toWebHandler(fullLayer)
 }
 
 describe("System API", () => {

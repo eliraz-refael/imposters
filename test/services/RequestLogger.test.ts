@@ -1,4 +1,4 @@
-import { Effect, ManagedRuntime, Queue } from "effect"
+import { Effect, ManagedRuntime, PubSub } from "effect"
 import * as DateTime from "effect/DateTime"
 import { NonEmptyString } from "imposters/schemas/common"
 import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
@@ -21,7 +21,7 @@ const makeEntry = (overrides: {
 } = {}): RequestLogEntry => ({
   id: NonEmptyString.make(overrides.id ?? "req-1"),
   imposterId: NonEmptyString.make(overrides.imposterId ?? "imp-1"),
-  timestamp: DateTime.unsafeNow(),
+  timestamp: DateTime.nowUnsafe(),
   request: {
     method: overrides.method ?? "GET",
     path: overrides.path ?? "/test",
@@ -156,7 +156,7 @@ describe("RequestLogger", () => {
           const dequeue = yield* logger.subscribe
           const entry = makeEntry({ id: "ps1", imposterId: "i-pubsub" })
           yield* logger.log(entry)
-          const received = yield* Queue.take(dequeue)
+          const received = yield* PubSub.take(dequeue)
           expect(received.id).toBe("ps1")
         })
       )
