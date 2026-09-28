@@ -1,16 +1,23 @@
-import { Context, Layer } from "effect"
+import { Context, Data, Effect, Layer } from "effect"
 import * as http from "node:http"
+
+export class ServerBindError extends Data.TaggedError("ServerBindError")<{
+  readonly port: number
+  readonly reason: string
+}> {}
 
 export interface ServerInstance {
   readonly port: number
-  readonly stop: (closeActive: boolean) => void
+  // Completes only once the listener is closed and the port is released.
+  readonly stop: (closeActive: boolean) => Effect.Effect<void>
 }
 
 export interface ServerFactoryShape {
+  // Completes only once the port is bound; fails with ServerBindError otherwise.
   readonly create: (options: {
     readonly port: number
     readonly fetch: (request: Request) => Promise<Response>
-  }) => ServerInstance
+  }) => Effect.Effect<ServerInstance, ServerBindError>
 }
 
 export class ServerFactory extends Context.Service<ServerFactory, ServerFactoryShape>()("ServerFactory") {}
@@ -25,52 +32,106 @@ const readBody = (req: http.IncomingMessage): Promise<Uint8Array<ArrayBuffer>> =
     req.on("error", reject)
   })
 
-export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
-  create: (options): ServerInstance => {
-    const server = http.createServer(async (req, res) => {
-      try {
-        const url = `http://localhost:${options.port}${req.url}`
-        const headers = new Headers()
-        for (const [key, val] of Object.entries(req.headers)) {
-          if (val) headers.set(key, Array.isArray(val) ? val.join(", ") : val)
-        }
+const makeNodeRequestListener = (
+  port: number,
+  fetch: (request: Request) => Promise<Response>
+): http.RequestListener =>
+async (req, res) => {
+  try {
+    const url = `http://localhost:${port}${req.url}`
+    const headers = new Headers()
+    for (const [key, val] of Object.entries(req.headers)) {
+      if (val) headers.set(key, Array.isArray(val) ? val.join(", ") : val)
+    }
 
-        const body = req.method !== "GET" && req.method !== "HEAD" ? await readBody(req) : undefined
+    const body = req.method !== "GET" && req.method !== "HEAD" ? await readBody(req) : undefined
 
-        const request = new Request(url, {
-          method: req.method ?? "GET",
-          headers,
-          ...(body !== undefined && body.length > 0 ? { body } : {})
-        })
-
-        const response = await options.fetch(request)
-
-        const respHeaders: Record<string, string> = {}
-        response.headers.forEach((val, key) => {
-          respHeaders[key] = val
-        })
-        res.writeHead(response.status, respHeaders)
-        res.end(new Uint8Array(await response.arrayBuffer()))
-      } catch (err) {
-        res.writeHead(500)
-        res.end(JSON.stringify({ error: "Internal server error", details: String(err) }))
-      }
+    const request = new Request(url, {
+      method: req.method ?? "GET",
+      headers,
+      ...(body !== undefined && body.length > 0 ? { body } : {})
     })
 
-    server.listen(options.port)
+    const response = await fetch(request)
 
-    return {
-      port: options.port,
-      stop: (closeActive: boolean) => {
-        if (closeActive && typeof server.closeAllConnections === "function") {
-          server.closeAllConnections()
-        }
-        server.close()
-      }
-    }
+    const respHeaders: Record<string, string> = {}
+    response.headers.forEach((val, key) => {
+      respHeaders[key] = val
+    })
+    res.writeHead(response.status, respHeaders)
+    res.end(new Uint8Array(await response.arrayBuffer()))
+  } catch (err) {
+    res.writeHead(500)
+    res.end(JSON.stringify({ error: "Internal server error", details: String(err) }))
   }
+}
+
+// Resolves on the close callback, i.e. once the listening handle is closed.
+// A server that is not listening calls back with ERR_SERVER_NOT_RUNNING, which
+// is still "released", so the error argument is ignored.
+const closeNodeServer = (server: http.Server, closeActive: boolean): Effect.Effect<void> =>
+  Effect.callback<void>((resume) => {
+    // Guarded because Bun's node:http compatibility layer may not implement it
+    if (closeActive && typeof server.closeAllConnections === "function") server.closeAllConnections()
+    server.close(() => resume(Effect.void))
+  })
+
+export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
+  create: (options) =>
+    Effect.callback<ServerInstance, ServerBindError>((resume) => {
+      const server = http.createServer(makeNodeRequestListener(options.port, options.fetch))
+
+      // Exactly one of these fires for a listen() call; each removes the other
+      // so no listener outlives the bind attempt.
+      const onError = (err: Error) => {
+        server.off("listening", onListening)
+        resume(Effect.fail(new ServerBindError({ port: options.port, reason: err.message })))
+      }
+      const onListening = () => {
+        server.off("error", onError)
+        resume(Effect.succeed({
+          port: options.port,
+          stop: (closeActive) => closeNodeServer(server, closeActive)
+        }))
+      }
+      server.once("error", onError)
+      server.once("listening", onListening)
+      server.listen(options.port)
+
+      // Interrupted before the bind settled: drop the listeners and release
+      // whatever was (or is about to be) bound.
+      return Effect.suspend(() => {
+        server.off("error", onError)
+        server.off("listening", onListening)
+        return closeNodeServer(server, true)
+      })
+    })
 })
 
+const bunUnavailable = (port: number) =>
+  new ServerBindError({
+    port,
+    reason: "The Bun runtime is not available (globalThis.Bun is undefined). " +
+      "--runtime bun requires running under Bun, e.g. `bun dist/bin/cli.cjs start --runtime bun`; " +
+      "use --runtime node under Node.js"
+  })
+
 export const BunServerFactoryLive = Layer.succeed(ServerFactory, {
-  create: (options) => (globalThis as any).Bun.serve(options)
+  create: (options) =>
+    Effect.suspend(() => {
+      const bun = globalThis.Bun
+      if (bun === undefined) return Effect.fail(bunUnavailable(options.port))
+      // Bun.serve binds synchronously and throws on failure (e.g. EADDRINUSE)
+      return Effect.try({
+        try: () => bun.serve({ port: options.port, fetch: options.fetch }),
+        catch: (err) =>
+          new ServerBindError({ port: options.port, reason: err instanceof Error ? err.message : String(err) })
+      }).pipe(
+        Effect.map((server): ServerInstance => ({
+          port: server.port ?? options.port,
+          // stop() resolves once the listener is closed
+          stop: (closeActive) => Effect.promise(() => Promise.resolve(server.stop(closeActive)))
+        }))
+      )
+    })
 })

@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 324 tests across 39 files.
+All three gates pass: `bun check`, `bun lint`, and 367 tests across 41 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -65,8 +65,8 @@ Disk persistence (imposters are in-memory only and do not survive restart), Moun
 
 ### Key runtime mechanics
 
-- **Fiber lifecycle** — `FiberManager` wraps Effect's built-in `FiberMap`. Starting an imposter forks a fiber keyed by imposter id; re-keying auto-interrupts the previous one; closing the scope interrupts everything.
-- **Server lifecycle** — `Effect.acquireRelease` around each server instance, so the finalizer stops the server and releases the port on interrupt.
+- **Fiber lifecycle** — `FiberManager` wraps Effect's built-in `FiberMap`. Starting an imposter forks a fiber keyed by imposter id; closing the scope interrupts everything. `FiberMap.remove` awaits the interrupted fiber (finalizers included), but `FiberMap.run` re-keying only calls `interruptUnsafe` and does **not** wait, so `FiberManager.start` removes any existing fiber first, under a semaphore. `stop` therefore resolves only after the old server has released its port.
+- **Server lifecycle** — `ServerFactory.create` resolves once the port is bound (Node: `'listening'`; Bun: `Bun.serve` is synchronous) and fails with `ServerBindError` otherwise; `ServerInstance.stop` resolves once the port is released. The imposter fiber wraps them in `Effect.acquireRelease`, and `ImposterServer.start` awaits a `Deferred` the fiber completes after binding, so `start` resolves only when the imposter is reachable. A bind failure fails `start` with `ImposterServerError` (409 `ApiConflictError` over the API) and leaves the imposter `stopped` with no fiber or state entry.
 - **Hot-reload** — each imposter holds `Ref<ReadonlyArray<Stub>>` and `Ref<ProxyConfig | undefined>`. `updateStubs(id)` / `updateProxyConfig(id)` re-read from the repository and `Ref.set`. The fetch handler reads the `Ref` on every request, so changes take effect immediately with no restart.
 - **Runtime abstraction** — `ServerFactory` is a `Context.Service` with two implementations: `NodeServerFactoryLive` (`node:http`, the default) and `BunServerFactoryLive` (`Bun.serve`). This exists because **vitest workers run under Node.js even when invoked via Bun**, so tests could not use `Bun.serve` directly. It later became the user-facing `--runtime node|bun` flag.
 - **Repository is pure storage** — `ImposterRepository` holds config + stubs in a `Ref<HashMap>`. No fiber refs, no server handles; those live in `FiberManager` and `ImposterServer`'s internal state map.
@@ -114,6 +114,8 @@ src/
     StubSchema.ts          # Stub, Predicate, ResponseConfig
     RequestLogSchema.ts
     ConfigFileSchema.ts
+  types/
+    bun.d.ts               # minimal ambient `Bun` global (serve/port/stop), possibly undefined
   server/
     AdminServer.ts
     ImposterServer.ts      # the core: start/stop/updateStubs/updateProxyConfig
@@ -141,7 +143,7 @@ test/                      # mirrors src/, plus test/e2e/ and test/helpers/
 bun check          # tsc -b tsconfig.json — runs TypeScript 7 (native); see "Two TypeScript installs" under Environment
 bun lint           # eslint
 bun lint-fix
-bun run test       # vitest --run (single run, NOT watch; ~32s — files run serially)
+bun run test       # vitest --run (single run, NOT watch; ~3s — files run in parallel)
 bun coverage
 bun run build      # codegen + esm + cjs + esbuild CLI bundle + postbuild
 ```
@@ -159,9 +161,8 @@ Note: `bun test` (Bun's native runner) is **not** the same as `bun run test` (vi
 
 ### Known deviations (tech debt, not precedent)
 
-Two `any` usages and ~4 non-null assertions survive and should be cleaned up rather than copied:
+One `any` usage and ~4 non-null assertions survive and should be cleaned up rather than copied:
 
-- `src/server/ServerFactory.ts:75` — `(globalThis as any).Bun.serve`. A previous `src/types/bun.d.ts` declaring the `Bun` global was deleted during the Node-runtime work; restoring it would remove this cast.
 - `src/ui/admin/AdminUiRouter.ts:16` — `toAdminData = (imp: any)`.
 
 ## Effect Gotchas (hard-won — read before debugging)
@@ -198,6 +199,8 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - `runPromise` wraps failures in `FiberFailure` — assert with `String(err).toContain(msg)`, not identity.
 - tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.
 
@@ -213,7 +216,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 
 ## Known bugs
 
-- **`ServerFactory` does not synchronise the server lifecycle.** `create()` calls `server.listen(port)` and returns without awaiting `'listening'`; `stop()` calls `server.close()` without awaiting `'close'`. So `ImposterServer.start(id)` resolves before the port is bound, and teardown resolves before it is released. Callers that create → start → request immediately (including the README quick-start) can hit `ECONNREFUSED`. The e2e suites mask it with fixed `setTimeout` sleeps, which is why `vitest.config.ts` must set `fileParallelism: false`. Fixing this should let that flag go.
+- **`--runtime bun` only applies to the admin server.** `MainLayer` hard-codes `NodeServerFactoryLive` for imposters, so under Bun they run on Bun's `node:http` compatibility layer rather than `Bun.serve`.
 
 ## Build & Release
 

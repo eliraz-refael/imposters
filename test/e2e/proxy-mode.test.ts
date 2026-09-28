@@ -134,7 +134,6 @@ describe("E2E: Proxy Mode", () => {
     expect(imp.proxy.targetUrl).toBe(`http://localhost:${upstreamPort}`)
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9501/api/data?key=value")
@@ -146,7 +145,6 @@ describe("E2E: Proxy Mode", () => {
       expect(body.query).toEqual({ key: "value" })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -157,7 +155,6 @@ describe("E2E: Proxy Mode", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     // A JPEG header followed by every byte value, well past one socket chunk
     const sent = Uint8Array.from({ length: 128 * 1024 }, (_, i) => i % 256)
@@ -173,7 +170,6 @@ describe("E2E: Proxy Mode", () => {
       expect(new Uint8Array(await resp.arrayBuffer())).toEqual(sent)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -194,7 +190,6 @@ describe("E2E: Proxy Mode", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // /stubbed should be served by stub, not proxy
@@ -210,7 +205,6 @@ describe("E2E: Proxy Mode", () => {
       expect(proxiedBody.upstream).toBe(true)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -221,7 +215,6 @@ describe("E2E: Proxy Mode", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // First request: proxied and recorded
@@ -229,9 +222,6 @@ describe("E2E: Proxy Mode", () => {
       expect(firstResp.status).toBe(200)
       const firstBody = await firstResp.json()
       expect(firstBody.upstream).toBe(true)
-
-      // Give time for stub recording
-      await new Promise((r) => setTimeout(r, 200))
 
       // Check that a stub was created
       const stubsResp = await admin(`/imposters/${imp.id}/stubs`)
@@ -243,7 +233,6 @@ describe("E2E: Proxy Mode", () => {
       expect(recordedStub).toBeDefined()
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -254,7 +243,6 @@ describe("E2E: Proxy Mode", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9504/any")
@@ -263,7 +251,6 @@ describe("E2E: Proxy Mode", () => {
       expect(body.error).toBe("Proxy failed")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 

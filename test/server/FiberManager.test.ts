@@ -23,7 +23,6 @@ describe("FiberManager", () => {
           })
         )
 
-        yield* Effect.sleep("50 millis")
         const running = yield* fm.isRunning("fiber1")
         expect(running).toBe(true)
 
@@ -38,9 +37,7 @@ describe("FiberManager", () => {
         const fm = yield* FiberManager
 
         yield* fm.start("fiber2", Effect.never)
-        yield* Effect.sleep("10 millis")
         yield* fm.stop("fiber2")
-        yield* Effect.sleep("10 millis")
         const running = yield* fm.isRunning("fiber2")
         expect(running).toBe(false)
       })
@@ -70,7 +67,6 @@ describe("FiberManager", () => {
             return yield* Effect.never
           })
         )
-        yield* Effect.sleep("10 millis")
 
         yield* fm.start(
           "fiber3",
@@ -79,12 +75,53 @@ describe("FiberManager", () => {
             return yield* Effect.never
           })
         )
-        yield* Effect.sleep("10 millis")
 
         const val = yield* Ref.get(ref)
         expect(val).toBe("second-running")
 
         yield* fm.stop("fiber3")
+      })
+    )
+  }, 10000)
+
+  // A finalizer that takes a while, like a server releasing its port
+  const slowFinalizer = (log: Ref.Ref<ReadonlyArray<string>>, name: string) =>
+    Effect.acquireRelease(
+      Ref.update(log, (l) => [...l, `${name}:acquired`]),
+      () =>
+        Effect.sleep("50 millis").pipe(
+          Effect.andThen(Ref.update(log, (l) => [...l, `${name}:released`]))
+        )
+    ).pipe(Effect.andThen(Effect.never), Effect.scoped)
+
+  it("stop completes only after the fiber's finalizers have run", async () => {
+    await run(
+      Effect.gen(function*() {
+        const fm = yield* FiberManager
+        const log = yield* Ref.make<ReadonlyArray<string>>([])
+
+        yield* fm.start("fiber4", slowFinalizer(log, "a"))
+        yield* fm.stop("fiber4")
+
+        expect(yield* Ref.get(log)).toEqual(["a:acquired", "a:released"])
+        expect(yield* fm.isRunning("fiber4")).toBe(false)
+      })
+    )
+  }, 10000)
+
+  it("start with the same id waits for the previous fiber's finalizers before forking", async () => {
+    await run(
+      Effect.gen(function*() {
+        const fm = yield* FiberManager
+        const log = yield* Ref.make<ReadonlyArray<string>>([])
+
+        yield* fm.start("fiber5", slowFinalizer(log, "a"))
+        yield* fm.start("fiber5", slowFinalizer(log, "b"))
+
+        // FiberMap.run alone would fork "b" before "a" had released
+        expect(yield* Ref.get(log)).toEqual(["a:acquired", "a:released", "b:acquired"])
+
+        yield* fm.stop("fiber5")
       })
     )
   }, 10000)

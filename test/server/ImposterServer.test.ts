@@ -12,6 +12,7 @@ import { MetricsServiceLive } from "imposters/services/MetricsService"
 import { ProxyServiceLive } from "imposters/services/ProxyService"
 import { RequestLoggerLive } from "imposters/services/RequestLogger"
 import { UuidLive } from "imposters/services/UuidLive"
+import { httpGet, occupyPort, probeConnect } from "imposters/test/helpers/net"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
 import { afterAll, describe, expect, it } from "vitest"
 
@@ -76,7 +77,6 @@ describe("ImposterServer", () => {
         yield* repo.addStub("imp-start-1", makeCatchAllStub("s1", 200, { ok: true }))
 
         yield* server.start("imp-start-1")
-        yield* Effect.sleep("200 millis")
       })
     )
 
@@ -88,7 +88,6 @@ describe("ImposterServer", () => {
       Effect.gen(function*() {
         const server = yield* ImposterServer
         yield* server.stop("imp-start-1")
-        yield* Effect.sleep("50 millis")
       })
     )
   }, 10000)
@@ -102,10 +101,8 @@ describe("ImposterServer", () => {
         yield* repo.create(makeConfig("imp-stop-1", 9102))
         yield* repo.addStub("imp-stop-1", makeCatchAllStub("s1", 200))
         yield* server.start("imp-stop-1")
-        yield* Effect.sleep("200 millis")
 
         yield* server.stop("imp-stop-1")
-        yield* Effect.sleep("100 millis")
 
         const running = yield* server.isRunning("imp-stop-1")
         expect(running).toBe(false)
@@ -124,7 +121,6 @@ describe("ImposterServer", () => {
         yield* repo.addStub("imp-match-1", makeStub("post-users", "POST", "/users", 201, { created: true }))
 
         yield* server.start("imp-match-1")
-        yield* Effect.sleep("200 millis")
       })
     )
 
@@ -140,7 +136,6 @@ describe("ImposterServer", () => {
       Effect.gen(function*() {
         const server = yield* ImposterServer
         yield* server.stop("imp-match-1")
-        yield* Effect.sleep("50 millis")
       })
     )
   }, 10000)
@@ -155,7 +150,6 @@ describe("ImposterServer", () => {
         yield* repo.addStub("imp-404-1", makeStub("only-get", "GET", "/specific", 200))
 
         yield* server.start("imp-404-1")
-        yield* Effect.sleep("200 millis")
       })
     )
 
@@ -167,7 +161,6 @@ describe("ImposterServer", () => {
       Effect.gen(function*() {
         const server = yield* ImposterServer
         yield* server.stop("imp-404-1")
-        yield* Effect.sleep("50 millis")
       })
     )
   }, 10000)
@@ -182,7 +175,6 @@ describe("ImposterServer", () => {
         yield* repo.addStub("imp-hot-1", makeCatchAllStub("s1", 200, { version: 1 }))
 
         yield* server.start("imp-hot-1")
-        yield* Effect.sleep("200 millis")
       })
     )
 
@@ -207,7 +199,6 @@ describe("ImposterServer", () => {
       Effect.gen(function*() {
         const server = yield* ImposterServer
         yield* server.stop("imp-hot-1")
-        yield* Effect.sleep("50 millis")
       })
     )
   }, 10000)
@@ -225,13 +216,11 @@ describe("ImposterServer", () => {
         expect(before.config.status).toBe("stopped")
 
         yield* server.start("imp-status-1")
-        yield* Effect.sleep("200 millis")
 
         const running = yield* repo.get("imp-status-1")
         expect(running.config.status).toBe("running")
 
         yield* server.stop("imp-status-1")
-        yield* Effect.sleep("50 millis")
 
         const stopped = yield* repo.get("imp-status-1")
         expect(stopped.config.status).toBe("stopped")
@@ -259,7 +248,6 @@ describe("ImposterServer", () => {
         )
 
         yield* server.start("imp-tpl-1")
-        yield* Effect.sleep("200 millis")
       })
     )
 
@@ -271,7 +259,119 @@ describe("ImposterServer", () => {
       Effect.gen(function*() {
         const server = yield* ImposterServer
         yield* server.stop("imp-tpl-1")
-        yield* Effect.sleep("50 millis")
+      })
+    )
+  }, 10000)
+})
+
+// The lifecycle contract: start resolves only once the port is bound, stop only
+// once it is released. None of these tests sleep.
+describe("ImposterServer lifecycle", () => {
+  const setup = (id: string, port: number) =>
+    Effect.gen(function*() {
+      const repo = yield* ImposterRepository
+      yield* repo.create(makeConfig(id, port))
+      yield* repo.addStub(id, makeCatchAllStub("s1", 200, { id }))
+    })
+
+  it("a request issued as soon as start resolves succeeds", async () => {
+    await run(
+      Effect.gen(function*() {
+        const server = yield* ImposterServer
+        yield* setup("imp-life-1", 9111)
+        yield* server.start("imp-life-1")
+        const resp = yield* Effect.promise(() => httpGet(9111, "/"))
+        expect(resp.status).toBe(200)
+        expect(JSON.parse(resp.body)).toEqual({ id: "imp-life-1" })
+        yield* server.stop("imp-life-1")
+      })
+    )
+  }, 10000)
+
+  it("a connection attempted as soon as stop resolves is refused", async () => {
+    await run(
+      Effect.gen(function*() {
+        const server = yield* ImposterServer
+        yield* setup("imp-life-2", 9112)
+        yield* server.start("imp-life-2")
+        expect(yield* Effect.promise(() => probeConnect(9112))).toBe("connected")
+        yield* server.stop("imp-life-2")
+        expect(yield* Effect.promise(() => probeConnect(9112))).toBe("refused")
+      })
+    )
+  }, 10000)
+
+  it("start, stop, start on the same port succeeds immediately", async () => {
+    await run(
+      Effect.gen(function*() {
+        const server = yield* ImposterServer
+        yield* setup("imp-life-3", 9113)
+        yield* server.start("imp-life-3")
+        yield* server.stop("imp-life-3")
+        yield* server.start("imp-life-3")
+        const resp = yield* Effect.promise(() => httpGet(9113, "/"))
+        expect(resp.status).toBe(200)
+        yield* server.stop("imp-life-3")
+      })
+    )
+  }, 10000)
+
+  it("start while already running restarts on the same port without EADDRINUSE", async () => {
+    await run(
+      Effect.gen(function*() {
+        const server = yield* ImposterServer
+        const repo = yield* ImposterRepository
+        yield* setup("imp-life-4", 9114)
+        yield* server.start("imp-life-4")
+        // Re-keys the FiberMap entry: the old server must be released before the new bind
+        yield* server.start("imp-life-4")
+        const resp = yield* Effect.promise(() => httpGet(9114, "/"))
+        expect(resp.status).toBe(200)
+        expect(yield* server.isRunning("imp-life-4")).toBe(true)
+        expect((yield* repo.get("imp-life-4")).config.status).toBe("running")
+        yield* server.stop("imp-life-4")
+      })
+    )
+  }, 10000)
+
+  it("start on an occupied port fails with ImposterServerError and leaves no stale state", async () => {
+    const release = await occupyPort(9115)
+    try {
+      await run(
+        Effect.gen(function*() {
+          const server = yield* ImposterServer
+          const repo = yield* ImposterRepository
+          yield* setup("imp-life-5", 9115)
+          yield* repo.update(
+            "imp-life-5",
+            (r) => ({ ...r, config: ImposterConfig({ ...r.config, status: "running" }) })
+          )
+
+          const error = yield* server.start("imp-life-5").pipe(Effect.flip)
+          expect(error._tag).toBe("ImposterServerError")
+          if (error._tag === "ImposterServerError") {
+            expect(error.imposterId).toBe("imp-life-5")
+            expect(error.reason).toContain("Failed to bind port 9115")
+            expect(error.reason).toContain("EADDRINUSE")
+          }
+
+          // No FiberMap entry, status flipped back to stopped
+          expect(yield* server.isRunning("imp-life-5")).toBe(false)
+          expect((yield* repo.get("imp-life-5")).config.status).toBe("stopped")
+        })
+      )
+    } finally {
+      await release()
+    }
+
+    // Once the port is free the same imposter starts cleanly
+    await run(
+      Effect.gen(function*() {
+        const server = yield* ImposterServer
+        yield* server.start("imp-life-5")
+        const resp = yield* Effect.promise(() => httpGet(9115, "/"))
+        expect(resp.status).toBe(200)
+        yield* server.stop("imp-life-5")
       })
     )
   }, 10000)

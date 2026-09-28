@@ -1,4 +1,4 @@
-import { Context, Data, Effect, HashMap, Layer, Ref } from "effect"
+import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, HashMap, Layer, Ref } from "effect"
 import * as DateTime from "effect/DateTime"
 import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter"
 import { extractRequestContext, findMatchingStub } from "../matching/RequestMatcher"
@@ -35,6 +35,12 @@ interface ImposterState {
   readonly proxyConfigRef: Ref.Ref<ProxyConfigDomain | undefined>
 }
 
+// Why the server fiber ended before its port was bound: stopped, or died during bind
+const earlyExitReason = (exit: Exit.Exit<never, unknown>): string =>
+  Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
+    ? `Imposter server died while binding its port: ${Cause.pretty(exit.cause)}`
+    : "Imposter was stopped before its server started"
+
 export const ImposterServerLive = Layer.effect(
   ImposterServer,
   Effect.gen(function*() {
@@ -55,9 +61,6 @@ export const ImposterServerLive = Layer.effect(
         const stubsRef = yield* Ref.make<ReadonlyArray<Stub>>(record.stubs)
         const proxyConfigRef = yield* Ref.make<ProxyConfigDomain | undefined>(config.proxy)
         const responseState = yield* makeResponseState()
-
-        // Store state for hot-reload
-        yield* Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef } as ImposterState))
 
         // Capture the current services for running effects inside the fetch handler
         const services = yield* Effect.context<never>()
@@ -165,21 +168,40 @@ export const ImposterServerLive = Layer.effect(
           )
         }
 
-        // Build the long-running fiber effect with acquireRelease
-        const fiberEffect = Effect.acquireRelease(
-          Effect.try({
-            try: () => serverFactory.create({ port: config.port, fetch: handler }),
-            catch: (err) =>
-              new ImposterServerError({ imposterId: id, reason: `Failed to bind port ${config.port}: ${err}` })
-          }),
-          (server) => Effect.sync(() => server.stop(true))
-        ).pipe(
+        // Completed by the server fiber: succeeds once the port is bound, fails if
+        // binding fails or the fiber is interrupted before it gets that far.
+        const ready = yield* Deferred.make<void, ImposterServerError>()
+
+        const acquireServer = serverFactory.create({ port: config.port, fetch: handler }).pipe(
+          Effect.mapError((err) =>
+            new ImposterServerError({ imposterId: id, reason: `Failed to bind port ${err.port}: ${err.reason}` })
+          ),
+          // Register hot-reload state only once bound; the onError below removes it.
+          // Doing it inside the fiber keeps it ordered after any previous fiber's
+          // cleanup (FiberManager.start awaits that before forking this one).
+          Effect.tap(() => Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef }))),
+          // Stub/proxy changes made between the repo.get above and registration found
+          // no state to update; re-read now so the new server does not serve stale stubs.
+          Effect.tap(() =>
+            repo.get(id).pipe(
+              Effect.andThen((latest) =>
+                Effect.all([Ref.set(stubsRef, latest.stubs), Ref.set(proxyConfigRef, latest.config.proxy)])
+              ),
+              Effect.catch(() => Effect.void)
+            )
+          ),
+          Effect.tap(() => Deferred.succeed(ready, undefined))
+        )
+
+        // The release is the server's stop Effect, so interrupting this fiber
+        // completes only after the port has been released.
+        const fiberEffect = Effect.acquireRelease(acquireServer, (server) => server.stop(true)).pipe(
           Effect.andThen(Effect.never),
           Effect.scoped
         )
 
-        // Wrap fiber in onError for crash supervision
         const supervisedEffect = fiberEffect.pipe(
+          // Crash supervision: runs for bind failures, crashes after start, and stop()
           Effect.onError(() =>
             Effect.gen(function*() {
               yield* Ref.update(stateMapRef, HashMap.remove(id))
@@ -189,12 +211,28 @@ export const ImposterServerLive = Layer.effect(
               })).pipe(Effect.catch(() => Effect.void))
               yield* responseState.reset(id)
             })
+          ),
+          // Deferred.fail is a no-op once `ready` has succeeded
+          Effect.tapError((err) => Deferred.fail(ready, err))
+        )
+
+        const fiber = yield* fiberManager.start(id, supervisedEffect)
+
+        // Resolve only once the port is bound. The fiber can also exit without ever
+        // completing `ready` — interrupted before it first ran (so no finalizer of
+        // its own was registered) or a defect — so race against its exit too.
+        // On failure, wait for the fiber to exit so its cleanup has run and
+        // FiberMap has dropped the entry before the caller sees the error.
+        yield* Effect.raceFirst(
+          Deferred.await(ready),
+          Fiber.await(fiber).pipe(
+            Effect.andThen((exit) =>
+              Deferred.fail(ready, new ImposterServerError({ imposterId: id, reason: earlyExitReason(exit) }))
+            ),
+            Effect.andThen(Deferred.await(ready))
           )
-        ) as Effect.Effect<never, unknown>
+        ).pipe(Effect.tapError(() => Fiber.await(fiber)))
 
-        yield* fiberManager.start(id, supervisedEffect)
-
-        // Update status to running
         yield* repo.update(id, (r) => ({
           ...r,
           config: ImposterConfig({ ...r.config, status: "running" })

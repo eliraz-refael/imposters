@@ -70,7 +70,7 @@ describe("withImposter", () => {
     await run(
       withImposter(
         {
-          port: 9501,
+          port: 9531,
           name: "test-helper-imposter",
           stubs: [{
             predicates: [{ field: "path", operator: "equals", value: "/hello" }],
@@ -79,7 +79,7 @@ describe("withImposter", () => {
         },
         (ctx) =>
           Effect.gen(function*() {
-            expect(ctx.port).toBe(9501)
+            expect(ctx.port).toBe(9531)
             expect(ctx.id).toBeDefined()
 
             // Hit the imposter directly
@@ -96,7 +96,7 @@ describe("withImposter", () => {
       Effect.gen(function*() {
         const client = yield* ImpostersClient
         const list = yield* client.imposters.listImposters({ query: { limit: 50 as any, offset: 0 } })
-        return list.imposters.filter((i) => i.port === 9501 as any)
+        return list.imposters.filter((i) => i.port === 9531 as any)
       })
     )
     expect(result.length).toBe(0)
@@ -108,7 +108,7 @@ describe("withImposter", () => {
     try {
       await run(
         withImposter(
-          { port: 9502, stubs: [{ responses: [{ status: 200 }] }] },
+          { port: 9532, stubs: [{ responses: [{ status: 200 }] }] },
           () => Effect.fail(testError)
         )
       )
@@ -123,7 +123,7 @@ describe("withImposter", () => {
       Effect.gen(function*() {
         const client = yield* ImpostersClient
         const list = yield* client.imposters.listImposters({ query: { limit: 50 as any, offset: 0 } })
-        return list.imposters.filter((i) => i.port === 9502 as any)
+        return list.imposters.filter((i) => i.port === 9532 as any)
       })
     )
     expect(result.length).toBe(0)

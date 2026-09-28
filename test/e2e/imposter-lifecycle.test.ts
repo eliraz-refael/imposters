@@ -14,6 +14,7 @@ import { PortAllocatorLive } from "imposters/services/PortAllocator"
 import { ProxyServiceLive } from "imposters/services/ProxyService"
 import { RequestLoggerLive } from "imposters/services/RequestLogger"
 import { UuidLive } from "imposters/services/UuidLive"
+import { occupyPort, probeConnect } from "imposters/test/helpers/net"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -115,15 +116,14 @@ describe("E2E: Imposter Lifecycle", () => {
     await addStub(imp.id, { predicates: [], responses: [{ status: 200, body: { alive: true } }] })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     // Verify the imposter is reachable
     const resp = await fetch("http://localhost:9301/test")
     expect(resp.status).toBe(200)
 
-    // Stop it
+    // Stop it: the PATCH resolves only once the port is released
     await stopImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
+    expect(await probeConnect(9301)).toBe("refused")
 
     // Verify status is stopped
     const info = await getImposter(imp.id)
@@ -134,9 +134,7 @@ describe("E2E: Imposter Lifecycle", () => {
     const imp1 = await createImposter(9302)
     await addStub(imp1.id, { predicates: [], responses: [{ status: 200, body: { v: 1 } }] })
     await startImposter(imp1.id)
-    await new Promise((r) => setTimeout(r, 150))
     await stopImposter(imp1.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     // Delete to release port
     await deleteImposter(imp1.id)
@@ -145,7 +143,6 @@ describe("E2E: Imposter Lifecycle", () => {
     const imp2 = await createImposter(9302)
     await addStub(imp2.id, { predicates: [], responses: [{ status: 200, body: { v: 2 } }] })
     await startImposter(imp2.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9302/test")
@@ -154,7 +151,6 @@ describe("E2E: Imposter Lifecycle", () => {
       expect(body).toEqual({ v: 2 })
     } finally {
       await stopImposter(imp2.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 15000)
 
@@ -166,7 +162,6 @@ describe("E2E: Imposter Lifecycle", () => {
 
     await startImposter(imp1.id)
     await startImposter(imp2.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp1 = await fetch("http://localhost:9303/test")
@@ -177,7 +172,6 @@ describe("E2E: Imposter Lifecycle", () => {
     } finally {
       await stopImposter(imp1.id)
       await stopImposter(imp2.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -185,12 +179,10 @@ describe("E2E: Imposter Lifecycle", () => {
     const imp = await createImposter(9305)
     await addStub(imp.id, { predicates: [], responses: [{ status: 200 }] })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     // Force delete while running
     const deleteResp = await deleteImposter(imp.id, true)
     expect(deleteResp.status).toBe(200)
-    await new Promise((r) => setTimeout(r, 150))
 
     // Verify it's gone
     const getResp = await admin(`/imposters/${imp.id}`)
@@ -207,14 +199,34 @@ describe("E2E: Imposter Lifecycle", () => {
     const imp = await createImposter(9307)
     await addStub(imp.id, { predicates: [], responses: [{ status: 200 }] })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const deleteResp = await deleteImposter(imp.id, false)
       expect(deleteResp.status).toBe(409)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
+    }
+  }, 10000)
+
+  it("starting on an occupied port returns a typed 409 and leaves the imposter stopped", async () => {
+    const release = await occupyPort(9311)
+    try {
+      const imp = await createImposter(9311)
+      const resp = await admin(`/imposters/${imp.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "running" })
+      })
+      expect(resp.status).toBe(409)
+      const body = await resp.json()
+      expect(body._tag).toBe("ApiConflictError")
+      expect(body.message).toContain("Failed to bind port 9311")
+      expect(body.message).toContain("EADDRINUSE")
+
+      const info = await getImposter(imp.id)
+      expect(info.status).toBe("stopped")
+    } finally {
+      await release()
     }
   }, 10000)
 
