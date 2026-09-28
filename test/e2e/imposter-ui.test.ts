@@ -96,7 +96,6 @@ describe("E2E: Imposter UI", () => {
       responses: [{ status: 200, body: { ok: true } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9601/_admin")
@@ -110,7 +109,6 @@ describe("E2E: Imposter UI", () => {
       expect(html).toContain("Stubs")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -121,7 +119,6 @@ describe("E2E: Imposter UI", () => {
       responses: [{ status: 200, body: { hello: "world" } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9602/_admin/stubs")
@@ -134,14 +131,12 @@ describe("E2E: Imposter UI", () => {
       expect(html).toContain("equals")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
   it("POST /_admin/stubs adds a stub via form data", async () => {
     const imp = await createImposter(9603)
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Add a stub via the UI form
@@ -168,7 +163,6 @@ describe("E2E: Imposter UI", () => {
       expect(body).toEqual({ added: true })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -185,7 +179,6 @@ describe("E2E: Imposter UI", () => {
     })
     const stub = await stubResp.json()
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Verify stub matches
@@ -206,7 +199,6 @@ describe("E2E: Imposter UI", () => {
       expect(after.status).toBe(404)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -217,7 +209,6 @@ describe("E2E: Imposter UI", () => {
       responses: [{ status: 200, body: { data: "normal" } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Normal stub matching still works
@@ -232,7 +223,6 @@ describe("E2E: Imposter UI", () => {
       expect(uiResp.headers.get("content-type")).toContain("text/html")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 })

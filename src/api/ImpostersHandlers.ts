@@ -160,7 +160,8 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           // Handle start/stop transitions
           if (wantsRunning && !wasRunning) {
             yield* imposterServer.start(params.id).pipe(
-              Effect.catchTag("ImposterServerError", (e) => Effect.fail(new ApiServiceError({ message: e.reason }))),
+              // A bind failure (e.g. port already in use) is a conflict with the environment
+              Effect.catchTag("ImposterServerError", (e) => Effect.fail(new ApiConflictError({ message: e.reason }))),
               Effect.catchTag("ImposterNotFoundError", (e) =>
                 Effect.fail(
                   new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
@@ -171,7 +172,8 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           } else if (portChanging && wasRunning) {
             // Port changed while running — restart
             yield* imposterServer.start(params.id).pipe(
-              Effect.catchTag("ImposterServerError", (e) => Effect.fail(new ApiServiceError({ message: e.reason }))),
+              // A bind failure (e.g. port already in use) is a conflict with the environment
+              Effect.catchTag("ImposterServerError", (e) => Effect.fail(new ApiConflictError({ message: e.reason }))),
               Effect.catchTag("ImposterNotFoundError", (e) =>
                 Effect.fail(
                   new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })

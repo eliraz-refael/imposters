@@ -27,13 +27,11 @@ These rules apply across ALL phases:
 
 ### Outstanding violations
 
-Standards 1 and 2 have three known breaches that should be repaid:
+Standards 1 and 2 have one known breach that should be repaid:
 
 | Location | Issue |
 |---|---|
-| `src/server/ServerFactory.ts:75` | `(globalThis as any).Bun.serve` — the `src/types/bun.d.ts` global declaration was deleted during the Node-runtime work; restoring it removes this cast |
 | `src/ui/admin/AdminUiRouter.ts:16` | `toAdminData = (imp: any)` — needs a real parameter type |
-| `src/client/testing.ts:100` | `HttpApiBuilder.toWebHandler(fullLayer as any)` |
 
 Plus ~4 non-null assertions (`UiRouter.ts:30`, `ImposterRepository.ts:119`, `RequestLogger.ts:48`, `ImposterServer.ts` response indexing).
 
@@ -169,14 +167,18 @@ Tagged-template HTML engine with auto-escaping (`ui/html.ts`), HTMX from CDN. Pe
 
 Non-feature work that is currently outstanding:
 
-- **`ServerFactory` does not synchronise the server lifecycle.** `create()` calls `server.listen(port)` without awaiting `'listening'`, and `stop()` calls `server.close()` without awaiting `'close'`. `ImposterServer.start(id)` therefore resolves before the port is bound, and teardown before it is released — so create → start → request can race for real callers, not just tests. The e2e suites hide it behind fixed `setTimeout` sleeps, which forced `fileParallelism: false` in `vitest.config.ts` when vitest 3 began scheduling more files concurrently. Fixing this (make `create`/`stop` awaitable and have `ImposterServer` await them) removes both the flag and the ~26s it costs the suite.
 - **Repay the `any` / non-null-assertion debt** listed under [Code Standards](#code-standards).
-- **TypeScript 7 is blocked on tooling.** 7.0.2 is released, but no published `typescript-eslint` supports it — 8.68.0 still caps at `<6.1.0`. Revisit when typescript-eslint ships TS 7 support; the tsconfig deprecations it will require are already fixed.
-- **vitest 4 is blocked on Effect 4.** The only `@effect/vitest` builds supporting vitest 4 are the `4.0.0-rc` line. Revisit together with the Effect 4 migration.
-- **bun 1.4.0 is not in nixpkgs yet.** `shell.nix` is pinned to a rev providing 1.3.13 and `packageManager` matches it. Bump the rev and that field together once nixpkgs packages 1.4.0.
+- **Proxy `record` mode corrupts binary responses.** `recordAsStub` reads the upstream response as text, and stub bodies can only hold JSON or text, so a recorded image replays corrupted. Passthrough is byte-exact since #20. Needs binary stub bodies (e.g. base64 plus a flag) in the stub schema.
+- **`--runtime bun` only applies to the admin server.** `MainLayer` hard-codes `NodeServerFactoryLive` for imposters, so under Bun they run on Bun's `node:http` compatibility layer.
+- **Type errors can slip through the `start` command handler.** `yield*` inside the `Command.make` handler in `src/cli/Commands.ts` infers loosely: changing `ServerFactory.create`'s signature did not flag a stale `.port` access there.
+- **Drop the TypeScript 6 alias** once typescript-eslint supports the TS 7.1 API (typescript-eslint #10940); see CLAUDE.md "Two TypeScript installs".
+- **Bump the exact Effect 4 RC pins** once Effect 4 stable ships. Re-diff the APIs first, since renames still land between RCs.
 
 ### Recently completed
 
+- Server lifecycle is synchronised: `ImposterServer.start` resolves once the port is bound (a bind failure returns 409), and `stop` once it is released. The fixed test sleeps and `fileParallelism: false` are gone, so the suite dropped from ~26s to ~3s.
+- Request and response bodies are byte-exact end to end, and stubs returning 204/205/304 no longer become a 500 (#20).
+- Effect 4 RC and vitest 5 (#19), bun 1.4.2 (#18), TypeScript 7 alongside TypeScript 6 (#17).
 - GitHub release for v0.2.3 backfilled; the release step that failed in March is fixed (#15) and verified by the v0.2.4 publish.
 - CI actions moved off deprecated Node 20 (`actions/checkout` and `actions/setup-node` → v7).
 - bun aligned at 1.3.13 across local and CI; nixpkgs pinned instead of tracking `master`.
@@ -189,7 +191,7 @@ Non-feature work that is currently outstanding:
 Every change must pass:
 
 1. **`bun check`** — zero type errors
-2. **`bun run test`** — vitest, single-run (currently 322 tests across 39 files, ~32s; files run serially, see the backlog)
+2. **`bun run test`** — vitest, single-run (currently 367 tests across 41 files, ~3s; files run in parallel)
 3. **`bun lint`** — no violations
 4. **E2E tests** — `test/e2e/` covers lifecycle, stub matching, hot-reload, proxy mode, request logging, request inspector, statistics, expression templates, and both UIs
 

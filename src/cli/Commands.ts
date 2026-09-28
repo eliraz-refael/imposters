@@ -35,7 +35,14 @@ const startCommand = Command.make(
       const { dispose, handler } = makeCompositeHandler(adminPort)
 
       const serverFactory = yield* ServerFactory
-      const server = serverFactory.create({ port: adminPort, fetch: handler })
+      // A bind failure (port in use, Bun runtime missing) is fatal: report it plainly and exit
+      const server = yield* serverFactory.create({ port: adminPort, fetch: handler }).pipe(
+        Effect.catchTag("ServerBindError", (e) =>
+          Effect.sync(() => {
+            console.error(`Failed to start admin server on port ${e.port}: ${e.reason}`)
+            return process.exit(1)
+          }))
+      )
 
       console.log(`Imposters admin server running on http://localhost:${server.port} (runtime: ${runtime})`)
       console.log(`Admin UI: http://localhost:${server.port}/_ui`)
@@ -103,12 +110,16 @@ const startCommand = Command.make(
       yield* Effect.callback<never, never>(() => {
         const shutdown = () => {
           console.log("Shutting down...")
-          server.stop(true)
+          // Exiting releases every port, so the stop is not awaited: runMain's own
+          // signal handler runs next and would exit with 130 before it resolved.
+          Effect.runFork(server.stop(true))
           dispose()
           process.exit(0)
         }
-        process.on("SIGINT", shutdown)
-        process.on("SIGTERM", shutdown)
+        // Prepended because binding is now asynchronous, so runMain has already
+        // registered its SIGINT/SIGTERM handlers by the time this line runs.
+        process.prependListener("SIGINT", shutdown)
+        process.prependListener("SIGTERM", shutdown)
       })
     }).pipe(
       Effect.provide(runtime === "bun" ? BunServerFactoryLive : NodeServerFactoryLive)

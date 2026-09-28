@@ -103,7 +103,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9201/hello")
@@ -112,7 +111,6 @@ describe("E2E: Stub Matching", () => {
       expect(body.message).toBe("Hello from imposter!")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -128,7 +126,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const getResp = await fetch("http://localhost:9202/any")
@@ -140,7 +137,6 @@ describe("E2E: Stub Matching", () => {
       expect(await postResp.json()).toEqual({ action: "post" })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -152,7 +148,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9203/other")
@@ -161,7 +156,6 @@ describe("E2E: Stub Matching", () => {
       expect(body.error).toBe("No matching stub found")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -173,7 +167,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9204/anything/at/all", { method: "DELETE" })
@@ -181,7 +174,6 @@ describe("E2E: Stub Matching", () => {
       expect(await resp.json()).toEqual({ catch: "all" })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -196,7 +188,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9205/api/test?name=World")
@@ -206,7 +197,6 @@ describe("E2E: Stub Matching", () => {
       expect(body.path).toBe("/api/test")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -222,7 +212,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const authResp = await fetch("http://localhost:9206/api", {
@@ -236,7 +225,6 @@ describe("E2E: Stub Matching", () => {
       expect(await noAuthResp.json()).toEqual({ authenticated: false })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -252,7 +240,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const jsonResp = await fetch("http://localhost:9207/data?format=json")
@@ -262,7 +249,6 @@ describe("E2E: Stub Matching", () => {
       expect(await defaultResp.json()).toEqual({ format: "default" })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -280,7 +266,6 @@ describe("E2E: Stub Matching", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const noContent = await fetch("http://localhost:9208/no-content", { method: "DELETE" })
@@ -292,7 +277,6 @@ describe("E2E: Stub Matching", () => {
       expect(notModified.headers.get("etag")).toBe("\"v1\"")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 })

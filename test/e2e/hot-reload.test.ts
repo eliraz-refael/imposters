@@ -103,22 +103,21 @@ const updateStub = async (imposterId: string, stubId: string, updates: Record<st
 
 describe("E2E: Hot Reload", () => {
   it("add stub to running imposter takes effect immediately", async () => {
-    const imp = await createImposter(9401)
+    const imp = await createImposter(9421)
     await addStub(imp.id, {
       predicates: [{ field: "path", operator: "equals", value: "/v1" }],
       responses: [{ status: 200, body: { route: "v1" } }]
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // v1 works
-      const resp1 = await fetch("http://localhost:9401/v1")
+      const resp1 = await fetch("http://localhost:9421/v1")
       expect(resp1.status).toBe(200)
 
       // v2 doesn't exist yet
-      const resp404 = await fetch("http://localhost:9401/v2")
+      const resp404 = await fetch("http://localhost:9421/v2")
       expect(resp404.status).toBe(404)
 
       // Add v2 stub while running
@@ -128,28 +127,26 @@ describe("E2E: Hot Reload", () => {
       })
 
       // v2 now works (hot-reload)
-      const resp2 = await fetch("http://localhost:9401/v2")
+      const resp2 = await fetch("http://localhost:9421/v2")
       expect(resp2.status).toBe(200)
       expect(await resp2.json()).toEqual({ route: "v2" })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
   it("update stub response takes effect on next request", async () => {
-    const imp = await createImposter(9402)
+    const imp = await createImposter(9422)
     const stub = await addStub(imp.id, {
       predicates: [],
       responses: [{ status: 200, body: { version: 1 } }]
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Initial response
-      const resp1 = await fetch("http://localhost:9402/test")
+      const resp1 = await fetch("http://localhost:9422/test")
       expect(await resp1.json()).toEqual({ version: 1 })
 
       // Update the stub
@@ -158,16 +155,15 @@ describe("E2E: Hot Reload", () => {
       })
 
       // Next request gets new response
-      const resp2 = await fetch("http://localhost:9402/test")
+      const resp2 = await fetch("http://localhost:9422/test")
       expect(await resp2.json()).toEqual({ version: 2 })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
   it("delete stub stops matching", async () => {
-    const imp = await createImposter(9403)
+    const imp = await createImposter(9423)
     const stub = await addStub(imp.id, {
       predicates: [{ field: "path", operator: "equals", value: "/remove-me" }],
       responses: [{ status: 200, body: { present: true } }]
@@ -178,28 +174,26 @@ describe("E2E: Hot Reload", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Stub matches initially
-      const resp1 = await fetch("http://localhost:9403/remove-me")
+      const resp1 = await fetch("http://localhost:9423/remove-me")
       expect(resp1.status).toBe(200)
 
       // Delete the stub
       await deleteStub(imp.id, stub.id)
 
       // Now falls through to catch-all
-      const resp2 = await fetch("http://localhost:9403/remove-me")
+      const resp2 = await fetch("http://localhost:9423/remove-me")
       expect(resp2.status).toBe(404)
       expect(await resp2.json()).toEqual({ fallback: true })
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
   it("sequential response cycling (round-robin)", async () => {
-    const imp = await createImposter(9404)
+    const imp = await createImposter(9424)
     await addStub(imp.id, {
       predicates: [],
       responseMode: "sequential",
@@ -211,24 +205,22 @@ describe("E2E: Hot Reload", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const letters = []
       for (let i = 0; i < 6; i++) {
-        const resp = await fetch("http://localhost:9404/test")
+        const resp = await fetch("http://localhost:9424/test")
         const body = await resp.json()
         letters.push(body.letter)
       }
       expect(letters).toEqual(["A", "B", "C", "A", "B", "C"])
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
   it("repeat mode sticks to last response", async () => {
-    const imp = await createImposter(9405)
+    const imp = await createImposter(9425)
     await addStub(imp.id, {
       predicates: [],
       responseMode: "repeat",
@@ -239,19 +231,17 @@ describe("E2E: Hot Reload", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const letters = []
       for (let i = 0; i < 5; i++) {
-        const resp = await fetch("http://localhost:9405/test")
+        const resp = await fetch("http://localhost:9425/test")
         const body = await resp.json()
         letters.push(body.letter)
       }
       expect(letters).toEqual(["A", "B", "B", "B", "B"])
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 })

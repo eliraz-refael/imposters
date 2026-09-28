@@ -96,7 +96,6 @@ describe("E2E: Request Inspector", () => {
       responses: [{ status: 200, body: { ok: true } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9611/_admin/requests")
@@ -108,7 +107,6 @@ describe("E2E: Request Inspector", () => {
       expect(html).toContain("Filter")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -119,12 +117,10 @@ describe("E2E: Request Inspector", () => {
       responses: [{ status: 200, body: { ok: true } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Make a request that gets logged
       await fetch("http://localhost:9612/api/test")
-      await new Promise((r) => setTimeout(r, 50))
 
       // Check the log page
       const resp = await fetch("http://localhost:9612/_admin/requests")
@@ -132,7 +128,6 @@ describe("E2E: Request Inspector", () => {
       expect(html).toContain("/api/test")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -143,13 +138,11 @@ describe("E2E: Request Inspector", () => {
       responses: [{ status: 200, body: { ok: true } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Make GET and POST requests
       await fetch("http://localhost:9613/test")
       await fetch("http://localhost:9613/test", { method: "POST", body: "data" })
-      await new Promise((r) => setTimeout(r, 50))
 
       // Filter by POST
       const resp = await fetch("http://localhost:9613/_admin/requests/list?method=POST")
@@ -157,7 +150,6 @@ describe("E2E: Request Inspector", () => {
       expect(html).toContain("POST")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -168,12 +160,10 @@ describe("E2E: Request Inspector", () => {
       responses: [{ status: 200, body: { ok: true } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Make a request
       await fetch("http://localhost:9614/test")
-      await new Promise((r) => setTimeout(r, 50))
 
       // Clear the log
       const delResp = await fetch("http://localhost:9614/_admin/requests", { method: "DELETE" })
@@ -182,7 +172,6 @@ describe("E2E: Request Inspector", () => {
       expect(html).toContain("No requests recorded")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -193,12 +182,10 @@ describe("E2E: Request Inspector", () => {
       responses: [{ status: 200, body: { detail: "test" } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Make a request
       await fetch("http://localhost:9615/my-path")
-      await new Promise((r) => setTimeout(r, 50))
 
       // Get the request list to find the entry id
       const listResp = await fetch("http://localhost:9615/_admin/requests")
@@ -217,7 +204,6 @@ describe("E2E: Request Inspector", () => {
       expect(detailHtml).toContain("Response")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -228,7 +214,6 @@ describe("E2E: Request Inspector", () => {
       responses: [{ status: 200, body: { echoed: true } }]
     })
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const formData = new URLSearchParams()
@@ -250,7 +235,6 @@ describe("E2E: Request Inspector", () => {
       expect(html).toContain("echoed")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 })

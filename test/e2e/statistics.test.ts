@@ -90,7 +90,7 @@ const addStub = async (imposterId: string, stub: Record<string, unknown>) => {
 
 describe("E2E: Statistics", () => {
   it("returns zero stats for imposter with no requests", async () => {
-    const imp = await createImposter(9301)
+    const imp = await createImposter(9321)
     const resp = await admin(`/imposters/${imp.id}/stats`)
     expect(resp.status).toBe(200)
     const stats = await resp.json()
@@ -100,7 +100,7 @@ describe("E2E: Statistics", () => {
   }, 10000)
 
   it("tracks request statistics after serving requests", async () => {
-    const imp = await createImposter(9302)
+    const imp = await createImposter(9322)
     await addStub(imp.id, {
       predicates: [{ field: "method", operator: "equals", value: "GET" }],
       responses: [{ status: 200, body: { ok: true } }]
@@ -111,16 +111,12 @@ describe("E2E: Statistics", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Make some requests
-      await fetch("http://localhost:9302/a")
-      await fetch("http://localhost:9302/b")
-      await fetch("http://localhost:9302/c", { method: "POST" })
-
-      // Small delay for async logging
-      await new Promise((r) => setTimeout(r, 100))
+      await fetch("http://localhost:9322/a")
+      await fetch("http://localhost:9322/b")
+      await fetch("http://localhost:9322/c", { method: "POST" })
 
       const resp = await admin(`/imposters/${imp.id}/stats`)
       expect(resp.status).toBe(200)
@@ -136,23 +132,20 @@ describe("E2E: Statistics", () => {
       expect(stats.p50ResponseTime).toBeDefined()
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
   it("resets stats via DELETE", async () => {
-    const imp = await createImposter(9303)
+    const imp = await createImposter(9323)
     await addStub(imp.id, {
       predicates: [],
       responses: [{ status: 200 }]
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
-      await fetch("http://localhost:9303/something")
-      await new Promise((r) => setTimeout(r, 100))
+      await fetch("http://localhost:9323/something")
 
       // Verify stats exist
       let resp = await admin(`/imposters/${imp.id}/stats`)
@@ -171,7 +164,6 @@ describe("E2E: Statistics", () => {
       expect(stats.totalRequests).toBe(0)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 

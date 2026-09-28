@@ -102,13 +102,11 @@ describe("E2E: Request Logging", () => {
     const stub = await stubResp.json()
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Send requests to the imposter
       await fetch("http://localhost:9511/hello")
       await fetch("http://localhost:9511/hello?name=world")
-      await new Promise((r) => setTimeout(r, 100))
 
       // Query request log
       const res = await admin(`/imposters/${imp.id}/requests`)
@@ -128,7 +126,6 @@ describe("E2E: Request Logging", () => {
       expect(entry.timestamp).toBeDefined()
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -140,12 +137,10 @@ describe("E2E: Request Logging", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Send a request that won't match any stub
       await fetch("http://localhost:9512/nomatch")
-      await new Promise((r) => setTimeout(r, 100))
 
       const res = await admin(`/imposters/${imp.id}/requests`)
       const entries = await res.json()
@@ -154,7 +149,6 @@ describe("E2E: Request Logging", () => {
       expect(entries[0].response.matchedStubId).toBeUndefined()
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -166,14 +160,12 @@ describe("E2E: Request Logging", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       // Send mixed requests
       await fetch("http://localhost:9513/api/users")
       await fetch("http://localhost:9513/api/orders", { method: "POST" })
       await fetch("http://localhost:9513/api/users")
-      await new Promise((r) => setTimeout(r, 100))
 
       // Filter by method
       const getOnly = await admin(`/imposters/${imp.id}/requests?method=GET`)
@@ -196,7 +188,6 @@ describe("E2E: Request Logging", () => {
       expect(clearedEntries.length).toBe(0)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 })

@@ -103,7 +103,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9401/hello?name=alice")
@@ -113,7 +112,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
       expect(body.method).toBe("GET")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -130,7 +128,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9402/calculate", {
@@ -143,7 +140,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
       expect(body.total).toBe(100)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -162,7 +158,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9403/test?name=Alice")
@@ -173,7 +168,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
       expect(body.path).toBe("/test")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -191,7 +185,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9404/test")
@@ -201,7 +194,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
       expect(body.good).toBe("GET")
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 
@@ -218,7 +210,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
     })
 
     await startImposter(imp.id)
-    await new Promise((r) => setTimeout(r, 150))
 
     try {
       const resp = await fetch("http://localhost:9405/items", {
@@ -231,7 +222,6 @@ describe("E2E: Expression Templates (JSONata)", () => {
       expect(body.itemCount).toBe(4)
     } finally {
       await stopImposter(imp.id)
-      await new Promise((r) => setTimeout(r, 100))
     }
   }, 10000)
 })

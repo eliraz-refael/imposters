@@ -81,8 +81,6 @@ export const withImposter = <A, E>(
         payload: { status: "running" }
       })
 
-      yield* Effect.sleep("150 millis")
-
       return { id: imp.id as string, port: imp.port as number }
     }),
     (ctx) => testFn(ctx),
