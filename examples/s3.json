@@ -1,0 +1,9 @@
+{
+  "imposters": [
+    {
+      "name": "local-s3",
+      "port": 7070,
+      "protocol": "S3"
+    }
+  ]
+}

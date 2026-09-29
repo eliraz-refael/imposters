@@ -60,11 +60,11 @@ describe("createConfiguredImposters", () => {
 
   it("stops at the first failing imposter with a clear error", async () => {
     const result = await load([
-      { name: "unknown", port: 9823, protocol: "S3" },
+      { name: "unknown", port: 9823, protocol: "FTP" },
       { name: "never-created", port: 9824 }
     ])
     expect(result).toBeInstanceOf(ConfigLoadError)
-    expect(result?.message).toBe(`Failed to create imposter unknown: Unknown protocol "S3". Available: HTTP, ECHO`)
+    expect(result?.message).toBe(`Failed to create imposter unknown: Unknown protocol "FTP". Available: HTTP, ECHO`)
 
     const ports = (await listed()).map((i) => i.port)
     expect(ports).not.toContain(9823)

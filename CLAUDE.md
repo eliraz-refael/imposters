@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 400 tests across 45 files.
+All three gates pass: `bun check`, `bun lint`, and 558 tests across 51 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -31,11 +31,12 @@ All three gates pass: `bun check`, `bun lint`, and 400 tests across 45 files.
 | Typed client library + `withImposter` test helpers | ✅ |
 | CLI via `effect/unstable/cli`, JSON config file loading | ✅ |
 | Node **and** Bun runtimes (`--runtime` flag) | ✅ |
-| Imposter extensions — pluggable non-HTTP protocols | ✅ (the extension point; none shipped yet) |
+| Imposter extensions — pluggable non-HTTP protocols | ✅ |
+| S3 emulator — in-memory, path-style, `"protocol": "S3"` | ✅ (first extension; see below) |
 
 ### Not implemented
 
-Disk persistence (imposters are in-memory only and do not survive restart), Mountebank config adapter, OpenAPI spec import, WebSocket mocking, gRPC. No non-HTTP protocol ships yet: the extension point exists and S3 is next.
+Disk persistence (imposters are in-memory only and do not survive restart), Mountebank config adapter, OpenAPI spec import, WebSocket mocking, gRPC. The S3 emulator's scope trims (three bucket-config PUTs, aws-chunked bodies, list pagination) answer 501 and are in the ROADMAP backlog.
 
 ## Architecture
 
@@ -74,13 +75,26 @@ Disk persistence (imposters are in-memory only and do not survive restart), Moun
 
 ### Extensions — how a non-HTTP protocol plugs in
 
-The core must never know a specific protocol (the planned S3 emulator is the first). `src/extensions/Extension.ts` is the only core-owned module: `ImposterExtension = { protocol, make }`, the `Extensions` service, `findExtension`, `supportedProtocols`.
+The core must never know a specific protocol (the S3 emulator is the first). `src/extensions/Extension.ts` is the only core-owned module: `ImposterExtension = { protocol, make }`, the `Extensions` service, `findExtension`, `supportedProtocols`.
 
 - **Protocol** is a real field, fixed at create: `^[A-Z][A-Z0-9]*$`, default `"HTTP"`. Creating one no extension provides is a 400 `ApiBadRequestError`, and so is `proxy` on a non-HTTP imposter (create or PATCH), since it would never run.
 - **Handler order:** `/_admin` UI → stubs → extension `handle` → proxy → 404. The extension is **terminal**: it answers every unmatched request and renders its own errors. Its responses share the capture/log/metrics path; a defect becomes a 500.
 - **`make({ id, config })` runs on every start**, so per-imposter state (an S3 store) lives in the instance and is lost on stop or restart.
 - **Registration point:** the `extensions` list at the top of `src/cli/Commands.ts`, threaded through `makeCompositeHandler` → `makeFullLayer` → `makeMainLayer(extensions)` so `ImposterServerLive` and both handler groups read one `Extensions`. `Extensions.layer` dies at build on a duplicate, `"HTTP"`, or a malformed protocol. Tests register their own (`test/helpers/TestExtensions.ts`) with `makeTestServer({ extensions })`.
-- **Boundary:** each extension lives in `src/extensions/<name>/`. ESLint `no-restricted-imports` (bottom of `eslint.config.mjs`) forbids importing one from anywhere in `src/` except `src/cli/**`, and one extension from another, in relative and `imposters/...` forms. `generateIndex` excludes `extensions/*/**/*.ts` so the root barrel never pulls one in. Deleting the list entry and the folder leaves a core that compiles and passes.
+- **Boundary:** each extension lives in `src/extensions/<name>/`, and may import core modules (`matching/RequestMatcher` for `RequestContext`, `extensions/Extension`). ESLint `no-restricted-imports` (bottom of `eslint.config.mjs`) forbids importing one from anywhere in `src/` except `src/cli/**`, and one extension from another, in relative and `imposters/...` forms. `generateIndex` excludes `extensions/*/**/*.ts` so the root barrel never pulls one in. Deleting the list entry and the folder leaves a core that compiles and passes.
+
+### The S3 extension (`src/extensions/s3/`)
+
+An in-memory S3 for the AWS SDK with `forcePathStyle` (`/<bucket>/<key>`). Built for neeo-monorepo's usage (SDK `@aws-sdk/client-s3@3.1131.0`, exact-pinned as a devDependency for the e2e). README "S3 Emulator" lists the operations and the 501s.
+
+- **Pipeline:** `parseOperation(ctx)` (`Operation.ts`, a route table keyed by method × target × subresource) → `Result<Operation, S3Error>` → `apply(store, op, now)` (`Kernel.ts`, pure, run through `Ref.modify` so each operation is atomic) → `render` (`Render.ts`, XML + headers + status from `errorStatus`). `S3Extension.ts` wires them; `handleS3(ref, ctx)` is exported for in-process tests.
+- **Refuse, never guess:** a query key a route does not accept, a header in its `unsupportedHeaders`, an unrouted method/subresource, presigned URLs and `STREAMING-*` / `aws-chunked` bodies are all `501 NotImplemented`. Add a param to a route's `params` only when the kernel honours it.
+- **XML:** `fast-xml-parser` with `processEntities: false`; `unescapeXml` resolves entities itself, because the parser drops numeric references unless its deprecated HTML mode is on. Parser output is `unknown` and goes through a Schema (`DeleteRequestXml`). Answers use the small escaping builder in `Xml.ts`.
+- **SDK facts the e2e pins down:** a `Uint8Array` PutObject is a plain signed payload (`x-amz-content-sha256` is the hex SHA-256, plus `x-amz-checksum-crc32`, both ignored), never `STREAMING-*`. The SDK tags requests with `?x-id=<Op>` (ignored). `CopySource` must be URL-encoded by the caller, as on real S3. A 304 surfaces as an `S3ServiceException` with `$metadata.httpStatusCode === 304`. Never send checksum headers on GetObject: the SDK would validate them.
+- **Expected owner (stateless):** `x-amz-expected-bucket-owner` / `x-amz-source-expected-bucket-owner` must equal the access key id in `Authorization` (`Credential=<akid>/...`, or SigV2 `AWS <akid>:`), else `403 AccessDenied`. It runs before routing. An unsigned request is not checked. neeo maps the 403 to `BucketUnavailable` (bucket.ts) and to a `versioning` failure (provision), which is what its "another owner" specs expect. SigV4 signatures themselves are not verified.
+- **Config PUTs:** `?ownershipControls` (200) and `?policy` (204) are accepted no-ops on an existing bucket; `?publicAccessBlock`, `?encryption`, `?lifecycle` stay 501, so neeo's provisioning reports exactly `['public-access', 'encryption', 'multipart-abort']` as unsupported locally.
+- **State is per start** (the `Ref` is made in `make`), so buckets vanish on stop/restart. That is intended.
+- **Fault injection is free:** stubs match first, so a stub can answer one key with a 503 `SlowDown` XML body or a `delay`. `test/e2e/s3.test.ts` proves both.
 
 ## Project Structure
 
@@ -112,6 +126,7 @@ src/
   extensions/
     Extension.ts           # the extension point (core-owned)
     <name>/                # one folder per extension; imported only from src/cli/
+    s3/                    # S3Extension, Operation (routing), Kernel (pure store), Render, Xml, S3Error
   layers/
     MainLayer.ts           # makeMainLayer(extensions); MainLayer = makeMainLayer([])
     ApiLayer.ts            # HttpApiBuilder.layer + OpenAPI/Swagger + decode-error body + quiet logging
@@ -149,6 +164,7 @@ src/
     pages/                 # dashboard, stubs, requests, request-detail
     admin/                 # global /_ui dashboard on the admin port
 test/                      # mirrors src/, plus test/e2e/ and test/helpers/
+examples/                  # config files, e.g. s3.json (an S3 imposter on 7070)
 ```
 
 ## Development Commands
@@ -211,7 +227,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - `runPromise` wraps failures in `FiberFailure` — assert with `String(err).toContain(msg)`, not identity.
 - tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.

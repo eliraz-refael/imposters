@@ -12,6 +12,7 @@ Imposters lets you spin up fake HTTP servers ("imposters") that respond to reque
 - **Response templates** — Use `{{key}}` for simple substitution or `${expr}` for JSONata expressions that reference the incoming request
 - **Multiple responses** — Cycle through responses sequentially, randomly, or repeat the last one
 - **Proxy mode** — Passthrough to a real service or record responses as stubs
+- **S3 emulator** — An in-memory S3 imposter (`"protocol": "S3"`) for the AWS SDK, with stubs for fault injection
 - **Per-imposter admin UI** — HTMX-powered UI at each imposter's `/_admin` path
 - **Admin dashboard** — Global dashboard at `/_ui` on the admin port
 - **Config file support** — Declare imposters and stubs in a JSON file for repeatable setups
@@ -264,6 +265,83 @@ Configure an imposter to forward unmatched requests to a real backend.
 | `removeHeaders` | `[]` | Headers to strip before proxying |
 | `followRedirects` | `true` | Follow HTTP redirects |
 | `timeout` | `10000` | Request timeout in milliseconds (100–60000) |
+
+## S3 Emulator
+
+An imposter created with `"protocol": "S3"` is an in-memory S3 service. Point an AWS SDK at it with path-style URLs; any credentials and region work, since signatures are not checked. [`examples/s3.json`](examples/s3.json) starts one on port 7070:
+
+```json
+{
+  "imposters": [
+    { "name": "local-s3", "port": 7070, "protocol": "S3" }
+  ]
+}
+```
+
+```bash
+npx imposters start --config examples/s3.json
+```
+
+```ts
+import { S3Client } from "@aws-sdk/client-s3"
+
+const s3 = new S3Client({
+  region: "us-east-1",
+  endpoint: "http://127.0.0.1:7070",
+  forcePathStyle: true, // required: virtual-hosted URLs are not supported
+  credentials: { accessKeyId: "local", secretAccessKey: "local-secret" }
+})
+```
+
+### Supported operations
+
+| Operation | Request | Notes |
+|---|---|---|
+| ListBuckets | `GET /` | |
+| CreateBucket | `PUT /<bucket>` | An existing bucket is `409 BucketAlreadyOwnedByYou`. Bucket naming rules are enforced (`400 InvalidBucketName`) |
+| HeadBucket | `HEAD /<bucket>` | |
+| DeleteBucket | `DELETE /<bucket>` | A bucket with objects is `409 BucketNotEmpty` |
+| GetBucketVersioning | `GET /<bucket>?versioning` | Always an empty configuration: versioning is never enabled |
+| PutBucketOwnershipControls | `PUT /<bucket>?ownershipControls` | Accepted (`200`) and discarded: nothing is stored or enforced |
+| PutBucketPolicy | `PUT /<bucket>?policy` | Accepted (`204`) and discarded: nothing is stored or enforced |
+| ListObjectsV2 | `GET /<bucket>?list-type=2` | `prefix`, `max-keys` and `encoding-type=url`. A listing that would be truncated is `501`, not paginated |
+| PutObject | `PUT /<bucket>/<key>` | Stores the bytes exactly, and the `Content-Type` (default `binary/octet-stream`). The ETag is the quoted MD5 |
+| GetObject / HeadObject | `GET` / `HEAD /<bucket>/<key>` | `ETag`, `Content-Type`, `Content-Length`, `Last-Modified`. `If-None-Match` answers `304`. No checksum headers |
+| CopyObject | `PUT /<bucket>/<key>` + `x-amz-copy-source` | Keeps the body and type. A missing source is `404 NoSuchKey` |
+| DeleteObject | `DELETE /<bucket>/<key>` | |
+| DeleteObjects | `POST /<bucket>?delete` | Quiet and verbose. A key that is not there counts as deleted, as on S3 |
+
+Errors are S3 `<Error>` documents (`Code`, `Message`, `Resource`, `RequestId`) with S3's status codes; HEAD errors have no body.
+
+**Answered with `501 NotImplemented`:** other bucket configuration (`?publicAccessBlock`, `?encryption`, `?lifecycle`, `?cors`, versioning `PUT`, ...), reading a policy or ownership controls back, multipart uploads, presigned URLs, `aws-chunked` / `STREAMING-*` payloads, `Range` and conditional headers other than `If-None-Match`, ListObjectsV2 pagination and `delimiter`, and any other operation or query parameter the emulator does not know. It never guesses: an unsupported request fails loudly instead of answering wrong.
+
+**Expected owner:** every bucket belongs to whoever asks. A request whose `x-amz-expected-bucket-owner` (or `x-amz-source-expected-bucket-owner`, on a copy) differs from the access key id it is signed with is `403 AccessDenied`, as S3 answers an owner mismatch; the access key id stands in for S3's account id. An unsigned request has no requester to compare with, so it is not checked. The check runs first, before any other answer.
+
+**Keys with dot segments do not survive.** The server parses each request URL with the WHATWG `URL` parser, which resolves `.` and `..` path segments (even percent-encoded as `%2e`) before the emulator sees the path. A key such as `a/../b` is stored as `b`, and `DELETE /bucket/k/..` becomes a DeleteBucket. Avoid such keys.
+
+**Not checked:** SigV4 signatures. No virtual-hosted URLs, CORS, or versioning.
+
+**State is per start.** Buckets and objects live in memory in the running imposter. Stopping or restarting it (or the server) empties it. It is a test double, never a store.
+
+### Fault injection with stubs
+
+Stubs are matched before the emulator, so a stub on an S3 imposter overrides one request and everything else still reaches S3. A 503 `SlowDown` for one key:
+
+```json
+{
+  "predicates": [
+    { "field": "method", "operator": "equals", "value": "GET" },
+    { "field": "path", "operator": "equals", "value": "/my-bucket/flaky.pdf" }
+  ],
+  "responses": [{
+    "status": 503,
+    "headers": { "content-type": "application/xml" },
+    "body": "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>"
+  }]
+}
+```
+
+The SDK surfaces it as an `S3ServiceException` named `SlowDown` (set `maxAttempts: 1` to see it without retries). A `"delay"` on the response instead trips the client's request timeout.
 
 ## Programmatic Usage
 

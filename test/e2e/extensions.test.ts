@@ -49,11 +49,11 @@ const startEcho = async (port: number) => {
 
 describe("extensions: creating imposters", () => {
   it("rejects a protocol no extension provides with 400 and the available list", async () => {
-    const resp = await sendJson("POST", "/imposters", { port: 9801, protocol: "S3" })
+    const resp = await sendJson("POST", "/imposters", { port: 9801, protocol: "FTP" })
     expect(resp.status).toBe(400)
     const body = await resp.json()
     expect(body._tag).toBe("ApiBadRequestError")
-    expect(body.message).toBe(`Unknown protocol "S3". Available: HTTP, ECHO, BOOM`)
+    expect(body.message).toBe(`Unknown protocol "FTP". Available: HTTP, ECHO, BOOM`)
 
     // Nothing was created, and the port was not taken
     const imp = await createImposter({ port: 9801 })
