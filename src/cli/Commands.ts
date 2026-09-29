@@ -4,14 +4,15 @@ import { Command, Flag } from "effect/unstable/cli"
 import { HandlerHttpClientLive } from "../client/HandlerHttpClient"
 import { ImpostersClientLive } from "../client/ImpostersClient"
 import { Extensions, type ImposterExtension } from "../extensions/Extension"
+import { S3Extension } from "../extensions/s3/S3Extension"
 import { makeCompositeHandler } from "../server/AdminServer"
 import { BunServerFactoryLive, NodeServerFactoryLive, ServerFactory } from "../server/ServerFactory"
 import { createConfiguredImposters, loadConfigFile } from "./ConfigLoader"
 import { version } from "./version"
 
 // Extension registration point: the one place an extension is attached. Import it from
-// src/extensions/<name>/ and add it here (e.g. S3Extension); removing it is a one-line change.
-const extensions: ReadonlyArray<ImposterExtension> = []
+// src/extensions/<name>/ and add it here; removing one is this line plus its import.
+const extensions: ReadonlyArray<ImposterExtension> = [S3Extension]
 
 const configOption = Flag.File("config").pipe(
   Flag.withAlias("c"),

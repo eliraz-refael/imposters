@@ -9,7 +9,7 @@
 **Key decisions (as built):**
 - **Runtime:** Node.js by default, Bun optional — selected via `--runtime node|bun`, abstracted behind a `ServerFactory` tag. (Originally planned as Bun-only; changed in Phase 6 so the published npm package runs anywhere.)
 - **UI:** HTMX + server-rendered HTML, per imposter and globally
-- **Protocol:** HTTP only; architecture is open to future protocols
+- **Protocol:** HTTP built in; other protocols plug in as imposter extensions (`src/extensions/`). S3 is the first
 - **API:** Clean new design; Mountebank adapter remains a future add-on
 
 ---
@@ -149,6 +149,8 @@ Tagged-template HTML engine with auto-escaping (`ui/html.ts`), HTMX from CDN. Pe
 | ✅ **Proxy Mode** | `passthrough` and `record` (records live responses as new stubs, hot-reloading them in) |
 | ✅ **Statistics** | Per-imposter request counts, rate, average response time, error rate, breakdowns by method and status |
 | ✅ **npm publishing** | Automated release from `master`: conventional-commit version bump, OIDC/provenance publish, git tag, GitHub release |
+| ✅ **Imposter extensions** | Pluggable non-HTTP protocols behind stub matching (#22) |
+| ✅ **S3 emulator** | In-memory S3 extension (`"protocol": "S3"`) for the AWS SDK, path-style. Scope trims are 501s, listed in the backlog below |
 
 **Remaining, roughly in priority order:**
 
@@ -159,7 +161,7 @@ Tagged-template HTML engine with auto-escaping (`ui/html.ts`), HTMX from CDN. Pe
 | **Mountebank Adapter** | Accept Mountebank-format JSON configs; translation layer for predicates/responses |
 | **OpenAPI Import** | Parse OpenAPI 3.x specs to auto-generate imposters + stubs |
 | **WebSocket Mocking** | Mock WebSocket endpoints with configurable message sequences |
-| **Multi-protocol** | gRPC, TCP as pluggable protocol adapters |
+| **Multi-protocol** | gRPC, TCP as further imposter extensions |
 
 ---
 
@@ -169,6 +171,12 @@ Non-feature work that is currently outstanding:
 
 - **Repay the `any` / non-null-assertion debt** listed under [Code Standards](#code-standards).
 - **Proxy `record` mode corrupts binary responses.** `recordAsStub` reads the upstream response as text, and stub bodies can only hold JSON or text, so a recorded image replays corrupted. Passthrough is byte-exact since #20. Needs binary stub bodies (e.g. base64 plus a flag) in the stub schema.
+- **S3: three bucket-configuration PUTs answer 501.** `?publicAccessBlock`, `?encryption` and `?lifecycle` (neeo's provisioning reports them as unsupported locally), plus `?cors`, versioning `PUT` and the rest. Accepting and echoing them (GET after PUT) would let provisioning apply every setting locally.
+- **S3: `?policy` and `?ownershipControls` PUTs are accepted but not enforced.** They answer 204 / 200 on an existing bucket and are discarded: no GET-back, and a policy never denies a request.
+- **S3: `aws-chunked` / `STREAMING-*` bodies answer 501.** SDK 3.1131.0 sends a `Uint8Array` PutObject as a plain signed payload (verified in `test/e2e/s3.test.ts`), but stream bodies and unknown-length uploads use aws-chunked encoding with trailing checksums. Needs a chunk decoder that strips the chunk framing before storing.
+- **Pass the raw request path to extensions so S3 keys with dot segments survive.** The WHATWG `URL` parse in the Node server resolves `.` / `..` (and `%2e`) segments before `RequestContext` is built, so `DELETE /b/k/..` reaches S3 as DeleteBucket. Needs the core to carry the raw path in `RequestContext`.
+- **S3: ListObjectsV2 pagination and `delimiter` answer 501.** A listing longer than `max-keys` (capped at 1000) is refused rather than truncated; `continuation-token`, `start-after` and `delimiter` / `CommonPrefixes` are not implemented.
+- **Binary stubs for proxy record mode** (the record-mode item above): a recorded stub cannot hold binary bytes, which also rules out recording S3 GetObject answers as stubs.
 - **`--runtime bun` only applies to the admin server.** `MainLayer` hard-codes `NodeServerFactoryLive` for imposters, so under Bun they run on Bun's `node:http` compatibility layer.
 - **Type errors can slip through the `start` command handler.** `yield*` inside the `Command.make` handler in `src/cli/Commands.ts` infers loosely: changing `ServerFactory.create`'s signature did not flag a stale `.port` access there.
 - **Drop the TypeScript 6 alias** once typescript-eslint supports the TS 7.1 API (typescript-eslint #10940); see CLAUDE.md "Two TypeScript installs".
@@ -176,6 +184,8 @@ Non-feature work that is currently outstanding:
 
 ### Recently completed
 
+- In-memory S3 emulator shipped as the first imposter extension, verified against `@aws-sdk/client-s3` 3.1131.0.
+- Imposter extensions: pluggable non-HTTP protocols, terminal after stub matching (#22).
 - Server lifecycle is synchronised: `ImposterServer.start` resolves once the port is bound (a bind failure returns 409), and `stop` once it is released. The fixed test sleeps and `fileParallelism: false` are gone, so the suite dropped from ~26s to ~3s.
 - Request and response bodies are byte-exact end to end, and stubs returning 204/205/304 no longer become a 500 (#20).
 - Effect 4 RC and vitest 5 (#19), bun 1.4.2 (#18), TypeScript 7 alongside TypeScript 6 (#17).
@@ -191,8 +201,8 @@ Non-feature work that is currently outstanding:
 Every change must pass:
 
 1. **`bun check`** — zero type errors
-2. **`bun run test`** — vitest, single-run (currently 367 tests across 41 files, ~3s; files run in parallel)
+2. **`bun run test`** — vitest, single-run (currently 558 tests across 51 files, ~4s; files run in parallel)
 3. **`bun lint`** — no violations
-4. **E2E tests** — `test/e2e/` covers lifecycle, stub matching, hot-reload, proxy mode, request logging, request inspector, statistics, expression templates, and both UIs
+4. **E2E tests** — `test/e2e/` covers lifecycle, stub matching, hot-reload, proxy mode, request logging, request inspector, statistics, expression templates, extensions, the S3 emulator (with the real AWS SDK), and both UIs
 
 Note: `bun test` (Bun's native runner) is not the same as `bun run test` (vitest). Use the latter.
