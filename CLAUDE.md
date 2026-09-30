@@ -253,4 +253,5 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `scripts/postbuild.ts` copies the shim into `dist/bin/`, chmods it 755, injects the `bin` field into `dist/package.json`, and copies `.npmrc`.
 - **`src/cli/version.ts` is intentionally `"0.0.0"`.** CI `sed`s the real version into the bundle and both `dist/dist/{cjs,esm}/cli/version.js` at publish time. Do not "fix" it.
 - Publishing uses npm **trusted publishing / OIDC**: `NODE_AUTH_TOKEN: ""` with `id-token: write` and `--provenance`. The empty token is intentional.
+- Each release attaches `npm pack dist/` as `imposters-<version>.tgz` to its GitHub release, for places npm can't reach (the Wix network). The workflow checks the file's integrity against `npm view dist.integrity` and only warns on a mismatch. v0.5.0's file was uploaded by hand; its files match npm's.
 - Version base is the higher of (npm published version, latest git tag), then bumped by scanning conventional commits.
