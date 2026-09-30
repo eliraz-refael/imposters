@@ -59,6 +59,18 @@ curl http://localhost:3000/users/1
 # => {"id":1,"name":"Alice"}
 ```
 
+## Installation
+
+```bash
+npm install --save-dev imposters
+```
+
+Every release also attaches the same package to its [GitHub release](https://github.com/eliraz-refael/imposters/releases) as `imposters-<version>.tgz`. It contains the same files as the npm package. The publish workflow also compares its integrity hash with npm's and warns on a mismatch. Where the npm registry is not reachable, depend on the file directly:
+
+```json
+"imposters": "https://github.com/eliraz-refael/imposters/releases/download/v0.5.0/imposters-0.5.0.tgz"
+```
+
 ## CLI Usage
 
 ```bash

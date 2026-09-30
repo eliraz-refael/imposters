@@ -115,6 +115,15 @@ jobs:
           # Patch version in bundled CLI and library source (CJS and ESM)
           sed -i "s/\"0\.0\.0\"/\"${VERSION}\"/g" dist/bin/cli.cjs dist/dist/cjs/cli/version.js dist/dist/esm/cli/version.js
 
+      # The same package, as a file on the GitHub release: installable where npm is not reachable
+      - name: Pack release tarball
+        id: pack
+        run: |
+          npm pack ./dist --pack-destination "$RUNNER_TEMP"
+          TARBALL="$RUNNER_TEMP/imposters-${{ steps.version.outputs.version }}.tgz"
+          test -f "$TARBALL"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
       - name: Publish to npm
         run: npm publish dist/ --provenance --access public
         env:
@@ -136,6 +145,23 @@ jobs:
           gh release create "v${{ steps.version.outputs.version }}" \
             --title "v${{ steps.version.outputs.version }}" \
             --notes "${NOTES:-No notable changes}" \
-            --latest
+            --latest \
+            "${{ steps.pack.outputs.tarball }}"
         env:
           GH_TOKEN: ${{ github.token }}
+
+      # Warn, never fail: the release is already out. A mismatch means the release file and npm differ.
+      - name: Check release tarball matches npm
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LOCAL="sha512-$(openssl dgst -sha512 -binary "${{ steps.pack.outputs.tarball }}" | base64 -w0)"
+          for attempt in 1 2 3 4 5 6; do
+            NPM=$(npm view "imposters@${VERSION}" dist.integrity --registry https://registry.npmjs.org 2>/dev/null || true)
+            [[ -n "$NPM" ]] && break
+            sleep 10
+          done
+          if [[ "$NPM" == "$LOCAL" ]]; then
+            echo "Release tarball is byte-identical to npm's (${LOCAL})"
+          else
+            echo "::warning::Release tarball integrity ${LOCAL} differs from npm's '${NPM}'"
+          fi
