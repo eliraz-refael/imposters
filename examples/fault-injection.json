@@ -1,0 +1,29 @@
+{
+  "imposters": [
+    {
+      "name": "flaky-api",
+      "port": 3001,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "equals", "value": "/orders" }
+          ],
+          "responseMode": "sequential",
+          "responses": [
+            { "status": 200, "body": { "orders": [] } },
+            { "status": 503, "body": { "error": "service_unavailable" } }
+          ]
+        },
+        {
+          "predicates": [
+            { "field": "path", "operator": "equals", "value": "/slow" }
+          ],
+          "responses": [
+            { "status": 200, "delay": 2000, "body": { "status": "eventually" } }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in Imposters does not work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A config file or a few `curl` commands that reproduce the problem help most.
+        For questions, use [Discussions](https://github.com/eliraz-refael/imposters/discussions) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The config file, stub or client code, and the request that shows the problem.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The response, the CLI output, or an error and its stack trace.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Imposters version
+      description: "`npx imposters --version`, or the version in your lockfile"
+      placeholder: "0.6.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: usage
+    attributes:
+      label: How you run it
+      options:
+        - CLI (npx imposters start)
+        - Test helpers (withImposter / makeTestServer)
+        - TypeScript client
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js or Bun version, and `--runtime` if you set it
+      placeholder: "macOS 15, Node 22.12"

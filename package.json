@@ -4,13 +4,34 @@
   "type": "module",
   "packageManager": "bun@1.4.2",
   "license": "MIT",
-  "description": "A service virtualization tool built with TypeScript and Effect",
+  "description": "Programmable mock servers for HTTP APIs and an in-memory S3, with stubs, hot-reload, JSONata templating, proxy recording and fault injection",
+  "keywords": [
+    "mock-server",
+    "mock",
+    "mocking",
+    "api-mock",
+    "service-virtualization",
+    "stub",
+    "test-double",
+    "testing",
+    "http",
+    "s3",
+    "aws-s3",
+    "mountebank",
+    "fault-injection",
+    "proxy",
+    "effect",
+    "typescript"
+  ],
+  "author": "Eliraz Kedmi",
+  "homepage": "https://eliraz-refael.github.io/imposters/",
+  "bugs": "https://github.com/eliraz-refael/imposters/issues",
   "bin": {
     "imposters": "./src/Program.ts"
   },
   "repository": {
     "type": "git",
-    "url": "http://www.github.com/eliraz-refael/imposters.git"
+    "url": "git+https://github.com/eliraz-refael/imposters.git"
   },
   "exports": {
     "./*": "./src/*.ts",

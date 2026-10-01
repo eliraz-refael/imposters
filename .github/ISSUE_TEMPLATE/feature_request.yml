@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest something Imposters should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [roadmap](https://github.com/eliraz-refael/imposters/blob/master/ROADMAP.md) first. Planned work already has an issue, and a comment or a 👍 there helps prioritise it more than a duplicate does.
+        Open-ended ideas fit better in [Discussions](https://github.com/eliraz-refael/imposters/discussions/categories/ideas).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to mock or test, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: The behaviour, config or API you have in mind. A sample stub or config file helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or how another tool handles it.
+  - type: checkboxes
+    id: roadmap
+    attributes:
+      label: Roadmap
+      options:
+        - label: I checked the roadmap and found no issue for this.
+          required: true

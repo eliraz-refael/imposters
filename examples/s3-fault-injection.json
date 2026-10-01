@@ -1,0 +1,24 @@
+{
+  "imposters": [
+    {
+      "name": "throttled-s3",
+      "port": 7071,
+      "protocol": "S3",
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "equals", "value": "/my-bucket/flaky.pdf" }
+          ],
+          "responses": [
+            {
+              "status": 503,
+              "headers": { "content-type": "application/xml" },
+              "body": "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
