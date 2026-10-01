@@ -3,7 +3,7 @@ import { Context, Layer } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { FetchHttpClient } from "effect/unstable/http"
 import { HttpApiClient } from "effect/unstable/httpapi"
-import { AdminApi } from "../api/AdminApi"
+import { AdminApi } from "../api/AdminApi.js"
 
 export const makeImpostersClient = (baseUrl?: string) =>
   HttpApiClient.make(AdminApi, { baseUrl: baseUrl ?? "http://localhost:2525" })

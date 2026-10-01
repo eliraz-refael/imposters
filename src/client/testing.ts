@@ -1,11 +1,11 @@
 import { Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
-import type { ImposterExtension } from "../extensions/Extension"
-import { HttpProtocol, type NonEmptyString, type PortNumber } from "../schemas/common"
-import type { CreateStubRequest } from "../schemas/StubSchema"
-import { makeFullLayer } from "../server/AdminServer"
-import { HandlerHttpClientLive } from "./HandlerHttpClient"
-import { ImpostersClient, ImpostersClientLive } from "./ImpostersClient"
+import type { ImposterExtension } from "../extensions/Extension.js"
+import { HttpProtocol, type NonEmptyString, type PortNumber } from "../schemas/common.js"
+import type { CreateStubRequest } from "../schemas/StubSchema.js"
+import { makeFullLayer } from "../server/AdminServer.js"
+import { HandlerHttpClientLive } from "./HandlerHttpClient.js"
+import { ImpostersClient, ImpostersClientLive } from "./ImpostersClient.js"
 
 export interface StubConfig {
   readonly predicates?: ReadonlyArray<{

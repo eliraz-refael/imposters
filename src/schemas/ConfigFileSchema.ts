@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { HttpProtocol, NonEmptyString, PortNumber, Protocol } from "./common"
-import { CreateStubRequest, ProxyConfig } from "./StubSchema"
+import { HttpProtocol, NonEmptyString, PortNumber, Protocol } from "./common.js"
+import { CreateStubRequest, ProxyConfig } from "./StubSchema.js"
 
 export const ImposterConfig = Schema.Struct({
   name: Schema.optional(NonEmptyString),

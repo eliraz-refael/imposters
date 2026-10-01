@@ -14,12 +14,12 @@ import * as Effect from "effect/Effect"
 import * as Random from "effect/Random"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
-import type { RequestContext } from "../../matching/RequestMatcher"
-import type { ImposterExtension } from "../Extension"
-import { apply, emptyStore, type S3Reply, type Store } from "./Kernel"
-import { parseOperation } from "./Operation"
-import { render } from "./Render"
-import type { S3Error } from "./S3Error"
+import type { RequestContext } from "../../matching/RequestMatcher.js"
+import type { ImposterExtension } from "../Extension.js"
+import { apply, emptyStore, type S3Reply, type Store } from "./Kernel.js"
+import { parseOperation } from "./Operation.js"
+import { render } from "./Render.js"
+import type { S3Error } from "./S3Error.js"
 
 // 16 upper-case hex digits, the shape of a real x-amz-request-id
 const nextRequestId: Effect.Effect<string> = Effect.map(

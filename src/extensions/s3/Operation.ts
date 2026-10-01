@@ -6,9 +6,9 @@
  */
 import * as Data from "effect/Data"
 import * as Result from "effect/Result"
-import type { RequestContext } from "../../matching/RequestMatcher"
-import { bucketResource, notImplemented, objectResource, S3Error } from "./S3Error"
-import { parseDeleteRequest } from "./Xml"
+import type { RequestContext } from "../../matching/RequestMatcher.js"
+import { bucketResource, notImplemented, objectResource, S3Error } from "./S3Error.js"
+import { parseDeleteRequest } from "./Xml.js"
 
 export type Operation = Data.TaggedEnum<{
   ListBuckets: Record<never, never>

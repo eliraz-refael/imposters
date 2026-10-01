@@ -1,8 +1,8 @@
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { adminDashboardPage } from "./pages/AdminDashboard"
-import type { AdminImposterData } from "./partials"
-import { adminErrorPartial, imposterListPartial, imposterRowPartial } from "./partials"
+import { adminDashboardPage } from "./pages/AdminDashboard.js"
+import type { AdminImposterData } from "./partials.js"
+import { adminErrorPartial, imposterListPartial, imposterRowPartial } from "./partials.js"
 
 export interface AdminUiDeps {
   readonly apiHandler: (request: Request) => Promise<Response>

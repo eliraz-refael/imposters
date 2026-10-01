@@ -3,9 +3,9 @@
  */
 import * as DateTime from "effect/DateTime"
 import * as Result from "effect/Result"
-import type { S3Reply, StoredObject } from "./Kernel"
-import { errorStatus, type S3Error } from "./S3Error"
-import { element, renderDocument, S3_XMLNS, type XmlElement } from "./Xml"
+import type { S3Reply, StoredObject } from "./Kernel.js"
+import { errorStatus, type S3Error } from "./S3Error.js"
+import { element, renderDocument, S3_XMLNS, type XmlElement } from "./Xml.js"
 
 /** Answers every request from region us-east-1, the region path-style clients assume */
 export const REGION = "us-east-1"

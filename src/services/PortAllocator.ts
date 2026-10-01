@@ -1,5 +1,5 @@
 import { Context, Data, Effect, HashSet, Layer, Ref } from "effect"
-import { AppConfig } from "./AppConfig"
+import { AppConfig } from "./AppConfig.js"
 
 export class PortAllocatorError extends Data.TaggedError("PortAllocatorError")<{
   readonly reason: string

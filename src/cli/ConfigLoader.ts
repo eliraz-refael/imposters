@@ -1,8 +1,8 @@
 import { Console, Data, Effect, Schema } from "effect"
 import * as fs from "node:fs"
-import { ImpostersClient } from "../client/ImpostersClient"
-import type { ImposterConfig } from "../schemas/ConfigFileSchema"
-import { ConfigFile } from "../schemas/ConfigFileSchema"
+import { ImpostersClient } from "../client/ImpostersClient.js"
+import type { ImposterConfig } from "../schemas/ConfigFileSchema.js"
+import { ConfigFile } from "../schemas/ConfigFileSchema.js"
 
 export class ConfigLoadError extends Data.TaggedError("ConfigLoadError")<{
   readonly message: string

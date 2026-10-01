@@ -1,20 +1,20 @@
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
-import { HandlerHttpClientLive } from "../client/HandlerHttpClient"
-import { ImpostersClientLive } from "../client/ImpostersClient"
-import { Extensions, type ImposterExtension } from "../extensions/Extension"
-import { S3Extension } from "../extensions/s3/S3Extension"
-import { makeCompositeHandler } from "../server/AdminServer"
+import { HandlerHttpClientLive } from "../client/HandlerHttpClient.js"
+import { ImpostersClientLive } from "../client/ImpostersClient.js"
+import { Extensions, type ImposterExtension } from "../extensions/Extension.js"
+import { S3Extension } from "../extensions/s3/S3Extension.js"
+import { makeCompositeHandler } from "../server/AdminServer.js"
 import {
   DEFAULT_HOST,
   makeBunServerFactory,
   makeNodeServerFactory,
   resolveHost,
   ServerFactory
-} from "../server/ServerFactory"
-import { createConfiguredImposters, loadConfigFile } from "./ConfigLoader"
-import { version } from "./version"
+} from "../server/ServerFactory.js"
+import { createConfiguredImposters, loadConfigFile } from "./ConfigLoader.js"
+import { version } from "./version.js"
 
 // Extension registration point: the one place an extension is attached. Import it from
 // src/extensions/<name>/ and add it here; removing one is this line plus its import.

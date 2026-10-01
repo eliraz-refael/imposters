@@ -1,5 +1,5 @@
-import { html, raw } from "../html"
-import type { SafeHtml } from "../html"
+import { html, raw } from "../html.js"
+import type { SafeHtml } from "../html.js"
 
 export interface AdminLayoutOpts {
   readonly title: string

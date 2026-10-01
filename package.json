@@ -27,6 +27,7 @@
     "build-esm": "node node_modules/@typescript/native/bin/tsc -b tsconfig.build.json",
     "build-cjs": "babel build/esm --plugins @babel/transform-export-namespace-from --plugins @babel/transform-modules-commonjs --out-dir build/cjs --source-maps",
     "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
+    "verify-dist": "node scripts/verify-dist.mjs",
     "check": "node node_modules/@typescript/native/bin/tsc -b tsconfig.json",
     "lint": "eslint \"**/{src,test,examples,scripts,dtslint}/**/*.{ts,mjs}\"",
     "lint-fix": "bun lint --fix",
@@ -87,6 +88,8 @@
       ],
       "exclude": [
         "types/**/*.d.ts",
+        "Program.ts",
+        "cli/Commands.ts",
         "extensions/*/**/*.ts",
         "ui/pages/request-detail.ts",
         "ui/partials.ts"

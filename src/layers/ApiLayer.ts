@@ -3,9 +3,9 @@ import * as Layer from "effect/Layer"
 import * as SchemaIssue from "effect/SchemaIssue"
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError, HttpApiSwagger } from "effect/unstable/httpapi"
-import { AdminApi } from "../api/AdminApi"
-import { ImpostersHandlersLive } from "../api/ImpostersHandlers"
-import { SystemHandlersLive } from "../api/SystemHandlers"
+import { AdminApi } from "../api/AdminApi.js"
+import { ImpostersHandlersLive } from "../api/ImpostersHandlers.js"
+import { SystemHandlersLive } from "../api/SystemHandlers.js"
 
 const HandlerLayers = Layer.mergeAll(ImpostersHandlersLive, SystemHandlersLive)
 

@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { NonEmptyString } from "./common"
+import { NonEmptyString } from "./common.js"
 
 export const RequestLogEntry = Schema.Struct({
   id: NonEmptyString,

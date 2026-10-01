@@ -43,3 +43,15 @@ jobs:
       - name: Install dependencies
         uses: ./.github/actions/setup
       - run: bun run test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install dependencies
+        uses: ./.github/actions/setup
+      - run: bun run build
+      # The published package must load in plain Node, not only through tsx/vitest/esbuild
+      - run: bun run verify-dist

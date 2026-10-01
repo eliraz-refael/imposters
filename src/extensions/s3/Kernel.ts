@@ -9,8 +9,8 @@ import * as HashMap from "effect/HashMap"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import { createHash } from "node:crypto"
-import { keyTooLong, type Operation } from "./Operation"
-import { bucketResource, noSuchBucket, noSuchKey, notImplemented, S3Error } from "./S3Error"
+import { keyTooLong, type Operation } from "./Operation.js"
+import { bucketResource, noSuchBucket, noSuchKey, notImplemented, S3Error } from "./S3Error.js"
 
 export interface StoredObject {
   readonly body: Uint8Array<ArrayBuffer>

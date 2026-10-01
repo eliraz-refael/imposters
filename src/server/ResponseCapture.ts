@@ -1,5 +1,5 @@
-import { decodeUtf8 } from "../matching/RequestMatcher"
-import { isNullBodyStatus } from "../matching/ResponseGenerator"
+import { decodeUtf8 } from "../matching/RequestMatcher.js"
+import { isNullBodyStatus } from "../matching/ResponseGenerator.js"
 
 const LOG_BODY_LIMIT_BYTES = 10240
 

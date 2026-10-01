@@ -1,5 +1,3 @@
-export * as Program from "./Program.js"
-
 export * as AdminApi from "./api/AdminApi.js"
 
 export * as ApiErrors from "./api/ApiErrors.js"
@@ -15,8 +13,6 @@ export * as ImpostersHandlers from "./api/ImpostersHandlers.js"
 export * as SystemGroup from "./api/SystemGroup.js"
 
 export * as SystemHandlers from "./api/SystemHandlers.js"
-
-export * as Commands from "./cli/Commands.js"
 
 export * as ConfigLoader from "./cli/ConfigLoader.js"
 
@@ -56,6 +52,10 @@ export * as MainLayer from "./layers/MainLayer.js"
  */
 export * as ExpressionEvaluator from "./matching/ExpressionEvaluator.js"
 
+/**
+ * Strict UTF-8 decode: `undefined` when the bytes are not valid UTF-8, i.e. binary.
+ * `partial` tolerates a multi-byte character cut off at the end, for decoding a truncated prefix.
+ */
 export * as RequestMatcher from "./matching/RequestMatcher.js"
 
 export * as ResponseGenerator from "./matching/ResponseGenerator.js"
@@ -80,6 +80,16 @@ export * as FiberManager from "./server/FiberManager.js"
 
 export * as ImposterServer from "./server/ImposterServer.js"
 
+/**
+ * Reads a response once for the request log, and hands back a fresh copy to send.
+ * Bodies are handled as bytes, so binary responses (images, archives) pass through untouched.
+ */
+export * as ResponseCapture from "./server/ResponseCapture.js"
+
+/**
+ * The address to bind: the --host flag, else IMPOSTERS_HOST, else the default. A blank one is
+ * skipped, because listen() given an empty address takes every interface.
+ */
 export * as ServerFactory from "./server/ServerFactory.js"
 
 export * as AppConfig from "./services/AppConfig.js"
