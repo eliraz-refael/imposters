@@ -68,6 +68,14 @@ jobs:
               COMMITS=$(git log --pretty=format:"%s")
             fi
 
+            # Only code changes release. A run whose commits are all docs, chore, ci, test, style
+            # or build publishes nothing; workflow_dispatch with a version always releases.
+            if ! echo "$COMMITS" | grep -qiE "^(feat|fix|perf|refactor|revert)(\(.+\))?!?:|^[a-z]+(\(.+\))?!:|BREAKING CHANGE"; then
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "No releasable commits since ${LAST_TAG:-the first commit}; skipping the release"
+              exit 0
+            fi
+
             # Determine bump type from conventional commits
             BUMP="patch"
             if echo "$COMMITS" | grep -qiE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE"; then
@@ -90,17 +98,21 @@ jobs:
           fi
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
           echo "Publishing version: ${VERSION}"
 
       - name: Build library
+        if: steps.version.outputs.release == 'true'
         run: bun run build
 
       - name: Verify dist
+        if: steps.version.outputs.release == 'true'
         run: |
           test -f dist/package.json
           test -f dist/bin/imposters
 
       - name: Patch dist version
+        if: steps.version.outputs.release == 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
@@ -117,6 +129,7 @@ jobs:
 
       # The same package, as a file on the GitHub release: installable where npm is not reachable
       - name: Pack release tarball
+        if: steps.version.outputs.release == 'true'
         id: pack
         run: |
           npm pack ./dist --pack-destination "$RUNNER_TEMP"
@@ -125,16 +138,19 @@ jobs:
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
+        if: steps.version.outputs.release == 'true'
         run: npm publish dist/ --provenance --access public
         env:
           NODE_AUTH_TOKEN: ""
 
       - name: Create git tag
+        if: steps.version.outputs.release == 'true'
         run: |
           git tag "v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
 
       - name: Create GitHub release
+        if: steps.version.outputs.release == 'true'
         run: |
           LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | sed -n '2p')
           if [[ -n "$LAST_TAG" ]]; then
@@ -152,6 +168,7 @@ jobs:
 
       # Warn, never fail: the release is already out. A mismatch means the release file and npm differ.
       - name: Check release tarball matches npm
+        if: steps.version.outputs.release == 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           LOCAL="sha512-$(openssl dgst -sha512 -binary "${{ steps.pack.outputs.tarball }}" | base64 -w0)"
