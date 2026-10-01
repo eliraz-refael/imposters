@@ -66,7 +66,11 @@ const check = (label, file, specs) => {
   }
   const failures = JSON.parse(line.slice(RESULT.length))
   console.log(`${label}: ${specs.length - failures.length}/${specs.length} entries load`)
-  return failures.map((f) => `${label} ${f.spec}\n    ${f.error.split("\n")[0]}`)
+  // A module can fail after it loads (the CLI's runMain exits non-zero once its fiber fails)
+  const exit = child.status === 0
+    ? []
+    : [`${label}: loader exited ${child.status} (signal ${child.signal})\n${child.stderr}`]
+  return [...failures.map((f) => `${label} ${f.spec}\n    ${f.error.split("\n")[0]}`), ...exit]
 }
 
 const binCheck = () => {
