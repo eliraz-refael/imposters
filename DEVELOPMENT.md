@@ -6,7 +6,7 @@ The user-facing roadmap, what is planned and in which order, is [ROADMAP.md](ROA
 
 ## Context
 
-**Imposters** is a service virtualization tool replacing the abandoned Mountebank. It uses TypeScript + Effect, leveraging Effect's Fiber concurrency to spawn mock HTTP servers at runtime. Each imposter runs on its own port as a Fiber, is configurable via a central admin REST API, and serves its own HTMX-based configuration UI.
+**Imposters** is a service virtualization tool inspired by [Mountebank](https://github.com/mountebank-testing/mountebank). It uses TypeScript + Effect, leveraging Effect's Fiber concurrency to spawn mock HTTP servers at runtime. Each imposter runs on its own port as a Fiber, is configurable via a central admin REST API, and serves its own HTMX-based configuration UI.
 
 **Key decisions (as built):**
 - **Runtime:** Node.js by default, Bun optional — selected via `--runtime node|bun`, abstracted behind a `ServerFactory` tag. (Originally planned as Bun-only; changed in Phase 6 so the published npm package runs anywhere.)

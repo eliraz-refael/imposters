@@ -23,7 +23,7 @@ Programmable mock servers for HTTP APIs and an in-memory S3, with stubs, hot-rel
 
 </div>
 
-A modern service virtualization tool built with TypeScript and [Effect](https://effect.website). Create mock HTTP services for testing and development — a lightweight, programmable alternative to [Mountebank](http://www.mbtest.org/).
+A modern service virtualization tool built with TypeScript and [Effect](https://effect.website). Create mock HTTP services for testing and development — a lightweight, programmable alternative inspired by [Mountebank](https://github.com/mountebank-testing/mountebank).
 
 ## What is Imposters?
 

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Imposters** is a service virtualization tool — a modern, programmable alternative to the abandoned [Mountebank](http://www.mbtest.org/). It spins up mock HTTP servers ("imposters"), each on its own port, managed centrally through an admin REST API. Built with TypeScript and [Effect](https://effect.website).
+**Imposters** is a service virtualization tool — a modern, programmable alternative inspired by [Mountebank](https://github.com/mountebank-testing/mountebank). Mountebank's original site, mbtest.org, no longer belongs to the project, so never link to it; the project now lives at https://github.com/mountebank-testing/mountebank. It spins up mock HTTP servers ("imposters"), each on its own port, managed centrally through an admin REST API. Built with TypeScript and [Effect](https://effect.website).
 
 ## Current Status
 

@@ -3,7 +3,7 @@ title: Overview
 description: What Imposters is, how a request flows through it, and where to go next.
 ---
 
-Imposters is a service virtualization tool. It runs mock servers, called **imposters**, that stand in for the services your code talks to: HTTP APIs, and an in-memory AWS S3. You program them while they run, over a REST API or from a JSON config file. It is a modern successor to [Mountebank](http://www.mbtest.org/), which is no longer maintained, and it is built with TypeScript and [Effect](https://effect.website). It runs on Node.js or Bun.
+Imposters is a service virtualization tool. It runs mock servers, called **imposters**, that stand in for the services your code talks to: HTTP APIs, and an in-memory AWS S3. You program them while they run, over a REST API or from a JSON config file. It is inspired by [Mountebank](https://github.com/mountebank-testing/mountebank) and built with TypeScript and [Effect](https://effect.website). It runs on Node.js or Bun.
 
 ## How a request flows
 
