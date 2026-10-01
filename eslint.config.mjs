@@ -57,7 +57,7 @@ const extensionBoundaryConfigs = [
 
 export default [
   {
-    ignores: ["**/dist", "**/build", "**/docs", "**/*.md"]
+    ignores: ["**/dist", "**/build", "**/docs", "**/*.md", ".claude/**"]
   },
   ...compat.extends(
     "eslint:recommended",

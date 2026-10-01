@@ -26,8 +26,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 // Ports 8801-8829 belong to this file (8801-8805 in use).
 //
-// Replays neeo-monorepo's S3 call shapes (libs/platform/storage/src/s3/bucket.ts,
-// tools/provision/src/storage.ts, tools/vitest/src/local-s3.ts) with the real SDK.
+// Replays a real consumer's S3 call shapes (its bucket access layer, its provisioning
+// script and its test-suite helper for a local S3) with the real SDK.
 
 const server = makeTestServer({ extensions: [S3Extension] })
 
@@ -65,18 +65,18 @@ interface LoggedRequest {
 const requestLog = async (id: string): Promise<ReadonlyArray<LoggedRequest>> =>
   (await admin(`/imposters/${id}/requests?limit=500`)).json()
 
-// neeo's client: libs/platform/s3/src/client.ts with LOCAL_S3's endpoint and credentials
+// The consumer's client configuration, pointed at the local endpoint with local credentials
 const clientFor = (port: number, overrides: Partial<S3ClientConfig> = {}) =>
   new S3Client({
     region: "us-east-1",
     endpoint: `http://127.0.0.1:${port}`,
     forcePathStyle: true,
-    credentials: { accessKeyId: "neeo-local", secretAccessKey: "neeo-local-secret" },
+    credentials: { accessKeyId: "local-dev", secretAccessKey: "local-dev-secret" },
     requestHandler: { connectionTimeout: 3_000, requestTimeout: 10_000, throwOnRequestTimeout: true },
     ...overrides
   })
 
-// What the SDK threw, as neeo's bucket.ts inspects it
+// What the SDK threw, as the consumer's bucket access layer inspects it
 const failureOf = async (request: Promise<unknown>) => {
   try {
     await request
@@ -93,9 +93,9 @@ const md5Etag = (bytes: Uint8Array) => `"${createHash("md5").update(bytes).diges
 // Every byte value, including ones that are never valid UTF-8
 const BINARY = new Uint8Array(Array.from({ length: 4096 }, (_, i) => (i * 131 + 7) % 256))
 const PDF = { content: new TextEncoder().encode("%PDF-1.7 content"), contentType: "application/pdf" }
-const OWNER = "neeo-local"
+const OWNER = "local-dev"
 
-// The five PUTs tools/provision/src/storage.ts makes, in its order, named by its BucketSetting
+// The five PUTs the consumer's provisioning script makes, in its order, named by its bucket setting
 const bucketSettings = (
   client: S3Client,
   bucket: string,
@@ -153,7 +153,7 @@ const bucketSettings = (
     )]
 ]
 
-describe("S3 extension: neeo's call shapes against the real SDK", () => {
+describe("S3 extension: a consumer's call shapes against the real SDK", () => {
   const port = 8801
   let id = ""
   const client = clientFor(port)
@@ -184,7 +184,7 @@ describe("S3 extension: neeo's call shapes against the real SDK", () => {
     return (listing.Contents ?? []).flatMap((o) => o.Key === undefined ? [] : [o.Key])
   }
 
-  it("answers ListBuckets, which is how neeo checks the service is reachable", async () => {
+  it("answers ListBuckets, which is how a consumer checks the service is reachable", async () => {
     const answer = await client.send(new ListBucketsCommand({}))
     expect(answer.$metadata.httpStatusCode).toBe(200)
   })
@@ -235,7 +235,7 @@ describe("S3 extension: neeo's call shapes against the real SDK", () => {
     const etag = found.ETag ?? ""
     await found.Body?.transformToByteArray()
 
-    // neeo's isNotModified: an S3ServiceException whose $metadata.httpStatusCode is 304
+    // A consumer's not-modified check: an S3ServiceException whose $metadata.httpStatusCode is 304
     const notModified = await failureOf(
       client.send(new GetObjectCommand({ Bucket: "etags", Key: "doc.pdf", IfNoneMatch: etag }))
     )
@@ -355,7 +355,7 @@ describe("S3 extension: neeo's call shapes against the real SDK", () => {
     const versioning = await client.send(new GetBucketVersioningCommand({ Bucket: bucket, ExpectedBucketOwner: OWNER }))
     expect(versioning.Status).toBeUndefined()
 
-    // tools/provision/src/storage.ts `applied`: a 501 locally is "unsupported", anything else a failure
+    // The provisioning script's verdict: a 501 locally is "unsupported", anything else a failure
     const outcomes: Array<readonly [string, number | undefined]> = []
     for (const [setting, send] of bucketSettings(client, bucket, OWNER)) {
       const outcome = await send().then(
@@ -433,7 +433,7 @@ describe("S3 extension: neeo's call shapes against the real SDK", () => {
     expect((await client.send(new ListObjectsV2Command({ Bucket: "truncated", MaxKeys: 2 }))).KeyCount).toBe(2)
   })
 
-  it("head and delete bucket, the way neeo's test teardown removes one", async () => {
+  it("head and delete bucket, the way a consumer's test teardown removes one", async () => {
     await client.send(new CreateBucketCommand({ Bucket: "teardown" }))
     await put("teardown", "left-over", PDF.content, PDF.contentType)
     expect((await client.send(new HeadBucketCommand({ Bucket: "teardown" }))).$metadata.httpStatusCode).toBe(200)
@@ -444,7 +444,7 @@ describe("S3 extension: neeo's call shapes against the real SDK", () => {
       status: 409
     })
 
-    // removeBucket from tools/vitest/src/local-s3.ts
+    // removeBucket, as the consumer's test-suite helper does it
     const keys = await keysIn("teardown")
     await client.send(
       new DeleteObjectsCommand({ Bucket: "teardown", Delete: { Objects: keys.map((Key) => ({ Key })) } })
@@ -477,7 +477,7 @@ describe("S3 extension: the expected-owner check", () => {
 
   const ACCESS_DENIED = { service: true, name: "AccessDenied", status: 403 }
 
-  // bucket.spec.ts "when the bucket belongs to another owner": each of these becomes BucketUnavailable in neeo
+  // The consumer's "bucket belongs to another owner" specs: each of these becomes a bucket-unavailable error there
   it.each([
     ["put", () =>
       client.send(

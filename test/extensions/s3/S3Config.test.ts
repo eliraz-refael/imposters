@@ -44,7 +44,7 @@ describe("an S3 imposter from a config file", () => {
       region: "us-east-1",
       endpoint: `http://127.0.0.1:${port}`,
       forcePathStyle: true,
-      credentials: { accessKeyId: "neeo-local", secretAccessKey: "neeo-local-secret" }
+      credentials: { accessKeyId: "local-dev", secretAccessKey: "local-dev-secret" }
     })
     try {
       await client.send(new CreateBucketCommand({ Bucket: "from-config" }))

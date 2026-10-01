@@ -6,11 +6,11 @@
 
 ## Current Status
 
-**Shipped and published.** The package is live on npm as `imposters` (v0.2.4), released automatically from `master` by GitHub Actions with npm provenance.
+**Shipped and published.** The package is live on npm as `imposters` (v0.6.0), released automatically from `master` by GitHub Actions with npm provenance.
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 558 tests across 51 files.
+All three gates pass: `bun check`, `bun lint`, and 566 tests across 52 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -36,7 +36,7 @@ All three gates pass: `bun check`, `bun lint`, and 558 tests across 51 files.
 
 ### Not implemented
 
-Disk persistence (imposters are in-memory only and do not survive restart), Mountebank config adapter, OpenAPI spec import, WebSocket mocking, gRPC. The S3 emulator's scope trims (three bucket-config PUTs, aws-chunked bodies, list pagination) answer 501 and are in the ROADMAP backlog.
+Disk persistence (imposters are in-memory only and do not survive restart), Mountebank config adapter, OpenAPI spec import, WebSocket mocking, gRPC. The S3 emulator's scope trims (three bucket-config PUTs, aws-chunked bodies, list pagination) answer 501 and are in the DEVELOPMENT.md maintenance backlog. The user-facing roadmap is ROADMAP.md.
 
 ## Architecture
 
@@ -86,14 +86,14 @@ The core must never know a specific protocol (the S3 emulator is the first). `sr
 
 ### The S3 extension (`src/extensions/s3/`)
 
-An in-memory S3 for the AWS SDK with `forcePathStyle` (`/<bucket>/<key>`). Built for neeo-monorepo's usage (SDK `@aws-sdk/client-s3@3.1131.0`, exact-pinned as a devDependency for the e2e). README "S3 Emulator" lists the operations and the 501s.
+An in-memory S3 for the AWS SDK with `forcePathStyle` (`/<bucket>/<key>`). Built for a real consumer's usage (SDK `@aws-sdk/client-s3@3.1131.0`, exact-pinned as a devDependency for the e2e). README "S3 Emulator" lists the operations and the 501s.
 
 - **Pipeline:** `parseOperation(ctx)` (`Operation.ts`, a route table keyed by method × target × subresource) → `Result<Operation, S3Error>` → `apply(store, op, now)` (`Kernel.ts`, pure, run through `Ref.modify` so each operation is atomic) → `render` (`Render.ts`, XML + headers + status from `errorStatus`). `S3Extension.ts` wires them; `handleS3(ref, ctx)` is exported for in-process tests.
 - **Refuse, never guess:** a query key a route does not accept, a header in its `unsupportedHeaders`, an unrouted method/subresource, presigned URLs and `STREAMING-*` / `aws-chunked` bodies are all `501 NotImplemented`. Add a param to a route's `params` only when the kernel honours it.
 - **XML:** `fast-xml-parser` with `processEntities: false`; `unescapeXml` resolves entities itself, because the parser drops numeric references unless its deprecated HTML mode is on. Parser output is `unknown` and goes through a Schema (`DeleteRequestXml`). Answers use the small escaping builder in `Xml.ts`.
 - **SDK facts the e2e pins down:** a `Uint8Array` PutObject is a plain signed payload (`x-amz-content-sha256` is the hex SHA-256, plus `x-amz-checksum-crc32`, both ignored), never `STREAMING-*`. The SDK tags requests with `?x-id=<Op>` (ignored). `CopySource` must be URL-encoded by the caller, as on real S3. A 304 surfaces as an `S3ServiceException` with `$metadata.httpStatusCode === 304`. Never send checksum headers on GetObject: the SDK would validate them.
-- **Expected owner (stateless):** `x-amz-expected-bucket-owner` / `x-amz-source-expected-bucket-owner` must equal the access key id in `Authorization` (`Credential=<akid>/...`, or SigV2 `AWS <akid>:`), else `403 AccessDenied`. It runs before routing. An unsigned request is not checked. neeo maps the 403 to `BucketUnavailable` (bucket.ts) and to a `versioning` failure (provision), which is what its "another owner" specs expect. SigV4 signatures themselves are not verified.
-- **Config PUTs:** `?ownershipControls` (200) and `?policy` (204) are accepted no-ops on an existing bucket; `?publicAccessBlock`, `?encryption`, `?lifecycle` stay 501, so neeo's provisioning reports exactly `['public-access', 'encryption', 'multipart-abort']` as unsupported locally.
+- **Expected owner (stateless):** `x-amz-expected-bucket-owner` / `x-amz-source-expected-bucket-owner` must equal the access key id in `Authorization` (`Credential=<akid>/...`, or SigV2 `AWS <akid>:`), else `403 AccessDenied`. It runs before routing. An unsigned request is not checked. A consumer can map the 403 to a bucket-unavailable error, and its provisioning to a `versioning` failure, which is what that consumer's "another owner" specs expect. SigV4 signatures themselves are not verified.
+- **Config PUTs:** `?ownershipControls` (200) and `?policy` (204) are accepted no-ops on an existing bucket; `?publicAccessBlock`, `?encryption`, `?lifecycle` stay 501, so a consumer's provisioning suite reports exactly `['public-access', 'encryption', 'multipart-abort']` as unsupported locally.
 - **State is per start** (the `Ref` is made in `make`), so buckets vanish on stop/restart. That is intended.
 - **Fault injection is free:** stubs match first, so a stub can answer one key with a 503 `SlowDown` XML body or a `delay`. `test/e2e/s3.test.ts` proves both.
 
@@ -254,5 +254,5 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `scripts/postbuild.ts` copies the shim into `dist/bin/`, chmods it 755, injects the `bin` field into `dist/package.json`, and copies `.npmrc`.
 - **`src/cli/version.ts` is intentionally `"0.0.0"`.** CI `sed`s the real version into the bundle and both `dist/dist/{cjs,esm}/cli/version.js` at publish time. Do not "fix" it.
 - Publishing uses npm **trusted publishing / OIDC**: `NODE_AUTH_TOKEN: ""` with `id-token: write` and `--provenance`. The empty token is intentional.
-- Each release attaches `npm pack dist/` as `imposters-<version>.tgz` to its GitHub release, for places npm can't reach (the Wix network). The workflow checks the file's integrity against `npm view dist.integrity` and only warns on a mismatch. v0.5.0's file was uploaded by hand; its files match npm's.
+- Each release attaches `npm pack dist/` as `imposters-<version>.tgz` to its GitHub release, for networks where the public npm registry is blocked. The workflow checks the file's integrity against `npm view dist.integrity` and only warns on a mismatch. v0.5.0's file was uploaded by hand; its files match npm's.
 - Version base is the higher of (npm published version, latest git tag), then bumped by scanning conventional commits.
