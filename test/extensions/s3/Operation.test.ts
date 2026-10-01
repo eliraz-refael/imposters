@@ -206,12 +206,12 @@ describe("parseOperation: operation details", () => {
 })
 
 describe("parseOperation: the expected-owner check", () => {
-  const SIGV4 = "AWS4-HMAC-SHA256 Credential=neeo-local/20260928/us-east-1/s3/aws4_request, " +
+  const SIGV4 = "AWS4-HMAC-SHA256 Credential=local-dev/20260928/us-east-1/s3/aws4_request, " +
     "SignedHeaders=host;x-amz-date, Signature=abc"
   const signed = (headers: Record<string, string>) => ({ authorization: SIGV4, ...headers })
 
   it("reads the access key id from SigV4 and SigV2 Authorization headers", () => {
-    expect(accessKeyOf(SIGV4)).toBe("neeo-local")
+    expect(accessKeyOf(SIGV4)).toBe("local-dev")
     expect(accessKeyOf("AWS AKIDEXAMPLE:c2lnbmF0dXJl")).toBe("AKIDEXAMPLE")
     expect(accessKeyOf("Bearer token")).toBeUndefined()
     expect(accessKeyOf(undefined)).toBeUndefined()
@@ -239,14 +239,14 @@ describe("parseOperation: the expected-owner check", () => {
   it("checks the copy source's expected owner as well", () => {
     const headers = signed({
       "x-amz-copy-source": "bucket/from",
-      "x-amz-expected-bucket-owner": "neeo-local",
+      "x-amz-expected-bucket-owner": "local-dev",
       "x-amz-source-expected-bucket-owner": "111122223333"
     })
     expect(outcome("PUT", "/bucket/to", { headers })).toBe("AccessDenied")
   })
 
   it("passes an expected owner equal to the requester", () => {
-    const headers = signed({ "x-amz-expected-bucket-owner": "neeo-local" })
+    const headers = signed({ "x-amz-expected-bucket-owner": "local-dev" })
     expect(outcome("GET", "/bucket/key", { headers })).toBe("GetObject")
   })
 

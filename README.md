@@ -2,6 +2,9 @@
 
 A modern service virtualization tool built with TypeScript and [Effect](https://effect.website). Create mock HTTP services for testing and development — a lightweight, programmable alternative to [Mountebank](http://www.mbtest.org/).
 
+- **Website and docs:** https://eliraz-refael.github.io/imposters/
+- **Roadmap:** [ROADMAP.md](ROADMAP.md), what is planned next, with an issue per item
+
 ## What is Imposters?
 
 Imposters lets you spin up fake HTTP servers ("imposters") that respond to requests based on configurable stubs. Each imposter listens on its own port and matches incoming requests against predicates, returning templated responses. Use it to isolate services in integration tests, prototype APIs, or simulate third-party dependencies.
@@ -16,8 +19,9 @@ Imposters lets you spin up fake HTTP servers ("imposters") that respond to reque
 - **Per-imposter admin UI** — HTMX-powered UI at each imposter's `/_admin` path
 - **Admin dashboard** — Global dashboard at `/_ui` on the admin port
 - **Config file support** — Declare imposters and stubs in a JSON file for repeatable setups
-- **TypeScript client** — Programmatic client and test helpers built on `@effect/platform`
+- **TypeScript client** — A typed client derived from the admin API definition (Effect's `HttpApiClient`), plus test helpers
 - **Request logging** — Inspect captured requests per imposter with stats and percentile metrics
+- **Node or Bun** — Runs on Node.js (`node:http`) by default; `--runtime bun` serves the admin API with `Bun.serve()`
 - **Built on Effect** — Fiber-based concurrency, typed errors, and composable services
 
 ## Quick Start
@@ -27,7 +31,7 @@ Imposters lets you spin up fake HTTP servers ("imposters") that respond to reque
 bun install
 
 # Start the admin server on the default port (2525)
-bun tsx src/Program.ts start
+bun tsx src/Program.ts start   # or, with the package installed: npx imposters start
 
 # Create an imposter
 curl -X POST http://localhost:2525/imposters \
@@ -65,10 +69,10 @@ curl http://localhost:3000/users/1
 npm install --save-dev imposters
 ```
 
-Every release also attaches the same package to its [GitHub release](https://github.com/eliraz-refael/imposters/releases) as `imposters-<version>.tgz`. It contains the same files as the npm package. The publish workflow also compares its integrity hash with npm's and warns on a mismatch. Where the npm registry is not reachable, depend on the file directly:
+Every release also attaches the same package to its [GitHub release](https://github.com/eliraz-refael/imposters/releases) as `imposters-<version>.tgz`. It contains the same files as the npm package. The publish workflow also compares its integrity hash with npm's and warns on a mismatch. Where the npm registry is not reachable, depend on the file directly. Any release works; substitute its version in both places:
 
 ```json
-"imposters": "https://github.com/eliraz-refael/imposters/releases/download/v0.5.0/imposters-0.5.0.tgz"
+"imposters": "https://github.com/eliraz-refael/imposters/releases/download/v0.6.0/imposters-0.6.0.tgz"
 ```
 
 ## CLI Usage
@@ -82,12 +86,22 @@ imposters start [options]
 | `--port <number>` | `-p` | Admin server port (default: `2525`, or `ADMIN_PORT` env var) |
 | `--config <path>` | `-c` | Path to a JSON config file |
 | `--host <address>` | | Address the admin server and every imposter bind to (default: `127.0.0.1`, or `IMPOSTERS_HOST` env var) |
+| `--runtime <node\|bun>` | | Server runtime for the admin server: `node` (default, `node:http`) or `bun` (`Bun.serve()`, needs Bun). Imposters themselves always use `node:http`, which Bun also provides |
+
+A flag wins over its environment variable. Settings with no flag come from the environment only:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ADMIN_PORT` | `2525` | Admin server port, when `--port` is not given |
+| `IMPOSTERS_HOST` | `127.0.0.1` | Bind address, when `--host` is not given |
+| `PORT_RANGE_MIN` / `PORT_RANGE_MAX` | `3000` / `4000` | Range a port is allocated from when an imposter is created without one |
+| `MAX_IMPOSTERS` | `100` | Most imposters that can exist at once |
 
 Every server binds the loopback address by default, so nothing off the machine can reach it. The admin API has no authentication and can create proxies, so pass `--host 0.0.0.0` only where the network is trusted, such as inside a container.
 
 ## Config File
 
-Declare imposters and stubs declaratively. Pass the file with `--config`:
+Declare imposters and stubs declaratively. Pass the file with `--config`. Every imposter in it is created, given its stubs and started before the admin port opens; if any step fails, the CLI exits non-zero.
 
 ```json
 {
@@ -117,6 +131,8 @@ Declare imposters and stubs declaratively. Pass the file with `--config`:
 }
 ```
 
+The `admin` block is optional and reserved: it is validated, but the CLI currently ignores it. Set the admin port, bind address and limits with the CLI flags and environment variables above.
+
 ## API Reference
 
 ### System
@@ -134,7 +150,7 @@ Declare imposters and stubs declaratively. Pass the file with `--config`:
 | `GET` | `/imposters` | List imposters (supports `status` and `protocol` filters) |
 | `GET` | `/imposters/:id` | Get imposter details |
 | `PATCH` | `/imposters/:id` | Update imposter (name, status, port, proxy) |
-| `DELETE` | `/imposters/:id` | Delete imposter (`?force=true` to skip confirmation) |
+| `DELETE` | `/imposters/:id` | Delete imposter. A running imposter answers `409` unless you pass `?force=true`, which stops it first |
 
 ### Stubs
 
@@ -362,26 +378,31 @@ The SDK surfaces it as an `S3ServiceException` named `SlowDown` (set `maxAttempt
 
 ### TypeScript client
 
+The client takes decoded values: branded ports and names, with defaults filled in. The simplest way to build a payload is to decode it through the request schema:
+
 ```typescript
-import { ImpostersClientFetchLive, ImpostersClient } from "imposters/client"
-import { Effect } from "effect"
+import { ImpostersClient, ImpostersClientFetchLive } from "imposters/client/ImpostersClient"
+import { CreateImposterRequest } from "imposters/schemas/ImposterSchema"
+import { CreateStubRequest } from "imposters/schemas/StubSchema"
+import { Effect, Schema } from "effect"
 
 const program = Effect.gen(function*() {
   const client = yield* ImpostersClient
 
   const imposter = yield* client.imposters.createImposter({
-    payload: { name: "my-api", port: 4000, protocol: "HTTP", adminPath: "/_admin" }
+    payload: Schema.decodeSync(CreateImposterRequest)({ name: "my-api", port: 4000 })
   })
 
   yield* client.imposters.addStub({
-    path: { imposterId: imposter.id },
-    payload: {
+    params: { imposterId: imposter.id },
+    payload: Schema.decodeSync(CreateStubRequest)({
+      predicates: [{ field: "path", operator: "equals", value: "/hello" }],
       responses: [{ status: 200, body: { hello: "world" } }]
-    }
+    })
   })
 
   yield* client.imposters.updateImposter({
-    path: { id: imposter.id },
+    params: { id: imposter.id },
     payload: { status: "running" }
   })
 })
@@ -397,7 +418,7 @@ program.pipe(
 The `withImposter` helper manages the lifecycle of a test imposter — create, configure stubs, start, run your test, then clean up:
 
 ```typescript
-import { withImposter, makeTestServer } from "imposters/client"
+import { makeTestServer, withImposter } from "imposters/client/testing"
 import { Effect } from "effect"
 
 const { clientLayer } = makeTestServer() // or makeTestServer({ extensions: [...] })
@@ -418,7 +439,7 @@ const test = withImposter(
       const res = yield* Effect.promise(() =>
         fetch(`http://localhost:${ctx.port}/greet`)
       )
-      // assert on res...
+      return res.status // assert on it, e.g. expect(res.status).toBe(200)
     })
 )
 
@@ -430,7 +451,7 @@ Effect.provide(test, clientLayer).pipe(Effect.runPromise)
 - **`/_ui`** on the admin port — Global dashboard showing all imposters
 - **`/_admin`** on each imposter port — Per-imposter UI with stubs, captured requests, and stats
 
-Both UIs are HTMX-powered and require no additional setup.
+Both UIs are server-rendered and use HTMX, which the page loads from `unpkg.com`. There is nothing to install, but the browser must be able to reach unpkg.com; without it the pages still render, but their forms and buttons (create, start, stop, delete, refresh) do nothing.
 
 ## Development
 
@@ -444,13 +465,15 @@ bun coverage       # Test coverage
 
 ## Architecture
 
-Imposters is built entirely on [Effect](https://effect.website):
+Imposters is built entirely on [Effect](https://effect.website) 4:
 
 - **Effect services** — All components (`ImposterRepository`, `PortAllocator`, `ProxyService`, `MetricsService`, `RequestLogger`, `FiberManager`) are Effect services composed via layers
 - **Fiber concurrency** — Each running imposter is managed as an Effect Fiber via `FiberMap`, allowing independent start/stop lifecycle
-- **`@effect/platform` HTTP API** — Admin API is defined declaratively with `HttpApi`, `HttpApiGroup`, and `HttpApiEndpoint`, with schema-derived request validation and typed error handling
-- **`@effect/cli`** — CLI commands and option parsing
-- **Bun.serve()** — HTTP server runtime
+- **Typed admin API** — Defined declaratively with `HttpApi`, `HttpApiGroup` and `HttpApiEndpoint` from `effect/unstable/httpapi`, with schema-derived request validation, typed errors and OpenAPI. The client is derived from the same definition
+- **Plain handlers for imposters** — Each imposter is an `async (request: Request) => Response` that matches stubs linearly over a `Ref`, so stub changes apply without a restart
+- **CLI** — `effect/unstable/cli` for commands and option parsing
+- **Server runtime** — `node:http` by default; `Bun.serve()` for the admin server with `--runtime bun`
+- **Extensions** — Non-HTTP protocols (the S3 emulator) plug in behind stub matching
 - **JSONata** — Expression evaluation in response templates
 
 ## License
