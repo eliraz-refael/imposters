@@ -1,9 +1,29 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+  <img src="assets/logo-light.svg" alt="" width="88" height="88">
+</picture>
+
 # Imposters
 
-A modern service virtualization tool built with TypeScript and [Effect](https://effect.website). Create mock HTTP services for testing and development — a lightweight, programmable alternative to [Mountebank](http://www.mbtest.org/).
+**Your dependencies, in disguise.**
 
-- **Website and docs:** https://eliraz-refael.github.io/imposters/
-- **Roadmap:** [ROADMAP.md](ROADMAP.md), what is planned next, with an issue per item
+Programmable mock servers for HTTP APIs and an in-memory S3, with stubs, hot-reload, JSONata templating, proxy recording and fault injection.
+
+[![npm](https://img.shields.io/npm/v/imposters?labelColor=0a0d0b&color=c6ff4d)](https://www.npmjs.com/package/imposters)
+[![Check](https://img.shields.io/github/actions/workflow/status/eliraz-refael/imposters/check.yml?branch=master&label=check&labelColor=0a0d0b)](https://github.com/eliraz-refael/imposters/actions/workflows/check.yml)
+[![License: MIT](https://img.shields.io/github/license/eliraz-refael/imposters?labelColor=0a0d0b&color=7f9184)](LICENSE)
+
+**[Try it in your browser →](https://eliraz-refael.github.io/imposters/#playground)** · [Docs](https://eliraz-refael.github.io/imposters/docs/) · [Roadmap](ROADMAP.md) (what is planned next, with an issue per item) · [Website](https://eliraz-refael.github.io/imposters/)
+
+<img src="assets/demo.svg" alt="A terminal session: npx imposters start --config imposters.json starts a users-api imposter on port 3000; curl localhost:3000/users/42 answers {&quot;id&quot;:&quot;42&quot;,&quot;name&quot;:&quot;Alice&quot;}; a PUT to the stub on the admin API changes it while it runs, and the same curl now answers {&quot;id&quot;:&quot;42&quot;,&quot;name&quot;:&quot;Bob&quot;}" width="821">
+
+<sub>A real session, with <a href="examples/users-api.json"><code>examples/users-api.json</code></a> as <code>imposters.json</code>.</sub>
+
+</div>
+
+A modern service virtualization tool built with TypeScript and [Effect](https://effect.website). Create mock HTTP services for testing and development — a lightweight, programmable alternative to [Mountebank](http://www.mbtest.org/).
 
 ## What is Imposters?
 
@@ -132,6 +152,18 @@ Declare imposters and stubs declaratively. Pass the file with `--config`. Every 
 ```
 
 The `admin` block is optional and reserved: it is validated, but the CLI currently ignores it. Set the admin port, bind address and limits with the CLI flags and environment variables above.
+
+## Examples
+
+[`examples/`](examples/) holds config files you can run as they are, with `npx imposters start --config <file>`:
+
+| File | What it shows | Try it |
+|---|---|---|
+| [`users-api.json`](examples/users-api.json) | A templated path parameter (the demo above) | `curl localhost:3000/users/42` → `{"id":"42","name":"Alice"}` |
+| [`fault-injection.json`](examples/fault-injection.json) | `/orders` alternates 200 and 503 (`"responseMode": "sequential"`); `/slow` answers after a 2 s `delay` | `curl -w ' %{http_code}\n' localhost:3001/orders`, several times |
+| [`s3.json`](examples/s3.json) | An in-memory S3 on port 7070 | Point the AWS SDK at `http://localhost:7070` with `forcePathStyle: true` |
+| [`s3-fault-injection.json`](examples/s3-fault-injection.json) | An S3 on port 7071 where `GET /my-bucket/flaky.pdf` is throttled with a 503 `SlowDown`; every other request reaches the emulator | `curl localhost:7071/my-bucket/flaky.pdf` |
+| [`vitest/users.test.ts`](examples/vitest/users.test.ts) | A vitest suite that mocks an API with `withImposter` | Copy it into a project with `imposters`, `effect` and `vitest`, then `npx vitest run` |
 
 ## API Reference
 
@@ -462,6 +494,8 @@ bun lint           # Lint
 bun lint-fix       # Lint with auto-fix
 bun coverage       # Test coverage
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and [DEVELOPMENT.md](DEVELOPMENT.md) for how the code is put together.
 
 ## Architecture
 

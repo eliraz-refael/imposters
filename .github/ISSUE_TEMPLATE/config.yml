@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/eliraz-refael/imposters/discussions
+    about: Ask how to do something, or float an idea before it becomes a feature request.
+  - name: Documentation
+    url: https://eliraz-refael.github.io/imposters/docs/
+    about: Getting started, the config file, stubs, responses and the S3 emulator.
+  - name: Roadmap
+    url: https://github.com/eliraz-refael/imposters/blob/master/ROADMAP.md
+    about: What is planned next, with an issue per item.

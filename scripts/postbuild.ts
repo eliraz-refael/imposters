@@ -21,6 +21,12 @@ const distPkg = JSON.parse(fs.readFileSync(distPkgPath, "utf-8"))
 
 distPkg.bin = { imposters: "./bin/imposters" }
 
+// build-utils pack-v2 copies author and homepage but drops these npm fields
+const rootPkg = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf-8"))
+for (const key of ["keywords", "bugs"]) {
+  if (rootPkg[key] !== undefined) distPkg[key] = rootPkg[key]
+}
+
 fs.writeFileSync(distPkgPath, JSON.stringify(distPkg, null, 2) + "\n")
 
 // 3. Copy .npmrc → dist/.npmrc
