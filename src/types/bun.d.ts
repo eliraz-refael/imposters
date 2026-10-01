@@ -8,6 +8,7 @@
 
 interface ImpostersBunServer {
   readonly port: number | undefined
+  readonly hostname: string | undefined
   // Returns a Promise that resolves once the listener is closed (Bun >= 1.1)
   readonly stop: (closeActiveConnections?: boolean) => Promise<void> | void
 }
@@ -15,6 +16,7 @@ interface ImpostersBunServer {
 interface ImpostersBunGlobal {
   readonly serve: (options: {
     readonly port: number
+    readonly hostname: string
     readonly fetch: (request: Request) => Promise<Response>
   }) => ImpostersBunServer
 }

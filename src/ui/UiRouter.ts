@@ -17,6 +17,8 @@ export interface UiDeps {
   readonly repo: ImposterRepositoryShape
   readonly requestLogger: RequestLoggerShape
   readonly runPromise: <A>(effect: Effect.Effect<A>) => Promise<A>
+  // The imposter's own handler, so a test request does not depend on the address it binds
+  readonly fetchSelf: (request: Request) => Promise<Response>
 }
 
 const htmlResponse = (body: string, status = 200): Response =>
@@ -212,11 +214,13 @@ export const makeUiRouter = (deps: UiDeps) => async (request: Request): Promise<
       }
 
       const startTime = Date.now()
-      const testResp = await fetch(`http://localhost:${deps.config.port}${testPath}`, {
-        method: testMethod,
-        headers,
-        ...(testBody && testMethod !== "GET" && testMethod !== "HEAD" ? { body: testBody } : {})
-      })
+      const testResp = await deps.fetchSelf(
+        new Request(`http://localhost:${deps.config.port}${testPath}`, {
+          method: testMethod,
+          headers,
+          ...(testBody && testMethod !== "GET" && testMethod !== "HEAD" ? { body: testBody } : {})
+        })
+      )
       const duration = Date.now() - startTime
 
       const respBody = await testResp.text()

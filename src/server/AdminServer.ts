@@ -4,20 +4,25 @@ import type { ImposterExtension } from "../extensions/Extension"
 import { ApiLayer } from "../layers/ApiLayer"
 import { makeMainLayer } from "../layers/MainLayer"
 import { makeAdminUiRouter } from "../ui/admin/AdminUiRouter"
+import { DEFAULT_HOST } from "./ServerFactory"
 
 // Extensions default to none, so existing callers keep a plain-HTTP server
-export const makeFullLayer = (extensions: ReadonlyArray<ImposterExtension> = []) =>
-  ApiLayer.pipe(Layer.provide(makeMainLayer(extensions)))
+export const makeFullLayer = (extensions: ReadonlyArray<ImposterExtension> = [], host: string = DEFAULT_HOST) =>
+  ApiLayer.pipe(Layer.provide(makeMainLayer(extensions, host)))
 
 // Plain HTTP only, as before extensions existed
 export const FullLayer = makeFullLayer()
 
 // disableLogger also silences requests that match no route (v3 logged nothing).
-export const makeWebHandler = (extensions: ReadonlyArray<ImposterExtension> = []) =>
-  HttpRouter.toWebHandler(makeFullLayer(extensions), { disableLogger: true })
+export const makeWebHandler = (extensions: ReadonlyArray<ImposterExtension> = [], host: string = DEFAULT_HOST) =>
+  HttpRouter.toWebHandler(makeFullLayer(extensions, host), { disableLogger: true })
 
-export const makeCompositeHandler = (adminPort: number, extensions: ReadonlyArray<ImposterExtension> = []) => {
-  const { dispose, handler: apiHandler } = makeWebHandler(extensions)
+export const makeCompositeHandler = (
+  adminPort: number,
+  extensions: ReadonlyArray<ImposterExtension> = [],
+  host: string = DEFAULT_HOST
+) => {
+  const { dispose, handler: apiHandler } = makeWebHandler(extensions, host)
   const adminUiRouter = makeAdminUiRouter({ apiHandler, adminPort })
 
   const handler = async (request: Request): Promise<Response> => {

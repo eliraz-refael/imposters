@@ -6,8 +6,22 @@ export class ServerBindError extends Data.TaggedError("ServerBindError")<{
   readonly reason: string
 }> {}
 
+// Loopback only: the admin API is unauthenticated and can create proxies, so reaching it
+// from the network takes an explicit --host
+export const DEFAULT_HOST = "127.0.0.1"
+
+/**
+ * The address to bind: the --host flag, else IMPOSTERS_HOST, else the default. A blank one is
+ * skipped, because listen() given an empty address takes every interface.
+ */
+export const resolveHost = (flag: string | undefined, env: string | undefined): string =>
+  [flag, env].map((candidate) => candidate?.trim()).find((candidate) => candidate !== undefined && candidate !== "") ??
+    DEFAULT_HOST
+
 export interface ServerInstance {
   readonly port: number
+  // The address the listener is bound to, as the operating system reports it
+  readonly host: string
   // Completes only once the listener is closed and the port is released.
   readonly stop: (closeActive: boolean) => Effect.Effect<void>
 }
@@ -76,37 +90,46 @@ const closeNodeServer = (server: http.Server, closeActive: boolean): Effect.Effe
     server.close(() => resume(Effect.void))
   })
 
-export const NodeServerFactoryLive = Layer.succeed(ServerFactory, {
-  create: (options) =>
-    Effect.callback<ServerInstance, ServerBindError>((resume) => {
-      const server = http.createServer(makeNodeRequestListener(options.port, options.fetch))
+const boundHost = (server: http.Server, requested: string): string => {
+  const address = server.address()
+  return address !== null && typeof address === "object" ? address.address : requested
+}
 
-      // Exactly one of these fires for a listen() call; each removes the other
-      // so no listener outlives the bind attempt.
-      const onError = (err: Error) => {
-        server.off("listening", onListening)
-        resume(Effect.fail(new ServerBindError({ port: options.port, reason: err.message })))
-      }
-      const onListening = () => {
-        server.off("error", onError)
-        resume(Effect.succeed({
-          port: options.port,
-          stop: (closeActive) => closeNodeServer(server, closeActive)
-        }))
-      }
-      server.once("error", onError)
-      server.once("listening", onListening)
-      server.listen(options.port)
+export const makeNodeServerFactory = (host: string) =>
+  Layer.succeed(ServerFactory, {
+    create: (options) =>
+      Effect.callback<ServerInstance, ServerBindError>((resume) => {
+        const server = http.createServer(makeNodeRequestListener(options.port, options.fetch))
 
-      // Interrupted before the bind settled: drop the listeners and release
-      // whatever was (or is about to be) bound.
-      return Effect.suspend(() => {
-        server.off("error", onError)
-        server.off("listening", onListening)
-        return closeNodeServer(server, true)
+        // Exactly one of these fires for a listen() call; each removes the other
+        // so no listener outlives the bind attempt.
+        const onError = (err: Error) => {
+          server.off("listening", onListening)
+          resume(Effect.fail(new ServerBindError({ port: options.port, reason: err.message })))
+        }
+        const onListening = () => {
+          server.off("error", onError)
+          resume(Effect.succeed({
+            port: options.port,
+            host: boundHost(server, host),
+            stop: (closeActive) => closeNodeServer(server, closeActive)
+          }))
+        }
+        server.once("error", onError)
+        server.once("listening", onListening)
+        server.listen(options.port, host)
+
+        // Interrupted before the bind settled: drop the listeners and release
+        // whatever was (or is about to be) bound.
+        return Effect.suspend(() => {
+          server.off("error", onError)
+          server.off("listening", onListening)
+          return closeNodeServer(server, true)
+        })
       })
-    })
-})
+  })
+
+export const NodeServerFactoryLive = makeNodeServerFactory(DEFAULT_HOST)
 
 const bunUnavailable = (port: number) =>
   new ServerBindError({
@@ -116,22 +139,26 @@ const bunUnavailable = (port: number) =>
       "use --runtime node under Node.js"
   })
 
-export const BunServerFactoryLive = Layer.succeed(ServerFactory, {
-  create: (options) =>
-    Effect.suspend(() => {
-      const bun = globalThis.Bun
-      if (bun === undefined) return Effect.fail(bunUnavailable(options.port))
-      // Bun.serve binds synchronously and throws on failure (e.g. EADDRINUSE)
-      return Effect.try({
-        try: () => bun.serve({ port: options.port, fetch: options.fetch }),
-        catch: (err) =>
-          new ServerBindError({ port: options.port, reason: err instanceof Error ? err.message : String(err) })
-      }).pipe(
-        Effect.map((server): ServerInstance => ({
-          port: server.port ?? options.port,
-          // stop() resolves once the listener is closed
-          stop: (closeActive) => Effect.promise(() => Promise.resolve(server.stop(closeActive)))
-        }))
-      )
-    })
-})
+export const makeBunServerFactory = (host: string) =>
+  Layer.succeed(ServerFactory, {
+    create: (options) =>
+      Effect.suspend(() => {
+        const bun = globalThis.Bun
+        if (bun === undefined) return Effect.fail(bunUnavailable(options.port))
+        // Bun.serve binds synchronously and throws on failure (e.g. EADDRINUSE)
+        return Effect.try({
+          try: () => bun.serve({ port: options.port, hostname: host, fetch: options.fetch }),
+          catch: (err) =>
+            new ServerBindError({ port: options.port, reason: err instanceof Error ? err.message : String(err) })
+        }).pipe(
+          Effect.map((server): ServerInstance => ({
+            port: server.port ?? options.port,
+            host: server.hostname ?? host,
+            // stop() resolves once the listener is closed
+            stop: (closeActive) => Effect.promise(() => Promise.resolve(server.stop(closeActive)))
+          }))
+        )
+      })
+  })
+
+export const BunServerFactoryLive = makeBunServerFactory(DEFAULT_HOST)

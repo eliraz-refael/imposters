@@ -3,7 +3,7 @@ import { Extensions, type ImposterExtension } from "../extensions/Extension"
 import { ImposterRepositoryLive } from "../repositories/ImposterRepository"
 import { FiberManagerLive } from "../server/FiberManager"
 import { ImposterServerLive } from "../server/ImposterServer"
-import { NodeServerFactoryLive } from "../server/ServerFactory"
+import { DEFAULT_HOST, makeNodeServerFactory } from "../server/ServerFactory"
 import { AppConfigLive } from "../services/AppConfig"
 import { MetricsServiceLive } from "../services/MetricsService"
 import { PortAllocatorLive } from "../services/PortAllocator"
@@ -19,7 +19,7 @@ const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
 
 // Every core service, with `extensions` registered. The imposter runtime and the API
 // handlers both read the one `Extensions` built here, so they agree on the protocols.
-export const makeMainLayer = (extensions: ReadonlyArray<ImposterExtension>) => {
+export const makeMainLayer = (extensions: ReadonlyArray<ImposterExtension>, host: string = DEFAULT_HOST) => {
   const ExtensionsLive = Extensions.layer(extensions)
 
   // ImposterServerLive depends on FiberManager + ImposterRepository + ServerFactory + RequestLogger + Metrics
@@ -29,7 +29,7 @@ export const makeMainLayer = (extensions: ReadonlyArray<ImposterExtension>) => {
       Layer.mergeAll(
         FiberManagerLive,
         ImposterRepositoryLive,
-        NodeServerFactoryLive,
+        makeNodeServerFactory(host),
         RequestLoggerLive,
         MetricsServiceLive,
         ProxyServiceWithDeps,

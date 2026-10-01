@@ -6,7 +6,13 @@ import { ImpostersClientLive } from "../client/ImpostersClient"
 import { Extensions, type ImposterExtension } from "../extensions/Extension"
 import { S3Extension } from "../extensions/s3/S3Extension"
 import { makeCompositeHandler } from "../server/AdminServer"
-import { BunServerFactoryLive, NodeServerFactoryLive, ServerFactory } from "../server/ServerFactory"
+import {
+  DEFAULT_HOST,
+  makeBunServerFactory,
+  makeNodeServerFactory,
+  resolveHost,
+  ServerFactory
+} from "../server/ServerFactory"
 import { createConfiguredImposters, loadConfigFile } from "./ConfigLoader"
 import { version } from "./version"
 
@@ -26,6 +32,17 @@ const portOption = Flag.Int("port").pipe(
   Flag.optional
 )
 
+const hostOption = Flag.String("host").pipe(
+  Flag.withDescription(
+    `Address every server binds to (default: ${DEFAULT_HOST}, or IMPOSTERS_HOST). 0.0.0.0 reaches the network`
+  ),
+  Flag.optional
+)
+
+// A wildcard address is not one a browser can open
+const urlHostOf = (host: string): string =>
+  host === "0.0.0.0" || host === "::" ? "localhost" : host.includes(":") ? `[${host}]` : host
+
 const runtimeOption = Flag.Literals("runtime", ["node", "bun"]).pipe(
   Flag.withDescription("Server runtime: node (default) or bun"),
   Flag.withDefault("node" as const)
@@ -33,9 +50,10 @@ const runtimeOption = Flag.Literals("runtime", ["node", "bun"]).pipe(
 
 const startCommand = Command.make(
   "start",
-  { config: configOption, port: portOption, runtime: runtimeOption },
-  ({ config, port, runtime }) =>
-    Effect.gen(function*() {
+  { config: configOption, port: portOption, host: hostOption, runtime: runtimeOption },
+  ({ config, host: hostFlag, port, runtime }) => {
+    const host = resolveHost(Option.getOrUndefined(hostFlag), process.env.IMPOSTERS_HOST)
+    return Effect.gen(function*() {
       const adminPort = Option.isSome(port) ? port.value : Number(process.env.ADMIN_PORT ?? 2525)
 
       // A registration mistake is fatal. The admin handler builds its layers in the background,
@@ -49,7 +67,7 @@ const startCommand = Command.make(
         )
       )
 
-      const { dispose, handler } = makeCompositeHandler(adminPort, extensions)
+      const { dispose, handler } = makeCompositeHandler(adminPort, extensions, host)
 
       // A config that does not load completely is fatal. It loads through the in-process handler
       // before the admin port binds, so once the admin server answers, every imposter is up.
@@ -78,8 +96,9 @@ const startCommand = Command.make(
           }))
       )
 
-      console.log(`Imposters admin server running on http://localhost:${server.port} (runtime: ${runtime})`)
-      console.log(`Admin UI: http://localhost:${server.port}/_ui`)
+      const adminUrl = `http://${urlHostOf(host)}:${server.port}`
+      console.log(`Imposters admin server running on ${adminUrl} (bound to ${server.host}, runtime: ${runtime})`)
+      console.log(`Admin UI: ${adminUrl}/_ui`)
 
       // Keep running until interrupted
       yield* Effect.callback<never, never>(() => {
@@ -97,8 +116,9 @@ const startCommand = Command.make(
         process.prependListener("SIGTERM", shutdown)
       })
     }).pipe(
-      Effect.provide(runtime === "bun" ? BunServerFactoryLive : NodeServerFactoryLive)
+      Effect.provide(runtime === "bun" ? makeBunServerFactory(host) : makeNodeServerFactory(host))
     )
+  }
 )
 
 const command = Command.make("imposters").pipe(
