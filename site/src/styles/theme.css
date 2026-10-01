@@ -1,0 +1,143 @@
+/*
+ * Disguise: the site's design tokens, in one place.
+ *
+ * Every page reads these: the landing, roadmap and 404 pages directly, and the Starlight
+ * docs through the --sl-* mapping below. Restyle the site by changing values here; the
+ * code-block colours are the two Expressive Code themes in src/styles/code-themes/.
+ *
+ * Dark is the default (as in Starlight); light is :root[data-theme="light"], which the
+ * theme script sets from the visitor's choice or their system preference.
+ */
+@import "@fontsource-variable/martian-mono/standard.css";
+@import "@fontsource-variable/geist/wght.css";
+
+:root {
+  /* Type: Martian Mono for display, headings, nav, code and labels; Geist for prose */
+  --im-font-mono: "Martian Mono Variable", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --im-font-body: "Geist Variable", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --im-stretch-display: 80%;
+  --im-stretch-heading: 85%;
+  --im-stretch-code: 87.5%;
+  --im-tracking-display: -0.045em;
+  --im-tracking-heading: -0.04em;
+
+  /* Dark (the default) */
+  --im-ground: #0a0d0b;
+  --im-raised-1: #0d110e;
+  --im-raised-2: #0e130f;
+  --im-raised-3: #101611;
+  --im-border: #1f2b22;
+  --im-border-strong: #2a3a2e;
+  --im-text: #d6e2d8;
+  --im-text-2: #b4c4b8;
+  --im-muted: #7f9184;
+  --im-heading: #e9f5eb;
+  --im-accent: #c6ff4d; /* text, links and marks */
+  --im-accent-hover: #e2ff9e;
+  --im-accent-fill: #c6ff4d; /* fills behind dark text */
+  --im-on-accent: #0a0d0b;
+  --im-accent-tint: #1b2611;
+  --im-button: #1a241c;
+  --im-button-border: #2f4033;
+  --im-mark-brace: #c6ff4d;
+  --im-mark-eyes: #d6e2d8;
+  --im-scanline: rgba(198, 255, 77, 0.025);
+  --im-glow: rgba(198, 255, 77, 0.06);
+  --im-shadow: 0 0 0 1px rgba(198, 255, 77, 0.05), 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 120px var(--im-glow);
+
+  /* Terminal windows stay dark in both themes */
+  --im-term-bg: #0e130f;
+  --im-term-bar: #0a0d0b;
+  --im-term-border: #2a3a2e;
+  --im-term-text: #d6e2d8;
+  --im-term-muted: #7f9184;
+  --im-term-output: #e9f5eb;
+  --im-term-accent: #c6ff4d;
+  --im-term-dot: #2f4033;
+  --im-term-error: #ff8f7a;
+
+  /* Roadmap columns */
+  --im-now: #c6ff4d;
+  --im-next: #7fe3c4;
+  --im-later: #b4c4b8;
+}
+
+:root[data-theme="light"] {
+  --im-ground: #f4f7f2;
+  --im-raised-1: #eef2eb;
+  --im-raised-2: #ffffff;
+  --im-raised-3: #e9efe6;
+  --im-border: #d5dfd1;
+  --im-border-strong: #bfcdbb;
+  --im-text: #0a0d0b;
+  --im-text-2: #3d4d41;
+  --im-muted: #56665a;
+  --im-heading: #0a0d0b;
+  --im-accent: #2f7a12;
+  --im-accent-hover: #25600e;
+  --im-accent-fill: #c6ff4d;
+  --im-on-accent: #0a0d0b;
+  --im-accent-tint: #e4f5cf;
+  --im-button: #ffffff;
+  --im-button-border: #bfcdbb;
+  --im-mark-brace: #2f7a12;
+  --im-mark-eyes: #0a0d0b;
+  --im-scanline: rgba(47, 122, 18, 0.035);
+  --im-glow: rgba(47, 122, 18, 0.08);
+  --im-shadow: 0 0 0 1px rgba(47, 122, 18, 0.06), 0 24px 60px rgba(10, 13, 11, 0.18);
+
+  --im-now: #2f7a12;
+  --im-next: #0b6b57;
+  --im-later: #56665a;
+}
+
+/* Starlight: the docs take the same tokens */
+:root {
+  --sl-font: var(--im-font-body);
+  --sl-font-mono: var(--im-font-mono);
+
+  --sl-color-white: var(--im-heading);
+  --sl-color-gray-1: #d6e2d8;
+  --sl-color-gray-2: #b4c4b8;
+  --sl-color-gray-3: #7f9184;
+  --sl-color-gray-4: #4b5c4f;
+  --sl-color-gray-5: #2a3a2e;
+  --sl-color-gray-6: #101611;
+  --sl-color-black: #0a0d0b;
+
+  --sl-color-accent-low: var(--im-accent-tint);
+  --sl-color-accent: #c6ff4d;
+  --sl-color-accent-high: #e2ff9e;
+  --sl-color-text-accent: var(--im-accent);
+  --sl-color-text-invert: var(--im-on-accent);
+  --sl-color-bg-nav: rgba(10, 13, 11, 0.86);
+  --sl-color-bg-sidebar: var(--im-ground);
+  --sl-color-bg-inline-code: var(--im-raised-3);
+  --sl-color-hairline-light: var(--im-border-strong);
+  --sl-color-hairline: var(--im-border);
+  --sl-color-hairline-shade: var(--im-ground);
+}
+
+:root[data-theme="light"] {
+  --sl-color-white: #0a0d0b;
+  --sl-color-gray-1: #18211b;
+  --sl-color-gray-2: #3d4d41;
+  --sl-color-gray-3: #56665a;
+  --sl-color-gray-4: #8a9a8d;
+  --sl-color-gray-5: #d5dfd1;
+  --sl-color-gray-6: #e9efe6;
+  --sl-color-gray-7: #eef2eb;
+  --sl-color-black: #f4f7f2;
+
+  --sl-color-accent-low: var(--im-accent-tint);
+  --sl-color-accent: #2f7a12;
+  --sl-color-accent-high: #25600e;
+  --sl-color-text-accent: var(--im-accent);
+  --sl-color-text-invert: #ffffff;
+  --sl-color-bg-nav: rgba(244, 247, 242, 0.88);
+  --sl-color-bg-sidebar: var(--im-ground);
+  --sl-color-bg-inline-code: var(--im-raised-3);
+  --sl-color-hairline-light: var(--im-border-strong);
+  --sl-color-hairline: var(--im-border);
+  --sl-color-hairline-shade: var(--im-border);
+}

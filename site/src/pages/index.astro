@@ -1,0 +1,161 @@
+---
+import CopyCommand from "../components/CopyCommand.astro"
+import Playground from "../components/Playground.astro"
+import heroConfig from "../examples/imposters.json?raw"
+import s3Stub from "../examples/s3-throttle.json?raw"
+import Site from "../layouts/Site.astro"
+import { highlightJson } from "../lib/highlight"
+import { links, withBase } from "../lib/links"
+
+const steps = [
+  { tag: "01 admin", text: "One server on 2525 creates imposters over REST, or loads them from a JSON file." },
+  { tag: "02 port", text: "Each imposter answers on its own port with an ordered list of stubs." },
+  { tag: "03 match", text: "The first stub whose predicates fit method, path, headers, query and body replies." },
+  { tag: "04 fallback", text: "Otherwise an extension like S3 answers, a proxy forwards, or it is a 404." }
+]
+
+const docs = (path: string) => withBase(`/docs/${path}`)
+
+const features = [
+  { flag: "--hot-reload", href: docs("stubs/#managing-stubs"), text: "Change a stub mid-run; the next request gets the new answer." },
+  { flag: "--predicates", href: docs("stubs/"), text: "equals, contains, startsWith, matches, exists." },
+  { flag: "--templates", href: docs("responses/#templating"), html: "<code>{{request.path}}</code> substitution and <code>${JSONata}</code> expressions." },
+  { flag: "--cycle", href: docs("responses/#several-responses-responsemode"), text: "Several responses per stub: sequential, random or repeat." },
+  { flag: "--proxy", href: docs("proxy/"), text: "Forward to the real service, or record its answers as stubs." },
+  { flag: "--inspect", href: docs("requests-and-stats/"), text: "Request log, error rate and latency percentiles per imposter." },
+  { flag: "--ui", href: docs("web-ui/"), text: "/_ui for every imposter, /_admin inside each one." },
+  { flag: "--test", href: docs("client/"), text: "Typed TypeScript client and withImposter for your test suite." }
+]
+
+const s3Html = highlightJson(s3Stub.trimEnd())
+const configHtml = highlightJson(heroConfig.trimEnd())
+---
+
+<Site
+  title="Imposters: your dependencies, in disguise"
+  description="Mock the HTTP APIs and the S3 your code talks to, from a running server you program over a REST API or a JSON file. A modern successor to Mountebank, built with TypeScript and Effect."
+  current="home"
+>
+  <section class="hero wrap" id="top">
+    <div class="hero-copy">
+      <div class="eyebrow">// service virtualization for HTTP and S3</div>
+      <h1 class="display">
+        your dependencies,<br /><span class="accent">in disguise</span><span class="cursor" aria-hidden="true">_</span>
+      </h1>
+      <p class="lede">
+        Imposters spins up fake HTTP APIs and S3 buckets that your code talks to like the real thing. Script them over a
+        REST API or a JSON file, swap their answers live, and make them fail exactly when your tests need them to.
+      </p>
+      <div class="hero-actions">
+        <CopyCommand command="npx imposters start" />
+        <a href={links.gettingStarted} class="text-link">read the docs →</a>
+      </div>
+    </div>
+
+    <div class="term hero-term">
+      <div class="term-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="term-title">~/my-app</span>
+      </div>
+      <div class="term-body" aria-label="A terminal session starting imposters and calling a mock">
+        <div class="tl"><span class="t-accent">$</span> npx imposters start --config imposters.json</div>
+        <div class="tl tl-2 t-muted">Created HTTP imposter "users-api" on port 3000</div>
+        <div class="tl tl-3 t-muted">Created S3 imposter "assets" on port 7070</div>
+        <div class="tl tl-4 t-muted">
+          Imposters admin server running on http://127.0.0.1:2525 (bound to 127.0.0.1, runtime: node)
+        </div>
+        <div class="tl tl-5 t-muted">Admin UI: http://127.0.0.1:2525/_ui</div>
+        <div class="tl tl-6 t-dim"># in a second terminal</div>
+        <div class="tl tl-7"><span class="t-accent">$</span> curl localhost:3000/users/42</div>
+        <div class="tl tl-8 t-output">{`{"id":"42","name":"Alice"}`}</div>
+      </div>
+      <details class="term-details">
+        <summary><span class="t-accent">$</span> cat imposters.json</summary>
+        <pre class="code"><code set:html={configHtml} /></pre>
+      </details>
+    </div>
+
+    <div class="fineprint">
+      A modern successor to <a href={links.mountebank}>Mountebank</a>, which is no longer maintained · MIT · Node or Bun
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap section">
+      <h2 class="h2">how a request is fooled</h2>
+      <ol class="steps">
+        {
+          steps.map((step) => (
+            <li>
+              <span class="step-tag">{step.tag}</span>
+              <span>{step.text}</span>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section class="wrap section">
+    <h2 class="h2">imposters --help</h2>
+    <dl class="flags">
+      {
+        features.map((f) => (
+          <div class="flag">
+            <dt>
+              <a href={f.href}>
+                <code>{f.flag}</code>
+              </a>
+            </dt>
+            {f.html !== undefined ? <dd set:html={f.html} /> : <dd>{f.text}</dd>}
+          </div>
+        ))
+      }
+    </dl>
+    <div class="fineprint">These read as flags for flavour; they are features, not CLI options.</div>
+  </section>
+
+  <section class="wrap section section--tight" id="playground">
+    <div class="section-head">
+      <div class="eyebrow">// try it: no install, nothing leaves your browser</div>
+      <h2 class="h2">fool a request<span class="cursor" aria-hidden="true">_</span></h2>
+      <p class="section-lede">
+        Edit the stubs, send a request, read the answer. This is the matcher, templating and response cycling from
+        Imposters' own source, bundled into the page. Send <code>POST /charges</code> twice: the second one is declined.
+      </p>
+    </div>
+    <Playground />
+  </section>
+
+  <section class="wrap section s3">
+    <div class="s3-copy">
+      <div class="eyebrow">// "protocol": "S3"</div>
+      <h2 class="display display--md">an S3 bucket<br />that <span class="accent">fails on cue</span></h2>
+      <p class="section-lede">
+        An in-memory S3 for the AWS SDK: buckets, objects, copies, batch deletes and listings, with nothing to install.
+        Stubs go first, so one key can throttle or time out while the rest of the bucket behaves.
+      </p>
+      <a href={links.s3} class="text-link">the S3 emulator →</a>
+    </div>
+    <figure class="term">
+      <figcaption class="term-bar"><span class="term-title">stub · throttle one key</span></figcaption>
+      <pre class="code"><code set:html={s3Html} /></pre>
+    </figure>
+  </section>
+
+  <section class="cta" id="start">
+    <div class="wrap section">
+      <h2 class="display display--lg">put on the mask<span class="cursor" aria-hidden="true">_</span></h2>
+      <div class="hero-actions">
+        <CopyCommand command="npx imposters start" size="lg" />
+        <a href={links.gettingStarted} class="button">get started →</a>
+      </div>
+      <nav class="cta-links" aria-label="More">
+        <a href={links.docs}>./docs</a>
+        <a href={links.roadmap}>./roadmap</a>
+        <a href={links.github}>./github</a>
+        <a href={links.npm}>./npm</a>
+      </nav>
+    </div>
+  </section>
+</Site>

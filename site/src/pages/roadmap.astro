@@ -1,0 +1,74 @@
+---
+// Generated at build time from the repo-root ROADMAP.md (ROADMAP_FILE overrides it, to preview another file)
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
+import Site from "../layouts/Site.astro"
+import { links } from "../lib/links"
+import { parseRoadmap } from "../lib/roadmap"
+
+// The build runs in site/, so the repo root is its parent
+const source = readFileSync(process.env.ROADMAP_FILE ?? resolve(process.cwd(), "..", "ROADMAP.md"), "utf8")
+const roadmap = parseRoadmap(source)
+const editUrl = `${links.github}/blob/master/ROADMAP.md`
+---
+
+<Site
+  title="Roadmap · Imposters"
+  description="What is being built now, what comes next, and what is planned for later in Imposters."
+  current="roadmap"
+>
+  <section class="wrap roadmap-head">
+    <div class="eyebrow">// generated from ROADMAP.md</div>
+    <h1 class="display display--md">roadmap<span class="cursor" aria-hidden="true">_</span></h1>
+    {roadmap.introHtml.trim().length > 0 && <div class="prose section-lede" set:html={roadmap.introHtml} />}
+  </section>
+
+  {
+    roadmap.lanes.length > 0 && (
+      <section class="wrap" aria-label="Now, next and later">
+        <div class="roadmap-columns">
+          {roadmap.lanes.map((lane) => (
+            <section class:list={["roadmap-column", `lane-${lane.key}`]} aria-labelledby={lane.key}>
+              <h2 id={lane.key}>
+                {lane.title.toLowerCase()}
+                <span class="count">
+                  {lane.cards.length} {lane.cards.length === 1 ? "item" : "items"}
+                </span>
+              </h2>
+              {lane.introHtml.trim().length > 0 && <div class="prose" set:html={lane.introHtml} />}
+              <ul class="roadmap-cards">
+                {lane.cards.map((card) => (
+                  <li class="roadmap-card">
+                    {card.title !== undefined && <h3 set:html={card.title} />}
+                    {card.html.length > 0 && <div set:html={card.html} />}
+                    {card.issues.length > 0 && (
+                      <div class="issues">
+                        {card.issues.map((issue) => <a href={issue.href}>{issue.label}</a>)}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  {
+    roadmap.restHtml.trim().length > 0 && (
+      <section class:list={["wrap", { "roadmap-rest": roadmap.lanes.length > 0 }]}>
+        <div class="prose" set:html={roadmap.restHtml} />
+      </section>
+    )
+  }
+
+  <section class="wrap">
+    <p class="fineprint">
+      Suggest something or follow along in <a href={`${links.github}/issues`}>the issues</a> · <a href={editUrl}
+        >ROADMAP.md</a
+      >
+    </p>
+  </section>
+</Site>

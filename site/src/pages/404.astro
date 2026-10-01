@@ -1,0 +1,33 @@
+---
+import Site from "../layouts/Site.astro"
+import { links } from "../lib/links"
+---
+
+<Site title="404 · Imposters" description="This page does not exist." current="404">
+  <section class="wrap not-found">
+    <div class="eyebrow">// HTTP 404</div>
+    <h1 class="display">404 // nothing is impersonating this page<span class="cursor" aria-hidden="true">_</span></h1>
+    <div class="term" style="max-width: 720px; width: 100%">
+      <div class="term-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="term-title">response</span>
+      </div>
+      <div class="term-body">
+        <div class="tl"><span class="t-error">HTTP/1.1 404 Not Found</span></div>
+        <div class="tl t-output" data-not-found-body>{`{"error":"No matching stub found","method":"GET","path":"/"}`}</div>
+      </div>
+    </div>
+    <div class="hero-actions">
+      <a href={links.home} class="button">back home →</a>
+      <a href={links.docs} class="text-link">./docs</a>
+      <a href={links.roadmap} class="text-link">./roadmap</a>
+    </div>
+  </section>
+  <script>
+    // Show the path that was asked for, as an imposter's own 404 would
+    const target = document.querySelector("[data-not-found-body]")
+    if (target) {
+      target.textContent = JSON.stringify({ error: "No matching stub found", method: "GET", path: location.pathname })
+    }
+  </script>
+</Site>

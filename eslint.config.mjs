@@ -57,7 +57,8 @@ const extensionBoundaryConfigs = [
 
 export default [
   {
-    ignores: ["**/dist", "**/build", "**/docs", "**/*.md", ".claude/**"]
+    // site/ is the website, a separate Astro project with its own tooling; .claude/ holds agent worktrees
+    ignores: ["**/dist", "**/build", "**/docs", "**/*.md", ".claude/**", "site/**"]
   },
   ...compat.extends(
     "eslint:recommended",

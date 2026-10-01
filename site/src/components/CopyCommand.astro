@@ -1,0 +1,57 @@
+---
+// A shell command with a copy button that copies it and shows a "copied" state.
+interface Props {
+  command: string
+  size?: "md" | "lg"
+}
+const { command, size = "md" } = Astro.props
+---
+
+<div class:list={["copy-command", `copy-command--${size}`]}>
+  <span class="prompt" aria-hidden="true">$</span>
+  <code>{command}</code>
+  <button type="button" class="copy-button" data-copy={command} aria-label={`Copy command: ${command}`}>
+    <span class="copy-label">copy</span>
+  </button>
+  <span class="sr-only" aria-live="polite" data-copy-status></span>
+</div>
+
+<script>
+  const copyText = async (text: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Clipboard API unavailable (insecure context, old browser): fall back to a selection copy
+      const area = document.createElement("textarea")
+      area.value = text
+      area.setAttribute("readonly", "")
+      area.style.position = "fixed"
+      area.style.opacity = "0"
+      document.body.append(area)
+      area.select()
+      const ok = document.execCommand("copy")
+      area.remove()
+      return ok
+    }
+  }
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>(".copy-button")) {
+    let timer: number | undefined
+    button.addEventListener("click", async () => {
+      const text = button.dataset.copy ?? ""
+      const ok = await copyText(text)
+      const label = button.querySelector(".copy-label")
+      const status = button.parentElement?.querySelector("[data-copy-status]")
+      if (label) label.textContent = ok ? "copied" : "failed"
+      if (status) status.textContent = ok ? "Copied to clipboard" : "Copy failed"
+      button.classList.toggle("is-copied", ok)
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        if (label) label.textContent = "copy"
+        if (status) status.textContent = ""
+        button.classList.remove("is-copied")
+      }, 1800)
+    })
+  }
+</script>
