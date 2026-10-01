@@ -267,7 +267,7 @@ kbd {
 
 .section-lede code,
 .flag dd code {
-  font-size: 0.82em;
+  font-size: 0.88em;
   color: var(--im-text);
 }
 
@@ -896,6 +896,19 @@ pre.code {
   color: var(--im-text-2);
 }
 
+/* Martian Mono runs wide and tall: scale inline code down to sit with the body text */
+.roadmap-card :not(pre) > code,
+.roadmap-column .prose :not(pre) > code {
+  font-size: 0.88em;
+  font-stretch: var(--im-stretch-code);
+  line-height: 1;
+  vertical-align: baseline;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--im-raised-3);
+  color: var(--im-text);
+}
+
 .roadmap-card .issues {
   display: flex;
   flex-wrap: wrap;
@@ -946,7 +959,7 @@ pre.code {
 }
 
 .prose code {
-  font-size: 0.85em;
+  font-size: 0.88em;
   padding: 0.1em 0.35em;
   border-radius: 4px;
   background: var(--im-raised-3);
