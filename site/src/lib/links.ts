@@ -15,5 +15,5 @@ export const links = {
   roadmap: withBase("/roadmap/"),
   github: "https://github.com/eliraz-refael/imposters",
   npm: "https://www.npmjs.com/package/imposters",
-  mountebank: "http://www.mbtest.org/"
+  mountebank: "https://github.com/mountebank-testing/mountebank"
 } as const

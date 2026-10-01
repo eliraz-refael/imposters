@@ -13,7 +13,7 @@ What is already shipped is in the [README](README.md). Maintenance work and inte
 ## Next
 
 - **OpenAPI import**: generate an imposter and its stubs from an OpenAPI 3.x spec ([#29](https://github.com/eliraz-refael/imposters/issues/29))
-- **Mountebank adapter**: accept Mountebank imposter JSON, a direct migration path off a tool that is no longer maintained ([#30](https://github.com/eliraz-refael/imposters/issues/30))
+- **Mountebank adapter**: accept Mountebank imposter JSON, a direct migration path for Mountebank users ([#30](https://github.com/eliraz-refael/imposters/issues/30))
 - **Record and replay**: binary stub bodies, then export recorded proxy traffic as a config file and re-import it ([#31](https://github.com/eliraz-refael/imposters/issues/31))
 - **S3 completeness**: list pagination and `delimiter`, bucket settings that read back, `aws-chunked` uploads, and keys with `.` or `..` segments ([#32](https://github.com/eliraz-refael/imposters/issues/32))
 
