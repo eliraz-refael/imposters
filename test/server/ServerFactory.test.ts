@@ -2,7 +2,13 @@ import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { ServerInstance } from "imposters/server/ServerFactory"
-import { BunServerFactoryLive, makeNodeServerFactory, ServerFactory } from "imposters/server/ServerFactory"
+import {
+  BunServerFactoryLive,
+  DEFAULT_HOST,
+  makeNodeServerFactory,
+  resolveHost,
+  ServerFactory
+} from "imposters/server/ServerFactory"
 import { httpGet, lanAddress, occupyPort, probeConnect, reachability } from "imposters/test/helpers/net"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
 import { afterAll, beforeAll, describe, expect } from "vitest"
@@ -152,6 +158,22 @@ describe("NodeServerFactory - bind address", () => {
       yield* loopback.stop(true)
       yield* wildcard.stop(true)
     }))
+})
+
+describe("resolveHost", () => {
+  it("prefers the flag, then the environment, then the loopback default", () => {
+    expect(resolveHost("0.0.0.0", "10.0.0.1")).toBe("0.0.0.0")
+    expect(resolveHost(undefined, "10.0.0.1")).toBe("10.0.0.1")
+    expect(resolveHost(undefined, undefined)).toBe(DEFAULT_HOST)
+  })
+
+  // listen(port, "") binds every interface, which would reopen the unauthenticated admin API
+  it("skips a blank flag or environment value instead of binding every interface", () => {
+    expect(resolveHost(undefined, "")).toBe(DEFAULT_HOST)
+    expect(resolveHost("  ", "  ")).toBe(DEFAULT_HOST)
+    expect(resolveHost("", "10.0.0.1")).toBe("10.0.0.1")
+    expect(resolveHost(" 0.0.0.0 ", undefined)).toBe("0.0.0.0")
+  })
 })
 
 describe("BunServerFactoryLive", () => {

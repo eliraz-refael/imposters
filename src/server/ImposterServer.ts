@@ -89,7 +89,16 @@ export const ImposterServerLive = Layer.effect(
         const runPromise = Effect.runPromiseWith(services)
 
         // UI router for /_admin pages
-        const uiRouter = makeUiRouter({ id, config, stubsRef, repo, requestLogger, runPromise })
+        const uiRouter = makeUiRouter({
+          id,
+          config,
+          stubsRef,
+          repo,
+          requestLogger,
+          runPromise,
+          // handler is declared below; it is only called once a request arrives
+          fetchSelf: (request) => handler(request)
+        })
 
         const fromStub = (stub: Stub, ctx: RequestContext): Effect.Effect<Outcome> =>
           Effect.gen(function*() {

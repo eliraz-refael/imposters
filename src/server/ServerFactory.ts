@@ -10,6 +10,14 @@ export class ServerBindError extends Data.TaggedError("ServerBindError")<{
 // from the network takes an explicit --host
 export const DEFAULT_HOST = "127.0.0.1"
 
+/**
+ * The address to bind: the --host flag, else IMPOSTERS_HOST, else the default. A blank one is
+ * skipped, because listen() given an empty address takes every interface.
+ */
+export const resolveHost = (flag: string | undefined, env: string | undefined): string =>
+  [flag, env].map((candidate) => candidate?.trim()).find((candidate) => candidate !== undefined && candidate !== "") ??
+    DEFAULT_HOST
+
 export interface ServerInstance {
   readonly port: number
   // The address the listener is bound to, as the operating system reports it

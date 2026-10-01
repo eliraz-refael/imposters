@@ -6,7 +6,13 @@ import { ImpostersClientLive } from "../client/ImpostersClient"
 import { Extensions, type ImposterExtension } from "../extensions/Extension"
 import { S3Extension } from "../extensions/s3/S3Extension"
 import { makeCompositeHandler } from "../server/AdminServer"
-import { DEFAULT_HOST, makeBunServerFactory, makeNodeServerFactory, ServerFactory } from "../server/ServerFactory"
+import {
+  DEFAULT_HOST,
+  makeBunServerFactory,
+  makeNodeServerFactory,
+  resolveHost,
+  ServerFactory
+} from "../server/ServerFactory"
 import { createConfiguredImposters, loadConfigFile } from "./ConfigLoader"
 import { version } from "./version"
 
@@ -46,7 +52,7 @@ const startCommand = Command.make(
   "start",
   { config: configOption, port: portOption, host: hostOption, runtime: runtimeOption },
   ({ config, host: hostFlag, port, runtime }) => {
-    const host = Option.getOrElse(hostFlag, () => process.env.IMPOSTERS_HOST ?? DEFAULT_HOST)
+    const host = resolveHost(Option.getOrUndefined(hostFlag), process.env.IMPOSTERS_HOST)
     return Effect.gen(function*() {
       const adminPort = Option.isSome(port) ? port.value : Number(process.env.ADMIN_PORT ?? 2525)
 
