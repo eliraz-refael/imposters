@@ -1,0 +1,25 @@
+{
+  "imposters": [
+    {
+      "name": "users-api",
+      "port": 3000,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "matches", "value": "^/users/\\d+$" }
+          ],
+          "responses": [
+            {
+              "body": {
+                "id": "${$substringAfter(request.path, '/users/')}",
+                "name": "Alice"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    { "name": "assets", "port": 7070, "protocol": "S3" }
+  ]
+}

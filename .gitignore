@@ -15,3 +15,10 @@ scratchpad/*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Website (site/): its build output, and the docs content that `docs/` above would hide
+site/node_modules/
+site/dist/
+site/.astro/
+!site/src/content/docs/
+!site/src/content/docs/**

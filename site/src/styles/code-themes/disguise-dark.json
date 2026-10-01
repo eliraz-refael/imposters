@@ -1,0 +1,36 @@
+{
+  "name": "disguise-dark",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#0e130f",
+    "editor.foreground": "#d6e2d8",
+    "editor.selectionBackground": "#2a3a2e",
+    "editorLineNumber.foreground": "#4b5c4f",
+    "titleBar.activeBackground": "#0a0d0b",
+    "titleBar.activeForeground": "#7f9184",
+    "titleBar.border": "#2a3a2e",
+    "tab.activeBackground": "#0e130f",
+    "tab.activeForeground": "#d6e2d8",
+    "tab.activeBorderTop": "#c6ff4d",
+    "tab.inactiveBackground": "#0a0d0b",
+    "editorGroupHeader.tabsBackground": "#0a0d0b",
+    "editorGroupHeader.tabsBorder": "#2a3a2e",
+    "terminal.background": "#0e130f",
+    "terminal.foreground": "#d6e2d8"
+  },
+  "tokenColors": [
+    { "scope": ["comment", "punctuation.definition.comment"], "settings": { "foreground": "#7f9184", "fontStyle": "italic" } },
+    { "scope": ["punctuation", "meta.brace", "punctuation.separator", "punctuation.definition"], "settings": { "foreground": "#8fa394" } },
+    { "scope": ["string", "string.quoted"], "settings": { "foreground": "#e9f5eb" } },
+    { "scope": ["support.type.property-name", "meta.object-literal.key", "entity.name.tag", "meta.structure.dictionary.key.json string"], "settings": { "foreground": "#b4c4b8" } },
+    { "scope": ["constant.numeric", "constant.language", "constant.character", "support.constant"], "settings": { "foreground": "#c6ff4d" } },
+    { "scope": ["keyword", "storage", "storage.type", "keyword.operator", "keyword.control"], "settings": { "foreground": "#7fe3c4" } },
+    { "scope": ["entity.name.function", "support.function", "meta.function-call"], "settings": { "foreground": "#c6ff4d" } },
+    { "scope": ["entity.name.type", "entity.name.class", "support.class", "support.type"], "settings": { "foreground": "#e2ff9e" } },
+    { "scope": ["variable", "variable.other", "meta.definition.variable"], "settings": { "foreground": "#d6e2d8" } },
+    { "scope": ["variable.parameter", "variable.other.constant"], "settings": { "foreground": "#e9f5eb" } },
+    { "scope": ["entity.other.attribute-name"], "settings": { "foreground": "#7fe3c4" } },
+    { "scope": ["markup.heading"], "settings": { "foreground": "#c6ff4d", "fontStyle": "bold" } },
+    { "scope": ["string.unquoted.argument.shell", "constant.other.option"], "settings": { "foreground": "#b4c4b8" } }
+  ]
+}

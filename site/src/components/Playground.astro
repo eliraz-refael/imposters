@@ -1,0 +1,177 @@
+---
+// The in-browser playground: edit stubs, send a request, see the answer. The engine is the
+// product's own matcher and templating (src/playground/engine.ts), loaded on first use.
+import defaultStubs from "../examples/playground-stubs.json?raw"
+---
+
+<div class="term playground" data-playground>
+  <div class="term-bar">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span class="term-title">playground · runs the real matcher in your browser</span>
+  </div>
+  <div class="pg-grid">
+    <div class="pg-pane pg-stubs">
+      <label class="pg-label" for="pg-stubs">stubs.json <span class="pg-hint">· edit me</span></label>
+      <textarea id="pg-stubs" class="pg-editor" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off"
+        >{defaultStubs.trimEnd()}</textarea
+      >
+      <p class="pg-status" data-stub-status aria-live="polite">loading the matcher…</p>
+    </div>
+
+    <div class="pg-pane pg-io">
+      <form class="pg-request" data-request>
+        <div class="pg-label">request</div>
+        <div class="pg-presets" role="group" aria-label="Example requests">
+          <button type="button" data-preset="user">GET /users/42</button>
+          <button type="button" data-preset="charge">POST /charges</button>
+          <button type="button" data-preset="miss">GET /refunds</button>
+        </div>
+        <div class="pg-line">
+          <label class="sr-only" for="pg-method">Method</label>
+          <select id="pg-method" name="method">
+            <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option
+              >DELETE</option
+            >
+          </select>
+          <label class="sr-only" for="pg-path">Path and query</label>
+          <input id="pg-path" name="path" value="/users/42?plan=pro" spellcheck="false" autocomplete="off" />
+          <button type="submit" class="pg-send">send</button>
+        </div>
+        <label class="pg-sublabel" for="pg-headers">headers <span class="pg-hint">· one per line</span></label>
+        <textarea id="pg-headers" name="headers" rows="2" spellcheck="false">accept: application/json</textarea>
+        <label class="pg-sublabel" for="pg-body">body</label>
+        <textarea id="pg-body" name="body" rows="3" spellcheck="false"></textarea>
+      </form>
+
+      <div class="pg-response" aria-live="polite">
+        <div class="pg-label">response</div>
+        <pre class="pg-output" data-output><span class="t-muted">press send</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import type { PlaygroundResponse } from "../playground/engine"
+
+  type Engine = Awaited<ReturnType<typeof loadEngine>>
+
+  const loadEngine = async () => {
+    const { makePlayground } = await import("../playground/engine")
+    return makePlayground()
+  }
+
+  const presets: Record<string, { method: string; path: string; headers: string; body: string }> = {
+    user: { method: "GET", path: "/users/42?plan=pro", headers: "accept: application/json", body: "" },
+    charge: {
+      method: "POST",
+      path: "/charges",
+      headers: "content-type: application/json",
+      body: "{\"amount\": 4200, \"currency\": \"eur\"}"
+    },
+    miss: { method: "GET", path: "/refunds", headers: "", body: "" }
+  }
+
+  const root = document.querySelector<HTMLElement>("[data-playground]")
+  if (root) {
+    const stubsInput = root.querySelector<HTMLTextAreaElement>("#pg-stubs")!
+    const status = root.querySelector<HTMLElement>("[data-stub-status]")!
+    const form = root.querySelector<HTMLFormElement>("[data-request]")!
+    const output = root.querySelector<HTMLElement>("[data-output]")!
+    const method = root.querySelector<HTMLSelectElement>("#pg-method")!
+    const path = root.querySelector<HTMLInputElement>("#pg-path")!
+    const headers = root.querySelector<HTMLTextAreaElement>("#pg-headers")!
+    const body = root.querySelector<HTMLTextAreaElement>("#pg-body")!
+
+    let engine: Engine | undefined
+    let stubsOk = false
+
+    const escape = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+
+    // Loading resets response cycling, as restarting an imposter does, so only reload on an edit
+    let loadedSource: string | undefined
+    const reload = () => {
+      if (!engine || stubsInput.value === loadedSource) return
+      loadedSource = stubsInput.value
+      const loaded = engine.load(stubsInput.value)
+      stubsOk = loaded.ok
+      status.classList.toggle("is-error", !loaded.ok)
+      status.textContent = loaded.ok
+        ? `${loaded.count} stub${loaded.count === 1 ? "" : "s"} loaded · edits apply to the next request`
+        : loaded.error
+    }
+
+    const render = (res: PlaygroundResponse) => {
+      let text = res.body
+      try {
+        text = JSON.stringify(JSON.parse(res.body), null, 2)
+      } catch {
+        // not JSON: show as sent
+      }
+      const tone = res.status >= 400 ? "t-error" : "t-accent"
+      const matched = res.matchedStub === undefined ? "no stub matched" : `stub ${res.matchedStub} matched`
+      output.innerHTML = [
+        `<span class="${tone}">HTTP ${res.status}</span> <span class="t-muted">· ${matched} · ${res.elapsedMs} ms</span>`,
+        ...res.headers.map(([n, v]) => `<span class="t-muted">${escape(n)}:</span> ${escape(v)}`),
+        "",
+        `<span class="t-output">${escape(text)}</span>`
+      ].join("\n")
+    }
+
+    const send = async () => {
+      engine ??= await loadEngine()
+      reload()
+      if (!stubsOk) {
+        output.innerHTML = `<span class="t-error">fix the stubs first</span>`
+        return
+      }
+      const headerPairs = headers.value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.includes(":"))
+        .map((line) => {
+          const i = line.indexOf(":")
+          return [line.slice(0, i).trim(), line.slice(i + 1).trim()] as const
+        })
+      output.innerHTML = `<span class="t-muted">…</span>`
+      try {
+        render(await engine.send({ method: method.value, path: path.value, headers: headerPairs, body: body.value }))
+      } catch (error) {
+        output.innerHTML = `<span class="t-error">${escape(error instanceof Error ? error.message : String(error))}</span>`
+      }
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault()
+      void send()
+    })
+
+    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-preset]")) {
+      button.addEventListener("click", () => {
+        const preset = presets[button.dataset.preset ?? ""]
+        if (!preset) return
+        method.value = preset.method
+        path.value = preset.path
+        headers.value = preset.headers
+        body.value = preset.body
+        void send()
+      })
+    }
+
+    let debounce: number | undefined
+    stubsInput.addEventListener("input", () => {
+      window.clearTimeout(debounce)
+      debounce = window.setTimeout(reload, 250)
+    })
+
+    // Load the engine when the playground scrolls into view, then answer the first request
+    const observer = new IntersectionObserver(async (entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      observer.disconnect()
+      engine ??= await loadEngine()
+      reload()
+      void send()
+    }, { rootMargin: "200px" })
+    observer.observe(root)
+  }
+</script>

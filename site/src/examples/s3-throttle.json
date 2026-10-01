@@ -1,0 +1,10 @@
+{
+  "predicates": [
+    { "field": "path", "operator": "equals", "value": "/photos/hero.jpg" }
+  ],
+  "responses": [{
+    "status": 503,
+    "headers": { "content-type": "application/xml" },
+    "body": "<Error><Code>SlowDown</Code></Error>"
+  }]
+}

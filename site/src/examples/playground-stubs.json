@@ -1,0 +1,34 @@
+[
+  {
+    "predicates": [
+      { "field": "method", "operator": "equals", "value": "GET" },
+      { "field": "path", "operator": "matches", "value": "^/users/\\d+$" }
+    ],
+    "responses": [
+      {
+        "body": {
+          "id": "${$substringAfter(request.path, '/users/')}",
+          "name": "Alice",
+          "plan": "{{request.query.plan}}"
+        }
+      }
+    ]
+  },
+  {
+    "predicates": [
+      { "field": "method", "operator": "equals", "value": "POST" },
+      { "field": "path", "operator": "equals", "value": "/charges" }
+    ],
+    "responses": [
+      {
+        "status": 201,
+        "body": {
+          "amount": "${request.body.amount}",
+          "currency": "${$uppercase(request.body.currency)}",
+          "status": "succeeded"
+        }
+      },
+      { "status": 402, "body": { "error": "card_declined" } }
+    ]
+  }
+]

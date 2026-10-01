@@ -1,0 +1,67 @@
+name: Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "site/**"
+      - "ROADMAP.md"
+      - "README.md"
+      # The playground bundles the matcher and templating from src/
+      - "src/matching/**"
+      - "src/schemas/**"
+      - "src/domain/route.ts"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v7
+      # Astro needs Node ^22.12, as vitest does in .github/actions/setup
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Check internal links
+        run: bun run check-links
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
