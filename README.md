@@ -81,6 +81,9 @@ imposters start [options]
 |---|---|---|
 | `--port <number>` | `-p` | Admin server port (default: `2525`, or `ADMIN_PORT` env var) |
 | `--config <path>` | `-c` | Path to a JSON config file |
+| `--host <address>` | | Address the admin server and every imposter bind to (default: `127.0.0.1`, or `IMPOSTERS_HOST` env var) |
+
+Every server binds the loopback address by default, so nothing off the machine can reach it. The admin API has no authentication and can create proxies, so pass `--host 0.0.0.0` only where the network is trusted, such as inside a container.
 
 ## Config File
 

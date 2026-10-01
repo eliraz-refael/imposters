@@ -2,8 +2,8 @@ import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { ServerInstance } from "imposters/server/ServerFactory"
-import { BunServerFactoryLive, ServerFactory } from "imposters/server/ServerFactory"
-import { httpGet, occupyPort, probeConnect } from "imposters/test/helpers/net"
+import { BunServerFactoryLive, makeNodeServerFactory, ServerFactory } from "imposters/server/ServerFactory"
+import { httpGet, lanAddress, occupyPort, probeConnect, reachability } from "imposters/test/helpers/net"
 import { NodeServerFactoryLive } from "imposters/test/helpers/NodeServerFactory"
 import { afterAll, beforeAll, describe, expect } from "vitest"
 
@@ -116,6 +116,41 @@ describe("NodeServerFactoryLive - lifecycle", () => {
       yield* instance.stop(true)
       yield* instance.stop(true)
       expect(yield* Effect.promise(() => probeConnect(9707))).toBe("refused")
+    }))
+})
+
+const createOn = (host: string, port: number) =>
+  Effect.gen(function*() {
+    const factory = yield* ServerFactory
+    return yield* factory.create({ port, fetch: okHandler })
+  }).pipe(Effect.provide(makeNodeServerFactory(host)))
+
+describe("NodeServerFactory - bind address", () => {
+  it.live("binds the loopback address by default", () =>
+    Effect.gen(function*() {
+      const instance = yield* create(9709)
+      expect(instance.host).toBe("127.0.0.1")
+      yield* instance.stop(true)
+    }))
+
+  it.live("binds the address it is given", () =>
+    Effect.gen(function*() {
+      const instance = yield* createOn("0.0.0.0", 9710)
+      expect(instance.host).toBe("0.0.0.0")
+      expect(yield* Effect.promise(() => probeConnect(9710))).toBe("connected")
+      yield* instance.stop(true)
+    }))
+
+  it.live("cannot be reached from the network by default, and can on 0.0.0.0", () =>
+    Effect.gen(function*() {
+      const lan = lanAddress
+      if (lan === undefined) return
+      const loopback = yield* create(9711)
+      const wildcard = yield* createOn("0.0.0.0", 9712)
+      expect(yield* Effect.promise(() => reachability(9711, lan))).toBe("unreachable")
+      expect(yield* Effect.promise(() => reachability(9712, lan))).toBe("reachable")
+      yield* loopback.stop(true)
+      yield* wildcard.stop(true)
     }))
 })
 
