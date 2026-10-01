@@ -1,10 +1,10 @@
 import * as Layer from "effect/Layer"
 import { HttpRouter } from "effect/unstable/http"
-import type { ImposterExtension } from "../extensions/Extension"
-import { ApiLayer } from "../layers/ApiLayer"
-import { makeMainLayer } from "../layers/MainLayer"
-import { makeAdminUiRouter } from "../ui/admin/AdminUiRouter"
-import { DEFAULT_HOST } from "./ServerFactory"
+import type { ImposterExtension } from "../extensions/Extension.js"
+import { ApiLayer } from "../layers/ApiLayer.js"
+import { makeMainLayer } from "../layers/MainLayer.js"
+import { makeAdminUiRouter } from "../ui/admin/AdminUiRouter.js"
+import { DEFAULT_HOST } from "./ServerFactory.js"
 
 // Extensions default to none, so existing callers keep a plain-HTTP server
 export const makeFullLayer = (extensions: ReadonlyArray<ImposterExtension> = [], host: string = DEFAULT_HOST) =>

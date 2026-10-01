@@ -1,5 +1,5 @@
 import jsonata from "jsonata"
-import type { RequestContext } from "./RequestMatcher"
+import type { RequestContext } from "./RequestMatcher.js"
 
 const MAX_OUTPUT_SIZE = 1_048_576 // 1MB
 

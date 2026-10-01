@@ -11,8 +11,8 @@ import {
   Protocol,
   ProtocolFilter,
   StatusFilter
-} from "./common"
-import { ProxyConfig } from "./StubSchema"
+} from "./common.js"
+import { ProxyConfig } from "./StubSchema.js"
 
 const AdminPath = Schema.String.check(Schema.isStartsWith("/"))
 const HttpMethod = Schema.Literals(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])

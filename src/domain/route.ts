@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect"
 import { pipe } from "effect/Function"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { Uuid } from "../services/Uuid"
+import { Uuid } from "../services/Uuid.js"
 
 const HttpMethodSchema = Schema.Literals(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 

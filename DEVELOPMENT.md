@@ -166,7 +166,7 @@ Work that is currently outstanding and not on the public roadmap, or the impleme
 
 - **Persistence.** Imposters are in-memory only and do not survive a restart. Save and restore configs to disk (Effect's `FileSystem`). This is the biggest functional gap.
 - **Official Docker image.** Practical now that `--host 0.0.0.0` exists: the admin port and the imposter port range exposed from one container.
-- **The ESM library build does not load in plain Node.** `dist/dist/esm` keeps extensionless relative imports (`from "../api/AdminApi"`), so `import "imposters/client/testing"` under Node ESM fails with `ERR_MODULE_NOT_FOUND`. `require` (the CJS build) and tsx load it, and bundlers that resolve extensionless imports should too. Needs `.js` extensions in the emitted imports (or `rewriteRelativeImportExtensions`). There is also no `./client` subpath export, although `src/client/index.ts` exists.
+- **No `./client` subpath export,** although `src/client/index.ts` exists: build-utils `pack-v2` always skips `**/index.ts` when it generates `exports`. Consumers import `imposters/client/ImpostersClient` and `imposters/client/testing`. Adding it means patching `exports`, `typesVersions` and a `dist/client/package.json` proxy in `scripts/postbuild.ts`.
 - **Repay the non-null-assertion and cast debt** listed under [Code Standards](#outstanding-violations).
 - **Proxy `record` mode corrupts binary responses.** `recordAsStub` reads the upstream response as text, and stub bodies can only hold JSON or text, so a recorded image replays corrupted. Passthrough is byte-exact since #20. Needs binary stub bodies (e.g. base64 plus a flag) in the stub schema. Public: [#31](https://github.com/eliraz-refael/imposters/issues/31).
 - **S3: three bucket-configuration PUTs answer 501.** `?publicAccessBlock`, `?encryption` and `?lifecycle` (a consumer's provisioning suite reports them as unsupported locally), plus `?cors`, versioning `PUT` and the rest. Accepting and echoing them (GET after PUT) would let provisioning apply every setting locally. Public: [#32](https://github.com/eliraz-refael/imposters/issues/32).
@@ -184,6 +184,7 @@ Work that is currently outstanding and not on the public roadmap, or the impleme
 
 ### Recently completed
 
+- The ESM build loads in plain Node: every relative import in `src/` carries its `.js` extension, `src` compiles under `NodeNext` so a missing one fails `bun check`, and `bun run verify-dist` (CI and publish) loads every export through `import()` and `require()`. The root barrel no longer re-exports `Program` / `cli/Commands`, which ran the CLI on import.
 - Every server binds `127.0.0.1` unless `--host` / `IMPOSTERS_HOST` says otherwise (#25).
 - Each GitHub release carries the npm tarball, checked against npm's integrity hash (#24).
 - In-memory S3 emulator shipped as the first imposter extension, verified against `@aws-sdk/client-s3` 3.1131.0 (#23).

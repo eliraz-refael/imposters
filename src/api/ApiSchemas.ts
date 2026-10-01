@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { ImposterStatus, NonNegativeInt, Protocol } from "../schemas/common"
+import { ImposterStatus, NonNegativeInt, Protocol } from "../schemas/common.js"
 
 // Query params are decoded through HttpApi's string-tree codec, which parses
 // plain Number / Boolean schemas from their string form. No *FromString needed.

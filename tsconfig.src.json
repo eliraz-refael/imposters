@@ -3,6 +3,8 @@
   "include": ["src"],
   "compilerOptions": {
     "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "outDir": "build/src",
     "tsBuildInfoFile": ".tsbuildinfo/src.tsbuildinfo",
     "rootDir": "src",

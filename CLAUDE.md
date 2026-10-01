@@ -177,6 +177,7 @@ bun lint-fix
 bun run test       # vitest --run (single run, NOT watch; ~3s — files run in parallel)
 bun coverage
 bun run build      # codegen + esm + cjs + esbuild CLI bundle + postbuild
+bun run verify-dist  # after a build: import()/require() every dist export in plain Node, run the bin
 ```
 
 Note: `bun test` (Bun's native runner) is **not** the same as `bun run test` (vitest). Always use the latter.
@@ -249,7 +250,8 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 
 ## Build & Release
 
-- `src/Program.ts` is a one-liner; the real entry point is `src/cli/Commands.ts`, which calls `Command.run` + `NodeRuntime.runMain` at module scope.
+- `src/Program.ts` is a one-liner; the real entry point is `src/cli/Commands.ts`, which calls `Command.run` + `NodeRuntime.runMain` at module scope. That is why `generateIndex` excludes both: a root `import "imposters"` would otherwise parse the consumer's `process.argv` and `process.exit(1)` on an unknown flag. They stay subpath exports.
+- **Imports need `.js` extensions (NodeNext).** `tsc` emits specifiers as written and Node's ESM loader wants the file, so every relative import in `src/` ends in `.js` (`./dir/index.js` for a directory). `tsconfig.src.json` (and so `tsconfig.build.json`) uses `module`/`moduleResolution: NodeNext`, so a missing extension is a `bun check` error (TS2835). `test/` stays on `Bundler` from the base config, since it imports through the `imposters/*` aliases. `bun run verify-dist` loads every `exports` entry from a temp consumer in plain Node; it runs in the Check workflow's Build job and in publish's "Verify dist". After `rm -rf build`, also delete `.tsbuildinfo/`, or `bun check` trusts stale build info and reports TS6305.
 - The CLI ships as an **esbuild CJS bundle** (`dist/bin/cli.cjs`, target node18) because the ESM library build was not usable as a Node `bin`. `bin/imposters` is a three-line shim that `require`s it.
 - `scripts/postbuild.ts` copies the shim into `dist/bin/`, chmods it 755, injects the `bin` field into `dist/package.json`, and copies `.npmrc`.
 - **`src/cli/version.ts` is intentionally `"0.0.0"`.** CI `sed`s the real version into the bundle and both `dist/dist/{cjs,esm}/cli/version.js` at publish time. Do not "fix" it.

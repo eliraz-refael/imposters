@@ -4,8 +4,8 @@ import * as DateTime from "effect/DateTime"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { HttpProtocol, Protocol } from "../schemas/common"
-import { Uuid } from "../services/Uuid"
+import { HttpProtocol, Protocol } from "../schemas/common.js"
+import { Uuid } from "../services/Uuid.js"
 
 // Schemas for validation
 const ImposterNameSchema = Schema.String.check(

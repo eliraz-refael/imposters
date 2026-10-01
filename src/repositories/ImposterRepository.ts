@@ -1,7 +1,7 @@
 import { Context, Data, Effect, HashMap, Layer, Ref } from "effect"
-import type { ImposterConfig } from "../domain/imposter"
-import { ImposterNotFoundError } from "../domain/imposter"
-import type { Stub } from "../schemas/StubSchema"
+import type { ImposterConfig } from "../domain/imposter.js"
+import { ImposterNotFoundError } from "../domain/imposter.js"
+import type { Stub } from "../schemas/StubSchema.js"
 
 export class StubNotFoundError extends Data.TaggedError("StubNotFoundError")<{
   readonly imposterId: string

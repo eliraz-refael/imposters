@@ -9,9 +9,9 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import type { ImposterConfig } from "../domain/imposter"
-import type { RequestContext } from "../matching/RequestMatcher"
-import { HttpProtocol, Protocol } from "../schemas/common"
+import type { ImposterConfig } from "../domain/imposter.js"
+import type { RequestContext } from "../matching/RequestMatcher.js"
+import { HttpProtocol, Protocol } from "../schemas/common.js"
 
 /** One running imposter's handler. Built by `make` on every start, so its state lives until the next stop. */
 export interface ExtensionInstance {

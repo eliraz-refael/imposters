@@ -99,6 +99,8 @@ jobs:
         run: |
           test -f dist/package.json
           test -f dist/bin/imposters
+          # Every export loads in plain Node: ESM import(), CJS require(), and the bin
+          bun run verify-dist
 
       - name: Patch dist version
         run: |
