@@ -51,13 +51,16 @@ Non-HTTP protocols, such as the S3 emulator, are extensions in `src/extensions/<
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`. Pull requests are usually squash-merged, so the PR title becomes the commit message on `master`: give it the same format.
 
-Every merge to `master` publishes a release to npm, and the commit type sets the version bump:
+A merge to `master` publishes a release to npm when the commits since the last release include a code change. The commit types set whether it releases and the version bump:
 
 | Commit | Release |
 |---|---|
+| `feat!:`, or any type with `!` before the colon | major |
 | `feat:` | minor |
-| `feat!:` (any type with `!`), or `BREAKING CHANGE` in the body | major |
-| anything else (`fix:`, `docs:`, ...) | patch |
+| `fix:`, `perf:`, `refactor:`, `revert:` | patch |
+| `docs:`, `test:`, `chore:`, `ci:`, `style:`, `build:` | none |
+
+Only the commit title counts: a `BREAKING CHANGE` footer in the body is not read, so mark a breaking change with `!` in the PR title. When several commits are waiting, the largest bump wins. A docs-only merge publishes nothing on its own, but it does release any code change still waiting from an earlier merge.
 
 ## License
 
