@@ -4,6 +4,10 @@ export * as ApiErrors from "./api/ApiErrors.js"
 
 export * as ApiSchemas from "./api/ApiSchemas.js"
 
+/**
+ * The API's statistics: the metrics snapshot, with a row for every current stub (in matching
+ * order, zeros if it has not been hit) carrying the response it gives next.
+ */
 export * as Conversions from "./api/Conversions.js"
 
 export * as ImpostersGroup from "./api/ImpostersGroup.js"
@@ -78,6 +82,11 @@ export * as AdminServer from "./server/AdminServer.js"
 
 export * as FiberManager from "./server/FiberManager.js"
 
+/**
+ * Adds, edits or removes a stub: writes the repository, hot-reloads a running imposter, and
+ * resets what the change invalidates. Removing a stub, or an edit that changes its responses or
+ * responseMode, resets that stub's hit counters and response cycle; a predicate-only edit keeps both.
+ */
 export * as ImposterServer from "./server/ImposterServer.js"
 
 /**
@@ -92,7 +101,19 @@ export * as ResponseCapture from "./server/ResponseCapture.js"
  */
 export * as ServerFactory from "./server/ServerFactory.js"
 
+/**
+ * Whether an edit changed what the stub answers (its responses or how it cycles them). Such an
+ * edit restarts the stub's hit counters and response cycle; a predicate-only edit keeps both.
+ */
+export * as StubChange from "./server/StubChange.js"
+
 export * as AppConfig from "./services/AppConfig.js"
+
+/**
+ * Adds `delta` to the bucket holding `atMs`. A stale slot is recycled; a record older than
+ * what its slot now holds (it fell out of the window while in flight) is dropped.
+ */
+export * as MetricsAggregates from "./services/MetricsAggregates.js"
 
 export * as MetricsService from "./services/MetricsService.js"
 

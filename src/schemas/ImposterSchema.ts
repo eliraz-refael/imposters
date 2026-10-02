@@ -97,17 +97,67 @@ export const EndpointSummary = Schema.Struct({
 export type EndpointSummary = Schema.Schema.Type<typeof EndpointSummary>
 
 // Statistics Schema
+const Rate = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
+
+// Requests, 5xx answers and unmatched requests over a span of time
+export const TrafficCounts = Schema.Struct({
+  requests: NonNegativeInt,
+  serverErrors: NonNegativeInt,
+  unmatched: NonNegativeInt
+})
+export type TrafficCounts = Schema.Schema.Type<typeof TrafficCounts>
+
+// One 30-second bucket of the timeline, starting at `start`
+export const TimelinePoint = Schema.Struct({
+  start: Schema.DateTimeUtc,
+  ...TrafficCounts.fields
+})
+export type TimelinePoint = Schema.Schema.Type<typeof TimelinePoint>
+
+// How often a stub answered, and which of its responses it gives next
+export const StubStatistics = Schema.Struct({
+  stubId: NonEmptyString,
+  hits: NonNegativeInt,
+  // Hits per response, indexed like the stub's `responses`
+  byResponse: Schema.Array(NonNegativeInt),
+  lastHitAt: Schema.optional(Schema.DateTimeUtc),
+  // Absent in random mode, where the next response cannot be known
+  nextResponseIndex: Schema.optional(NonNegativeInt)
+})
+export type StubStatistics = Schema.Schema.Type<typeof StubStatistics>
+
+// Requests no stub, extension or proxy answered, grouped by method and path
+export const UnmatchedStatistics = Schema.Struct({
+  method: Schema.String,
+  path: Schema.String,
+  count: NonNegativeInt,
+  lastSeenAt: Schema.DateTimeUtc
+})
+export type UnmatchedStatistics = Schema.Schema.Type<typeof UnmatchedStatistics>
+
+// Counted since the imposter last started (or the last DELETE /stats)
 export const Statistics = Schema.Struct({
   totalRequests: NonNegativeInt,
   requestsPerMinute: NonNegativeNumber,
   averageResponseTime: NonNegativeNumber,
-  errorRate: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  // 4xx and 5xx answers over all requests
+  errorRate: Rate,
+  // 5xx answers over all requests
+  serverErrorRate: Rate,
   requestsByMethod: NumberRecord.pipe(Schema.withDecodingDefault(Effect.sync(() => ({})))),
   requestsByStatusCode: NumberRecord.pipe(Schema.withDecodingDefault(Effect.sync(() => ({})))),
   lastRequestAt: Schema.optional(Schema.DateTimeUtc),
   p50ResponseTime: Schema.optional(Schema.Number),
   p95ResponseTime: Schema.optional(Schema.Number),
-  p99ResponseTime: Schema.optional(Schema.Number)
+  p99ResponseTime: Schema.optional(Schema.Number),
+  // The last 15 minutes as 30 buckets of 30 seconds, oldest first; the last is the current one
+  timeline: Schema.Array(TimelinePoint),
+  // The timeline summed
+  last15Minutes: TrafficCounts,
+  // Every current stub, in matching order
+  stubs: Schema.Array(StubStatistics),
+  // Most recently seen first; at most 50 groups, the least recently seen dropped first
+  unmatched: Schema.Array(UnmatchedStatistics)
 })
 export type Statistics = Schema.Schema.Type<typeof Statistics>
 

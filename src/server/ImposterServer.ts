@@ -1,12 +1,12 @@
-import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, HashMap, Layer, Option, Ref } from "effect"
+import { Cause, Clock, Context, Data, Deferred, Effect, Exit, Fiber, HashMap, Layer, Option, Ref } from "effect"
 import * as DateTime from "effect/DateTime"
 import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter.js"
 import { type ExtensionInstance, Extensions, findExtension } from "../extensions/Extension.js"
 import { extractRequestContext, findMatchingStub, type RequestContext } from "../matching/RequestMatcher.js"
-import { buildResponse, makeResponseState } from "../matching/ResponseGenerator.js"
-import { ImposterRepository } from "../repositories/ImposterRepository.js"
+import { buildResponse, makeResponseState, peekIndex, type ResponseState } from "../matching/ResponseGenerator.js"
+import { ImposterRepository, type StubNotFoundError } from "../repositories/ImposterRepository.js"
 import { HttpProtocol, NonEmptyString } from "../schemas/common.js"
-import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
+import type { RequestLogEntry, RequestOutcome } from "../schemas/RequestLogSchema.js"
 import type { Stub } from "../schemas/StubSchema.js"
 import { MetricsService } from "../services/MetricsService.js"
 import { ProxyService } from "../services/ProxyService.js"
@@ -15,6 +15,7 @@ import { makeUiRouter } from "../ui/UiRouter.js"
 import { FiberManager } from "./FiberManager.js"
 import { captureResponse } from "./ResponseCapture.js"
 import { ServerFactory } from "./ServerFactory.js"
+import { answersChanged, applyStubPatch, StubChange } from "./StubChange.js"
 
 export class ImposterServerError extends Data.TaggedError("ImposterServerError")<{
   readonly imposterId: string
@@ -27,6 +28,19 @@ export interface ImposterServerShape {
   readonly updateStubs: (id: string) => Effect.Effect<void>
   readonly updateProxyConfig: (id: string) => Effect.Effect<void>
   readonly isRunning: (id: string) => Effect.Effect<boolean>
+  /**
+   * Adds, edits or removes a stub: writes the repository, hot-reloads a running imposter, and
+   * resets what the change invalidates. Removing a stub, or an edit that changes its responses or
+   * responseMode, resets that stub's hit counters and response cycle; a predicate-only edit keeps both.
+   */
+  readonly applyStubChange: (
+    id: string,
+    change: StubChange
+  ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
+  /** The index of the response the stub gives next; None for random mode or an unknown stub */
+  readonly nextResponseIndex: (id: string, stubId: string) => Effect.Effect<Option.Option<number>>
+  /** Restarts the stub's response cycle at its first response (a no-op unless running) */
+  readonly resetStub: (id: string, stubId: string) => Effect.Effect<void>
 }
 
 export class ImposterServer extends Context.Service<ImposterServer, ImposterServerShape>()("ImposterServer") {}
@@ -34,13 +48,15 @@ export class ImposterServer extends Context.Service<ImposterServer, ImposterServ
 interface ImposterState {
   readonly stubsRef: Ref.Ref<ReadonlyArray<Stub>>
   readonly proxyConfigRef: Ref.Ref<ProxyConfigDomain | undefined>
+  readonly responseState: ResponseState
 }
 
 // How a request was answered, for the request log
 interface Outcome {
   readonly response: Response
-  readonly matchedStubId?: string | undefined
-  readonly proxied: boolean
+  readonly kind: RequestOutcome
+  readonly matchedStubId?: string
+  readonly responseIndex?: number
 }
 
 // Why the server fiber ended before its port was bound: stopped, or died during bind
@@ -94,6 +110,7 @@ export const ImposterServerLive = Layer.effect(
           config,
           stubsRef,
           repo,
+          applyStubChange: (change) => applyStubChange(id, change),
           requestLogger,
           runPromise,
           // handler is declared below; it is only called once a request arrives
@@ -102,25 +119,22 @@ export const ImposterServerLive = Layer.effect(
 
         const fromStub = (stub: Stub, ctx: RequestContext): Effect.Effect<Outcome> =>
           Effect.gen(function*() {
-            const index = yield* responseState.getNextIndex(id, stub.id, stub.responses.length, stub.responseMode)
-            const responseConfig = stub.responses[index] ?? stub.responses[0]
+            const next = yield* responseState.getNextIndex(id, stub.id, stub.responses.length, stub.responseMode)
+            const responseIndex = next < stub.responses.length ? next : 0
+            const responseConfig = stub.responses[responseIndex] ?? stub.responses[0]
             const delay = responseConfig.delay
             if (delay !== undefined && delay > 0) {
               yield* Effect.sleep(`${delay} millis`)
             }
             const response = yield* Effect.promise(() => buildResponse(responseConfig, ctx))
-            return { response, matchedStubId: stub.id, proxied: false }
+            return { response, kind: "stub", matchedStubId: stub.id, responseIndex }
           })
 
         // Record mode saves the proxied answer as a stub, so the next identical request is served locally
         const recordStub = (ctx: RequestContext, response: Response): Effect.Effect<void> =>
           Effect.gen(function*() {
             const newStub = yield* proxyService.recordAsStub(ctx, response.clone())
-            yield* repo.addStub(id, newStub).pipe(Effect.catch(() => Effect.void))
-            const freshStubs = yield* repo.getStubs(id).pipe(
-              Effect.catch(() => Effect.succeed<ReadonlyArray<Stub>>([]))
-            )
-            yield* Ref.set(stubsRef, freshStubs)
+            yield* applyStubChange(id, StubChange.Add({ stub: newStub })).pipe(Effect.catch(() => Effect.void))
           })
 
         const fromProxy = (proxyConfig: ProxyConfigDomain, ctx: RequestContext, url: URL): Effect.Effect<Outcome> =>
@@ -135,18 +149,18 @@ export const ImposterServerLive = Layer.effect(
             Effect.tap((response) =>
               proxyConfig.mode === "record" && response.status < 500 ? recordStub(ctx, response) : Effect.void
             ),
-            Effect.map((response) => ({ response, proxied: true }))
+            Effect.map((response): Outcome => ({ response, kind: "proxy" }))
           )
 
         const fromExtension = (ext: ExtensionInstance, ctx: RequestContext): Effect.Effect<Outcome> =>
-          ext.handle(ctx).pipe(Effect.map((response) => ({ response, proxied: false })))
+          ext.handle(ctx).pipe(Effect.map((response): Outcome => ({ response, kind: "extension" })))
 
         const notFound = (ctx: RequestContext): Outcome => ({
           response: new Response(
             JSON.stringify({ error: "No matching stub found", method: ctx.method, path: ctx.path }),
             { status: 404, headers: { "content-type": "application/json" } }
           ),
-          proxied: false
+          kind: "unmatched"
         })
 
         const handler = async (request: Request): Promise<Response> => {
@@ -156,7 +170,7 @@ export const ImposterServerLive = Layer.effect(
 
           return runPromise(
             Effect.gen(function*() {
-              const startTime = Date.now()
+              const startTime = yield* Clock.currentTimeMillis
               const stubs = yield* Ref.get(stubsRef)
               const proxyConfig = yield* Ref.get(proxyConfigRef)
               const ctx = yield* Effect.promise(() => extractRequestContext(request))
@@ -176,7 +190,7 @@ export const ImposterServerLive = Layer.effect(
               const response = captured.response
               const logBody = captured.logBody
 
-              const duration = Date.now() - startTime
+              const duration = (yield* Clock.currentTimeMillis) - startTime
               const logEntry: RequestLogEntry = {
                 id: NonEmptyString.make(crypto.randomUUID()),
                 imposterId: NonEmptyString.make(id),
@@ -195,7 +209,11 @@ export const ImposterServerLive = Layer.effect(
                   ...(outcome.matchedStubId !== undefined
                     ? { matchedStubId: NonEmptyString.make(outcome.matchedStubId) }
                     : {}),
-                  proxied: outcome.proxied
+                  proxied: outcome.kind === "proxy",
+                  outcome: outcome.kind,
+                  ...(outcome.responseIndex !== undefined
+                    ? { responseIndex: outcome.responseIndex }
+                    : {})
                 },
                 duration
               }
@@ -227,7 +245,9 @@ export const ImposterServerLive = Layer.effect(
           // Register hot-reload state only once bound; the onError below removes it.
           // Doing it inside the fiber keeps it ordered after any previous fiber's
           // cleanup (FiberManager.start awaits that before forking this one).
-          Effect.tap(() => Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef }))),
+          Effect.tap(() => Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef, responseState }))),
+          // Stats count from this start (the previous run's are dropped once the port is ours)
+          Effect.tap(() => metricsService.resetStats(id)),
           // Stub/proxy changes made between the repo.get above and registration found
           // no state to update; re-read now so the new server does not serve stale stubs.
           Effect.tap(() =>
@@ -321,6 +341,68 @@ export const ImposterServerLive = Layer.effect(
 
     const isRunning = (id: string): Effect.Effect<boolean> => fiberManager.isRunning(id)
 
-    return { start, stop, updateStubs, updateProxyConfig, isRunning } satisfies ImposterServerShape
+    const runningState = (id: string): Effect.Effect<Option.Option<ImposterState>> =>
+      Ref.get(stateMapRef).pipe(Effect.map(HashMap.get(id)))
+
+    const resetStub = (id: string, stubId: string): Effect.Effect<void> =>
+      runningState(id).pipe(
+        Effect.andThen(Option.match({
+          onNone: () => Effect.void,
+          onSome: (state) => state.responseState.resetStub(id, stubId)
+        }))
+      )
+
+    // A stopped imposter starts every cycle over, so its next answer is the first one's
+    const nextResponseIndex = (id: string, stubId: string): Effect.Effect<Option.Option<number>> =>
+      Effect.gen(function*() {
+        const state = yield* runningState(id)
+        const stubs = yield* Option.match(state, {
+          onNone: () => repo.getStubs(id).pipe(Effect.catch(() => Effect.succeed<ReadonlyArray<Stub>>([]))),
+          onSome: (s) => Ref.get(s.stubsRef)
+        })
+        const stub = stubs.find((s) => s.id === stubId)
+        if (stub === undefined) return Option.none()
+        return yield* Option.match(state, {
+          onNone: () => Effect.succeed(peekIndex(0, stub.responses.length, stub.responseMode)),
+          onSome: (s) => s.responseState.peekNextIndex(id, stub.id, stub.responses.length, stub.responseMode)
+        })
+      })
+
+    // What a stub's counters and cycle no longer describe once it is gone or answers differently
+    const forgetStub = (id: string, stubId: string): Effect.Effect<void> =>
+      Effect.andThen(metricsService.resetStub(id, stubId), resetStub(id, stubId))
+
+    const applyStubChange = (
+      id: string,
+      change: StubChange
+    ): Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError> =>
+      Effect.gen(function*() {
+        const stub = yield* StubChange.$match(change, {
+          Add: ({ stub }) => repo.addStub(id, stub),
+          Remove: ({ stubId }) => repo.removeStub(id, stubId).pipe(Effect.tap(() => forgetStub(id, stubId))),
+          Update: ({ patch, stubId }) =>
+            Effect.gen(function*() {
+              const before = (yield* repo.getStubs(id)).find((s) => s.id === stubId)
+              const after = yield* repo.updateStub(id, stubId, (s) => applyStubPatch(s, patch))
+              if (before === undefined || answersChanged(before, after)) {
+                yield* forgetStub(id, stubId)
+              }
+              return after
+            })
+        })
+        yield* updateStubs(id)
+        return stub
+      })
+
+    return {
+      start,
+      stop,
+      updateStubs,
+      updateProxyConfig,
+      isRunning,
+      applyStubChange,
+      nextResponseIndex,
+      resetStub
+    } satisfies ImposterServerShape
   })
 )

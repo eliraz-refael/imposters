@@ -14,7 +14,9 @@ export const PaginationUrlParams = Schema.Struct({
 export const ListImpostersUrlParams = Schema.Struct({
   ...PaginationUrlParams.fields,
   status: Schema.optional(ImposterStatus),
-  protocol: Schema.optional(Protocol)
+  protocol: Schema.optional(Protocol),
+  // Include each imposter's `statistics`
+  stats: Schema.optional(Schema.Boolean)
 })
 export type ListImpostersUrlParams = Schema.Schema.Type<typeof ListImpostersUrlParams>
 

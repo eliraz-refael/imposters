@@ -21,6 +21,7 @@ const entry = (overrides?: { readonly matchedStubId?: string; readonly proxied?:
     headers: { "x-out": "\"out\"" },
     body: "<b>body</b>",
     proxied: overrides?.proxied ?? false,
+    outcome: overrides?.proxied === true ? "proxy" : overrides?.matchedStubId !== undefined ? "stub" : "unmatched",
     ...(overrides?.matchedStubId !== undefined ? { matchedStubId: NonEmptyString.make(overrides.matchedStubId) } : {})
   },
   duration: 3

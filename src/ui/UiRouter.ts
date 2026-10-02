@@ -3,10 +3,11 @@ import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
-import type { ImposterConfig } from "../domain/imposter.js"
-import type { ImposterRepositoryShape } from "../repositories/ImposterRepository.js"
+import type { ImposterConfig, ImposterNotFoundError } from "../domain/imposter.js"
+import type { ImposterRepositoryShape, StubNotFoundError } from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
 import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
+import { StubChange } from "../server/StubChange.js"
 import type { RequestLoggerShape } from "../services/RequestLogger.js"
 import { faviconResponse } from "./favicon.js"
 import { html } from "./html.js"
@@ -23,6 +24,8 @@ export interface UiDeps {
   readonly config: ImposterConfig
   readonly stubsRef: Ref.Ref<ReadonlyArray<Stub>>
   readonly repo: ImposterRepositoryShape
+  // Every stub write goes through here, as the admin API's do, so both reset the same counters
+  readonly applyStubChange: (change: StubChange) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
   readonly requestLogger: RequestLoggerShape
   readonly runPromise: <A>(effect: Effect.Effect<A>) => Promise<A>
   // The imposter's own handler, so a test request does not depend on the address it binds
@@ -106,7 +109,7 @@ export const makeUiRouter = (deps: UiDeps) => {
         ...fields
       })
       const stub: Stub = { id: NonEmptyString.make(crypto.randomUUID().slice(0, 8)), ...decoded }
-      yield* deps.repo.addStub(deps.id, stub).pipe(Effect.mapError(imposterGone))
+      yield* deps.applyStubChange(StubChange.Add({ stub })).pipe(Effect.mapError(imposterGone))
       return htmlResponse(stubListPartial(yield* reloadStubs))
     })
 
@@ -117,12 +120,7 @@ export const makeUiRouter = (deps: UiDeps) => {
         Schema.decodeUnknownEffect(StubPatchForm),
         nonBlankFields(form, ["predicates", "responses", "responseMode"])
       )
-      yield* deps.repo.updateStub(deps.id, stubId, (existing) => ({
-        ...existing,
-        ...(patch.predicates !== undefined ? { predicates: patch.predicates } : {}),
-        ...(patch.responses !== undefined ? { responses: patch.responses } : {}),
-        ...(patch.responseMode !== undefined ? { responseMode: patch.responseMode } : {})
-      })).pipe(
+      yield* deps.applyStubChange(StubChange.Update({ stubId, patch })).pipe(
         Effect.catchTag(
           "StubNotFoundError",
           () => Effect.fail(new UiError({ message: "Stub not found.", status: 404 }))
@@ -133,7 +131,7 @@ export const makeUiRouter = (deps: UiDeps) => {
     })
 
   const deleteStub = (stubId: string): Effect.Effect<Response> =>
-    deps.repo.removeStub(deps.id, stubId).pipe(
+    deps.applyStubChange(StubChange.Remove({ stubId })).pipe(
       Effect.andThen(reloadStubs),
       Effect.map((stubs) => htmlResponse(stubListPartial(stubs))),
       // Already gone (deleted elsewhere): say so, and refresh the list the user is looking at

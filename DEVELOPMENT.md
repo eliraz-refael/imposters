@@ -34,7 +34,7 @@ No `any` remains in `src/`. Standard 2 still has known breaches, kept current in
 | Location | Issue |
 |---|---|
 | `src/ui/admin/AdminUiRouter.ts` (3), `src/ui/UiRouter.ts` | Non-null assertions on regex match groups |
-| `src/matching/RequestMatcher.ts`, `src/repositories/ImposterRepository.ts`, `src/client/HandlerHttpClient.ts`, `src/services/MetricsService.ts` (2) | Non-null assertions on index access |
+| `src/matching/RequestMatcher.ts`, `src/repositories/ImposterRepository.ts`, `src/client/HandlerHttpClient.ts` | Non-null assertions on index access |
 | `src/client/testing.ts` | `as` casts to the branded `PortNumber` / `NonEmptyString`, the stub responses, and the returned id and port |
 
 Standards 5 and 6 also have breaches:
@@ -131,7 +131,7 @@ GET    /imposters/:id/stats                       DELETE /imposters/:id/stats
 
 ## Phase 3: Imposter Runtime + Route Matching ✅ COMPLETE
 
-`ImposterServer` exposes `start`/`stop`/`updateStubs`/`updateProxyConfig`/`isRunning`. Fibers are managed by `FiberManager` (a `FiberMap` wrapper); each server instance is wrapped in `Effect.acquireRelease` so interruption stops the server and frees the port. `RequestMatcher` evaluates predicates; `ResponseGenerator` selects and builds responses with delays and templating. Hot-reload works via `Ref` swap with zero downtime.
+`ImposterServer` exposes `start`/`stop`/`updateStubs`/`updateProxyConfig`/`isRunning`, plus `applyStubChange` (every stub write), `nextResponseIndex` and `resetStub` (the response cycle). Fibers are managed by `FiberManager` (a `FiberMap` wrapper); each server instance is wrapped in `Effect.acquireRelease` so interruption stops the server and frees the port. `RequestMatcher` evaluates predicates; `ResponseGenerator` selects and builds responses with delays and templating. Hot-reload works via `Ref` swap with zero downtime.
 
 ---
 
@@ -143,7 +143,7 @@ Typed `ImpostersClient` derived from the `HttpApi` definition, `HandlerHttpClien
 
 ## Phase 5: Configuration UIs ✅ COMPLETE
 
-Tagged-template HTML engine with auto-escaping (`ui/html.ts`), HTMX from CDN. Per-imposter UI at `/_admin` (dashboard, stubs, requests, request detail) and a global dashboard at `/_ui` on the admin port. Backed by `RequestLogger` (bounded per-imposter buffer + `PubSub` for future SSE) and `MetricsService` (counts, percentiles, error rate).
+Tagged-template HTML engine with auto-escaping (`ui/html.ts`), HTMX from CDN. Per-imposter UI at `/_admin` (dashboard, stubs, requests, request detail) and a global dashboard at `/_ui` on the admin port. Backed by `RequestLogger` (bounded per-imposter buffer + `PubSub` for future SSE) and `MetricsService` (counts, percentiles, error and 5xx rates, a 15-minute timeline of 30 s buckets, per-stub hits per response, and unmatched `METHOD path` groups capped at 50). The pure parts (bucketing, sliding, eviction) are in `services/MetricsAggregates.ts`; the service holds them in a `Ref` and takes "now" from `Clock`. Stub writes from the admin API and the `/_admin` UI both go through `ImposterServer.applyStubChange`, which resets a stub's counters and response cycle when it is deleted or its responses or `responseMode` change. Starting an imposter resets its stats.
 
 ---
 
