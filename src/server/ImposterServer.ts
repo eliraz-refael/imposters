@@ -280,9 +280,11 @@ export const ImposterServerLive = Layer.effect(
           // Register hot-reload state only once bound; the onError below removes it.
           // Doing it inside the fiber keeps it ordered after any previous fiber's
           // cleanup (FiberManager.start awaits that before forking this one).
-          Effect.tap(() => Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef, responseState }))),
-          // Stats count from this start (the previous run's are dropped once the port is ours)
+          // Stats count from this start (the previous run's are dropped once the port is ours).
+          // Reset before registering: a request recorded in between would be wiped from the
+          // stats while staying in the request log.
           Effect.tap(() => metricsService.resetStats(id)),
+          Effect.tap(() => Ref.update(stateMapRef, HashMap.set(id, { stubsRef, proxyConfigRef, responseState }))),
           // Stub/proxy changes made between the repo.get above and registration found
           // no state to update; re-read now so the new server does not serve stale stubs.
           Effect.tap(() =>

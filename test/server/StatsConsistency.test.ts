@@ -41,6 +41,7 @@ let getStubsToSkip = 0
 let gateNextLog: Gate | undefined
 let gateNextExtension: Gate | undefined
 let gateAfterFiberStop: Gate | undefined
+let gateNextResetStats: Gate | undefined
 afterEach(() => {
   gateNextGetStubs = undefined
   gateGetStubsAfterUpdate = undefined
@@ -49,6 +50,7 @@ afterEach(() => {
   gateNextLog = undefined
   gateNextExtension = undefined
   gateAfterFiberStop = undefined
+  gateNextResetStats = undefined
 })
 
 const takeAndPass = (gate: Gate | undefined): Effect.Effect<void> => gate === undefined ? Effect.void : pass(gate)
@@ -135,6 +137,23 @@ const GatedRequestLogger = Layer.effect(
   })
 ).pipe(Layer.provide(RequestLoggerLive))
 
+// resetStats waits before it resets, so a request answered while it is parked is recorded first
+const GatedMetricsService = Layer.effect(
+  MetricsService,
+  Effect.gen(function*() {
+    const live = yield* MetricsService
+    return {
+      ...live,
+      resetStats: (imposterId: string) =>
+        Effect.suspend(() => {
+          const gate = gateNextResetStats
+          gateNextResetStats = undefined
+          return takeAndPass(gate)
+        }).pipe(Effect.andThen(live.resetStats(imposterId)))
+    }
+  })
+).pipe(Layer.provide(MetricsServiceLive))
+
 const handlers = new Map<number, (request: Request) => Promise<Response>>()
 const CapturingServerFactory = Layer.succeed(ServerFactory)({
   create: ({ fetch, port }) =>
@@ -151,7 +170,7 @@ const TestLayer = ImposterServerLive.pipe(
       GatedRepository,
       CapturingServerFactory,
       GatedRequestLogger,
-      MetricsServiceLive,
+      GatedMetricsService,
       ProxyServiceLive.pipe(Layer.provide(UuidLive)),
       Extensions.layer([GatedExtension])
     )
@@ -383,6 +402,33 @@ describe("restarts and aborted changes do not lose or leak state", () => {
     await changeStub(id, { responses: [{ status: 202 }] })
     expect((await imp.send()).status).toBe(202)
     expect((await statsOf(id)).stubs.get("s")).toMatchObject({ hits: 1, byResponse: [1] })
+  })
+
+  // start registered the new run and then reset its stats, so a request answered in between was
+  // logged and counted, then wiped from the stats alone. Now the reset comes first, and a request
+  // in the gap is answered by the bound but unregistered server and recorded in neither.
+  it("a request answered while a restart resets the stats is in both the log and the stats, or neither", async () => {
+    const id = "race-restart-reset"
+    const imp = await startImposter(id, "/g", [{ status: 200 }])
+    expect((await imp.send()).status).toBe(200)
+    await server((s) => s.stop(id))
+
+    const gate = makeGate()
+    gateNextResetStats = gate
+    // start resolves only once the run is ready, which is after the reset, so do not await it yet
+    const starting = server((s) => s.start(id))
+    await reached(gate)
+    // The new server is bound (its handler is captured) while the reset is parked
+    expect((await imp.send()).status).toBe(200)
+    await release(gate)
+    await starting
+
+    const logged = (await logOf(id)).length
+    expect((await statsOf(id)).totalRequests).toBe(logged)
+    // After the restart the run serves and records normally
+    expect((await imp.send()).status).toBe(200)
+    expect(await logOf(id)).toHaveLength(logged + 1)
+    expect((await statsOf(id)).totalRequests).toBe(logged + 1)
   })
 
   // A caller that went away after the repository write left the server and counters behind it
