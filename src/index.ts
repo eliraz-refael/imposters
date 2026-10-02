@@ -116,7 +116,11 @@ export * as AdminDashboard from "./ui/admin/pages/AdminDashboard.js"
 
 export * as partials from "./ui/admin/partials.js"
 
+export * as favicon from "./ui/favicon.js"
+
 export * as html from "./ui/html.js"
+
+export * as htmx from "./ui/htmx.js"
 
 export * as layout from "./ui/layout.js"
 

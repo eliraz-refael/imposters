@@ -1,5 +1,6 @@
 import { html, raw } from "../html.js"
 import type { SafeHtml } from "../html.js"
+import { clearErrorOnRequest, htmxConfigMeta, uiErrorSlot } from "../htmx.js"
 
 export interface AdminLayoutOpts {
   readonly title: string
@@ -13,10 +14,12 @@ export const adminLayout = (opts: AdminLayoutOpts, content: SafeHtml): SafeHtml 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${opts.title}</title>
+  <link rel="icon" type="image/svg+xml" href="/_ui/favicon.svg">
+  ${htmxConfigMeta}
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-50 min-h-screen" ${clearErrorOnRequest}>
   <nav class="bg-gray-800 text-white shadow-md">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
@@ -30,6 +33,7 @@ export const adminLayout = (opts: AdminLayoutOpts, content: SafeHtml): SafeHtml 
     </div>
   </nav>
   <main class="max-w-6xl mx-auto px-4 py-6">
+    ${uiErrorSlot}
     ${raw(content.value)}
   </main>
 </body>
