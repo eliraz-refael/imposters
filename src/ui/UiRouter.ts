@@ -4,7 +4,11 @@ import * as Effect from "effect/Effect"
 import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
 import type { ImposterConfig, ImposterNotFoundError } from "../domain/imposter.js"
-import type { ImposterRepositoryShape, StubNotFoundError } from "../repositories/ImposterRepository.js"
+import type {
+  ImposterRepositoryShape,
+  StubIndexOutOfRangeError,
+  StubNotFoundError
+} from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
 import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
 import { StubChange } from "../server/StubChange.js"
@@ -25,7 +29,9 @@ export interface UiDeps {
   readonly stubsRef: Ref.Ref<ReadonlyArray<Stub>>
   readonly repo: ImposterRepositoryShape
   // Every stub write goes through here, as the admin API's do, so both reset the same counters
-  readonly applyStubChange: (change: StubChange) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
+  readonly applyStubChange: (
+    change: StubChange
+  ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError | StubIndexOutOfRangeError>
   readonly requestLogger: RequestLoggerShape
   readonly runPromise: <A>(effect: Effect.Effect<A>) => Promise<A>
   // The imposter's own handler, so a test request does not depend on the address it binds
@@ -121,11 +127,12 @@ export const makeUiRouter = (deps: UiDeps) => {
         nonBlankFields(form, ["predicates", "responses", "responseMode"])
       )
       yield* deps.applyStubChange(StubChange.Update({ stubId, patch })).pipe(
-        Effect.catchTag(
-          "StubNotFoundError",
-          () => Effect.fail(new UiError({ message: "Stub not found.", status: 404 }))
-        ),
-        Effect.catchTag("ImposterNotFoundError", () => Effect.fail(imposterGone()))
+        Effect.catchTags({
+          StubNotFoundError: () => Effect.fail(new UiError({ message: "Stub not found.", status: 404 })),
+          ImposterNotFoundError: () => Effect.fail(imposterGone()),
+          // Only an insert has a position, so an edit cannot fail with one
+          StubIndexOutOfRangeError: (e) => Effect.die(e)
+        })
       )
       return htmlResponse(stubListPartial(yield* reloadStubs))
     })

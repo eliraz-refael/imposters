@@ -4,7 +4,8 @@ import type { Stub, UpdateStubRequest } from "../schemas/StubSchema.js"
 
 /** A stub edit; the admin API and the `/_admin` UI both apply theirs through ImposterServer.applyStubChange */
 export type StubChange = Data.TaggedEnum<{
-  Add: { readonly stub: Stub }
+  // `index` is the insert position (0 is first); omitted, the stub goes last
+  Add: { readonly stub: Stub; readonly index?: number | undefined }
   Update: { readonly stubId: string; readonly patch: UpdateStubRequest }
   Remove: { readonly stubId: string }
 }>

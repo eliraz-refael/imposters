@@ -8,6 +8,14 @@ export class StubNotFoundError extends Data.TaggedError("StubNotFoundError")<{
   readonly stubId: string
 }> {}
 
+/** An insert position past the end of the stub list (or negative) */
+export class StubIndexOutOfRangeError extends Data.TaggedError("StubIndexOutOfRangeError")<{
+  readonly imposterId: string
+  readonly index: number
+  /** How many stubs the imposter had; valid positions are 0 to this */
+  readonly size: number
+}> {}
+
 export interface ImposterRecord {
   readonly config: ImposterConfig
   readonly stubs: ReadonlyArray<Stub>
@@ -22,7 +30,12 @@ export interface ImposterRepositoryShape {
     fn: (r: ImposterRecord) => ImposterRecord
   ) => Effect.Effect<ImposterRecord, ImposterNotFoundError>
   readonly remove: (id: string) => Effect.Effect<ImposterRecord, ImposterNotFoundError>
-  readonly addStub: (imposterId: string, stub: Stub) => Effect.Effect<Stub, ImposterNotFoundError>
+  /** Inserts the stub at `index` (0 is first, the stub count is last), or appends it when omitted */
+  readonly addStub: (
+    imposterId: string,
+    stub: Stub,
+    index?: number
+  ) => Effect.Effect<Stub, ImposterNotFoundError | StubIndexOutOfRangeError>
   readonly getStubs: (imposterId: string) => Effect.Effect<ReadonlyArray<Stub>, ImposterNotFoundError>
   readonly updateStub: (
     imposterId: string,
@@ -58,7 +71,7 @@ export const ImposterRepositoryLive = Layer.effect(
     type Store = HashMap.HashMap<string, ImposterRecord>
     type ModifyRecord<A, E> = readonly [Effect.Effect<A, E>, Store]
     type RecordResult = ModifyRecord<ImposterRecord, ImposterNotFoundError>
-    type StubResult = ModifyRecord<Stub, ImposterNotFoundError>
+    type StubResult = ModifyRecord<Stub, ImposterNotFoundError | StubIndexOutOfRangeError>
     type StubOrNotFound = ModifyRecord<Stub, ImposterNotFoundError | StubNotFoundError>
 
     const create = (config: ImposterConfig): Effect.Effect<ImposterRecord> => {
@@ -94,13 +107,19 @@ export const ImposterRepositoryLive = Layer.effect(
         return [Effect.succeed(existing.value), HashMap.remove(store, id)]
       }).pipe(Effect.flatten)
 
-    const addStub = (imposterId: string, stub: Stub) =>
+    const addStub = (imposterId: string, stub: Stub, index?: number) =>
       Ref.modify(storeRef, (store): StubResult => {
         const existing = HashMap.get(store, imposterId)
         if (existing._tag === "None") {
           return [Effect.fail(new ImposterNotFoundError({ id: imposterId })), store]
         }
-        const updated: ImposterRecord = { ...existing.value, stubs: [...existing.value.stubs, stub] }
+        const stubs = existing.value.stubs
+        const at = index ?? stubs.length
+        // Checked inside the update, so a concurrent removal cannot leave the position past the end
+        if (!Number.isInteger(at) || at < 0 || at > stubs.length) {
+          return [Effect.fail(new StubIndexOutOfRangeError({ imposterId, index: at, size: stubs.length })), store]
+        }
+        const updated: ImposterRecord = { ...existing.value, stubs: [...stubs.slice(0, at), stub, ...stubs.slice(at)] }
         return [Effect.succeed(stub), HashMap.set(store, imposterId, updated)]
       }).pipe(Effect.flatten)
 

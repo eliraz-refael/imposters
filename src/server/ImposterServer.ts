@@ -18,7 +18,11 @@ import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } fr
 import { type ExtensionInstance, Extensions, findExtension } from "../extensions/Extension.js"
 import { extractRequestContext, findMatchingStub, type RequestContext } from "../matching/RequestMatcher.js"
 import { buildResponse, makeResponseState, peekIndex, type ResponseState } from "../matching/ResponseGenerator.js"
-import { ImposterRepository, type StubNotFoundError } from "../repositories/ImposterRepository.js"
+import {
+  ImposterRepository,
+  type StubIndexOutOfRangeError,
+  type StubNotFoundError
+} from "../repositories/ImposterRepository.js"
 import { HttpProtocol, NonEmptyString } from "../schemas/common.js"
 import type { RequestLogEntry, RequestOutcome } from "../schemas/RequestLogSchema.js"
 import type { Stub } from "../schemas/StubSchema.js"
@@ -50,7 +54,7 @@ export interface ImposterServerShape {
   readonly applyStubChange: (
     id: string,
     change: StubChange
-  ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError>
+  ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError | StubIndexOutOfRangeError>
   /** The index of the response the stub gives next; None for random mode or an unknown stub */
   readonly nextResponseIndex: (id: string, stubId: string) => Effect.Effect<Option.Option<number>>
   /** Restarts the stub's response cycle at its first response (a no-op unless running) */
@@ -424,13 +428,15 @@ export const ImposterServerLive = Layer.effect(
     const applyStubChange = (
       id: string,
       change: StubChange
-    ): Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError> =>
+    ): Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError | StubIndexOutOfRangeError> =>
       // Locked, so changes reload in the order they were written; uninterruptible, so a caller
       // that goes away after the write cannot leave the server or the counters behind the repository
       Effect.gen(function*() {
         // Whether the change invalidates the stub's counters and cycle
         const { forget, stub } = yield* StubChange.$match(change, {
-          Add: ({ stub }) => repo.addStub(id, stub).pipe(Effect.map((added) => ({ stub: added, forget: false }))),
+          // Counters and cycles are keyed by stub id, so shifting the others down leaves theirs intact
+          Add: ({ index, stub }) =>
+            repo.addStub(id, stub, index).pipe(Effect.map((added) => ({ stub: added, forget: false }))),
           Remove: ({ stubId }) =>
             repo.removeStub(id, stubId).pipe(Effect.map((removed) => ({ stub: removed, forget: true }))),
           Update: ({ patch, stubId }) => {
