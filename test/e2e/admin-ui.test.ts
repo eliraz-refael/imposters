@@ -4,6 +4,7 @@ import { ApiLayer } from "imposters/layers/ApiLayer"
 import { MainLayer } from "imposters/layers/MainLayer"
 import { occupyPort, probeConnect } from "imposters/test/helpers/net"
 import { makeAdminUiRouter } from "imposters/ui/admin/AdminUiRouter"
+import { favicon } from "imposters/ui/assets/generated"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -132,7 +133,7 @@ const expectUiError = async (resp: Response, status: number, message: string) =>
 describe("E2E: Admin UI fixes", () => {
   it("serves its favicon under /_ui and links it from the page", async () => {
     const page = await (await adminUi("/_ui")).text()
-    expect(page).toContain("href=\"/_ui/favicon.svg\"")
+    expect(page).toContain(`href="/_ui/assets/${favicon.name}"`)
     const icon = await adminUi("/_ui/favicon.svg")
     expect(icon.status).toBe(200)
     expect(icon.headers.get("content-type")).toBe("image/svg+xml")

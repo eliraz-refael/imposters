@@ -42,7 +42,8 @@
     "directory": "dist"
   },
   "scripts": {
-    "codegen": "build-utils prepare-v2",
+    "codegen": "bun gen-ui-assets && build-utils prepare-v2",
+    "gen-ui-assets": "bun scripts/gen-ui-assets.ts",
     "build": "bun codegen && bun build-esm && bun build-annotate && bun build-cjs && build-utils pack-v2 && bun build-cli && bun scripts/postbuild.ts",
     "build-cli": "esbuild src/Program.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/bin/cli.cjs --minify --banner:js='#!/usr/bin/env node'",
     "build-esm": "node node_modules/@typescript/native/bin/tsc -b tsconfig.build.json",
@@ -50,7 +51,7 @@
     "build-annotate": "babel build/esm --plugins annotate-pure-calls --out-dir build/esm --source-maps",
     "verify-dist": "node scripts/verify-dist.mjs",
     "check": "node node_modules/@typescript/native/bin/tsc -b tsconfig.json",
-    "lint": "eslint \"**/{src,test,examples,scripts,dtslint}/**/*.{ts,mjs}\"",
+    "lint": "eslint \"**/{src,test,examples,scripts,dtslint,ui-assets}/**/*.{ts,mjs}\"",
     "lint-fix": "bun lint --fix",
     "test": "vitest --run",
     "coverage": "vitest --coverage"
@@ -75,6 +76,8 @@
     "@eslint/compat": "1.1.1",
     "@eslint/eslintrc": "3.1.0",
     "@eslint/js": "9.10.0",
+    "@fontsource-variable/geist": "5.3.0",
+    "@fontsource-variable/martian-mono": "5.3.0",
     "@types/node": "^22.18.11",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
@@ -99,6 +102,7 @@
       ],
       "exclude": [
         "types/**/*.d.ts",
+        "ui/assets/**",
         "ui/pages/request-detail.ts",
         "ui/partials.ts"
       ]
@@ -112,6 +116,7 @@
         "Program.ts",
         "cli/Commands.ts",
         "extensions/*/**/*.ts",
+        "ui/assets/**",
         "ui/pages/request-detail.ts",
         "ui/partials.ts"
       ]

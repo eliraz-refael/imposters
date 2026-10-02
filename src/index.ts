@@ -148,6 +148,12 @@ export * as AdminDashboard from "./ui/admin/pages/AdminDashboard.js"
 
 export * as partials from "./ui/admin/partials.js"
 
+/**
+ * A redesigned page's document: the self-hosted stylesheet, fonts, script and icon, and the
+ * theme rendered on <html> so the first paint is already in it. No CDN.
+ */
+export * as shell from "./ui/components/shell.js"
+
 export * as favicon from "./ui/favicon.js"
 
 export * as html from "./ui/html.js"
@@ -161,3 +167,5 @@ export * as dashboard from "./ui/pages/dashboard.js"
 export * as requests from "./ui/pages/requests.js"
 
 export * as stubs from "./ui/pages/stubs.js"
+
+export * as theme from "./ui/theme.js"

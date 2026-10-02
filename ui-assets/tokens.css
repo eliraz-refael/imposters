@@ -1,0 +1,117 @@
+/*
+ * Disguise: the web UIs' design tokens.
+ *
+ * Every --im-* value is the website's (site/src/styles/theme.css); test/ui/tokens.test.ts
+ * fails if one drifts. --ui-* tokens are the UIs' own: status colours and the tints the
+ * mockups use, which the site has no need for.
+ *
+ * Dark is the default, on :root. Light is :root[data-theme="light"], which the server
+ * renders from the imposters-theme cookie. With no cookie there is no data-theme, and
+ * scripts/gen-ui-assets.ts copies the light block under
+ * `@media (prefers-color-scheme: light) { :root:not([data-theme]) }`, so the UI follows
+ * the system setting. Keep the light block a flat list of declarations: the generator
+ * copies it verbatim.
+ */
+:root {
+  /* Type: Martian Mono for display, headings, nav, code and labels; Geist for prose */
+  --im-font-mono: "Martian Mono Variable", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --im-font-body: "Geist Variable", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --im-stretch-display: 80%;
+  --im-stretch-heading: 85%;
+  --im-stretch-code: 87.5%;
+  --im-tracking-display: -0.045em;
+  --im-tracking-heading: -0.04em;
+
+  --im-ground: #0a0d0b;
+  --im-raised-1: #0d110e;
+  --im-raised-2: #0e130f;
+  --im-raised-3: #101611;
+  --im-border: #1f2b22;
+  --im-border-strong: #2a3a2e;
+  --im-text: #d6e2d8;
+  --im-text-2: #b4c4b8;
+  --im-muted: #7f9184;
+  --im-heading: #e9f5eb;
+  --im-accent: #c6ff4d;
+  --im-accent-hover: #e2ff9e;
+  --im-accent-fill: #c6ff4d;
+  --im-on-accent: #0a0d0b;
+  --im-accent-tint: #1b2611;
+  --im-button: #1a241c;
+  --im-button-border: #2f4033;
+  --im-mark-brace: #c6ff4d;
+  --im-mark-eyes: #d6e2d8;
+  --im-scanline: rgba(198, 255, 77, 0.025);
+  --im-glow: rgba(198, 255, 77, 0.06);
+  --im-shadow: 0 0 0 1px rgba(198, 255, 77, 0.05), 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 120px var(--im-glow);
+
+  /* Terminal windows stay dark in both themes */
+  --im-term-bg: #0e130f;
+  --im-term-bar: #0a0d0b;
+  --im-term-border: #2a3a2e;
+  --im-term-text: #d6e2d8;
+  --im-term-muted: #7f9184;
+  --im-term-output: #e9f5eb;
+  --im-term-accent: #c6ff4d;
+  --im-term-dot: #2f4033;
+  --im-term-error: #ff8f7a;
+
+  /* The UIs' own */
+  --ui-header-bg: rgba(10, 13, 11, 0.85);
+  --ui-accent-fill-hover: #e2ff9e; /* the lime fill's hover, in both themes */
+  --ui-rule: #141c16; /* row separators, meter tracks */
+  --ui-placeholder: #56665a;
+  --ui-error: #ff8f7a; /* 5xx, DELETE, destructive */
+  --ui-warn: #ffb27a; /* high error rate, slow */
+  --ui-caution: #ffd36e; /* 4xx, no stub matched, PUT */
+  --ui-info: #7fe3c4; /* POST, non-HTTP protocols */
+  --ui-accent-border: #33461f;
+  --ui-error-border: #4a2a24;
+  --ui-warn-border: #4a3422;
+  --ui-caution-border: #3a3220;
+  --ui-info-border: #24463b;
+  --ui-pulse: rgba(198, 255, 77, 0.5);
+  --ui-pulse-end: rgba(198, 255, 77, 0);
+  --ui-dot-glow: rgba(198, 255, 77, 0.6);
+}
+
+:root[data-theme="light"] {
+  --im-ground: #f4f7f2;
+  --im-raised-1: #eef2eb;
+  --im-raised-2: #ffffff;
+  --im-raised-3: #e9efe6;
+  --im-border: #d5dfd1;
+  --im-border-strong: #bfcdbb;
+  --im-text: #0a0d0b;
+  --im-text-2: #3d4d41;
+  --im-muted: #56665a;
+  --im-heading: #0a0d0b;
+  --im-accent: #2f7a12;
+  --im-accent-hover: #25600e;
+  --im-accent-fill: #c6ff4d;
+  --im-on-accent: #0a0d0b;
+  --im-accent-tint: #e4f5cf;
+  --im-button: #ffffff;
+  --im-button-border: #bfcdbb;
+  --im-mark-brace: #2f7a12;
+  --im-mark-eyes: #0a0d0b;
+  --im-scanline: rgba(47, 122, 18, 0.035);
+  --im-glow: rgba(47, 122, 18, 0.08);
+  --im-shadow: 0 0 0 1px rgba(47, 122, 18, 0.06), 0 24px 60px rgba(10, 13, 11, 0.18);
+
+  --ui-header-bg: rgba(244, 247, 242, 0.88);
+  --ui-rule: #e3eadf;
+  --ui-placeholder: #8a9a8d;
+  --ui-error: #b3261e;
+  --ui-warn: #a14a00;
+  --ui-caution: #8a5a00;
+  --ui-info: #0b6b57;
+  --ui-accent-border: #b6d99a;
+  --ui-error-border: #efc2bb;
+  --ui-warn-border: #edc9a8;
+  --ui-caution-border: #e6d29c;
+  --ui-info-border: #a9d6c9;
+  --ui-pulse: rgba(47, 122, 18, 0.45);
+  --ui-pulse-end: rgba(47, 122, 18, 0);
+  --ui-dot-glow: rgba(47, 122, 18, 0.35);
+}

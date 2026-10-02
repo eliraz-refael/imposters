@@ -35,6 +35,19 @@ fs.copyFileSync(
   path.join(distDir, ".npmrc")
 )
 
+// 4. The UI's fonts (compiled into src/ui/assets/generated.ts) are OFL-1.1: ship their licenses
+const distLicensesDir = path.join(distDir, "licenses")
+fs.mkdirSync(distLicensesDir, { recursive: true })
+const fontLicenses = ["martian-mono", "geist"].map((font) => {
+  const target = `${font}-OFL-1.1.txt`
+  fs.copyFileSync(
+    path.join(rootDir, "node_modules", "@fontsource-variable", font, "LICENSE"),
+    path.join(distLicensesDir, target)
+  )
+  return target
+})
+
 console.log("postbuild: patched dist/package.json with bin")
 console.log("postbuild: copied bin/imposters → dist/bin/imposters")
 console.log("postbuild: copied .npmrc → dist/.npmrc")
+console.log(`postbuild: copied font licenses → dist/licenses/{${fontLicenses.join(",")}}`)

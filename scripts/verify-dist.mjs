@@ -4,13 +4,17 @@
 // esbuild but fails here with ERR_MODULE_NOT_FOUND.
 //
 // Run after `bun run build`: `bun run verify-dist` (or `node scripts/verify-dist.mjs`).
-import { spawnSync } from "node:child_process"
+import { Buffer } from "node:buffer"
+import { spawn, spawnSync } from "node:child_process"
 import console from "node:console"
 import * as fs from "node:fs"
+import * as http from "node:http"
+import * as net from "node:net"
 import * as os from "node:os"
 import * as path from "node:path"
 import process from "node:process"
-import { fileURLToPath } from "node:url"
+import { clearTimeout, setTimeout } from "node:timers"
+import { fileURLToPath, URL } from "node:url"
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const distDir = path.join(rootDir, "dist")
@@ -85,11 +89,78 @@ const binCheck = () => {
   })
 }
 
+// A port nothing listens on: bind 0, read it, release it
+const sparePort = () =>
+  new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once("error", reject)
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address()
+      server.close(() => resolve(port))
+    })
+  })
+
+// A GET on a fresh connection: the status, headers and whole body
+const httpGet = (url) =>
+  new Promise((resolve, reject) => {
+    http.get(url, { agent: false }, (res) => {
+      const chunks = []
+      res.on("data", (chunk) => chunks.push(chunk))
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }))
+      res.on("error", reject)
+    }).on("error", reject)
+  })
+
+// Starts the bin for real and loads the admin UI and one of its hashed assets, so a bundle that
+// lost the compiled-in assets (or the router that serves them) fails here, not for a user.
+const smokeCheck = async () => {
+  const [binFile] = Object.values(typeof pkg.bin === "string" ? { [pkg.name]: pkg.bin } : (pkg.bin ?? {}))
+  if (binFile === undefined) return ["smoke: no bin to start"]
+  const port = await sparePort()
+  const child = spawn(process.execPath, [path.join(distDir, binFile), "start", "--port", String(port)], {
+    cwd: consumer,
+    stdio: ["ignore", "pipe", "pipe"]
+  })
+  let output = ""
+  child.stdout.on("data", (chunk) => output += chunk)
+  child.stderr.on("data", (chunk) => output += chunk)
+  try {
+    // The CLI prints this line once the admin port is bound
+    const uiUrl = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("did not start within 30 s")), 30_000)
+      child.once("exit", (code) => reject(new Error(`exited ${code} before it was ready`)))
+      child.stdout.on("data", () => {
+        const match = /Admin UI: (\S+)/.exec(output)
+        if (match !== null) {
+          clearTimeout(timer)
+          resolve(match[1])
+        }
+      })
+    })
+    const page = await httpGet(uiUrl)
+    if (page.status !== 200) return [`smoke: GET /_ui answered ${page.status}`]
+    const asset = /href="(\/_ui\/assets\/[^"]+)"/.exec(page.body.toString("utf-8"))?.[1]
+    if (asset === undefined) return ["smoke: /_ui links no hashed asset"]
+    const resp = await httpGet(new URL(asset, uiUrl))
+    const cache = resp.headers["cache-control"] ?? ""
+    if (resp.status !== 200 || !cache.includes("immutable") || resp.body.length === 0) {
+      return [`smoke: GET ${asset} answered ${resp.status} (cache-control: ${cache})`]
+    }
+    console.log(`smoke: bin start on :${port} serves /_ui and ${asset}`)
+    return []
+  } catch (e) {
+    return [`smoke: ${e.message}\n${output}`]
+  } finally {
+    child.kill()
+  }
+}
+
 const problems = [
   ...missing.map((m) => `missing file: ${m}`),
   ...check("esm import()", "load.mjs", esm),
   ...check("cjs require()", "load.cjs", cjs),
-  ...binCheck()
+  ...binCheck(),
+  ...await smokeCheck()
 ]
 fs.rmSync(consumer, { recursive: true, force: true })
 

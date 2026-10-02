@@ -13,6 +13,7 @@ import { NonEmptyString } from "../schemas/common.js"
 import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
 import { StubChange } from "../server/StubChange.js"
 import type { RequestLoggerShape } from "../services/RequestLogger.js"
+import { assetRoute } from "./assets/serve.js"
 import { faviconResponse } from "./favicon.js"
 import { html } from "./html.js"
 import { errorBox, errorResponse, formString, htmlResponse } from "./htmx.js"
@@ -236,6 +237,9 @@ export const makeUiRouter = (deps: UiDeps) => {
   const route = (request: Request, url: URL): Effect.Effect<Response, UiError> => {
     const path = url.pathname.slice(ADMIN_PREFIX.length) || "/"
     const method = request.method.toUpperCase()
+
+    const asset = assetRoute(request, path)
+    if (asset !== null) return Effect.succeed(asset)
 
     if (method === "GET" && path === "/favicon.svg") return Effect.succeed(faviconResponse())
 
