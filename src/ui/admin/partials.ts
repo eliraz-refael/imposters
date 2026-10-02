@@ -1,5 +1,6 @@
-import { html } from "../html.js"
+import { html, raw } from "../html.js"
 import type { SafeHtml } from "../html.js"
+import { errorBox } from "../htmx.js"
 
 export interface AdminImposterData {
   readonly id: string
@@ -8,6 +9,8 @@ export interface AdminImposterData {
   readonly status: string
   readonly protocol: string
   readonly stubCount: number
+  // The imposter's own /_admin UI, on the host the admin UI was reached through
+  readonly uiUrl: string
 }
 
 const statusBadge = (status: string): SafeHtml => {
@@ -38,9 +41,7 @@ export const imposterRowPartial = (imp: AdminImposterData): SafeHtml => {
         <button hx-delete="/_ui/imposters/${imp.id}" hx-target="#imposter-list" hx-swap="innerHTML" hx-confirm="Delete this imposter?" class="text-red-500 hover:text-red-700 text-sm">Delete</button>
         ${
     isRunning
-      ? html`<a href="http://localhost:${
-        String(imp.port)
-      }/_admin" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-sm">Open UI</a>`
+      ? html`<a href="${imp.uiUrl}" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-sm">Open UI</a>`
       : html``
   }
       </div>
@@ -62,7 +63,7 @@ export const createFormPartial = (error?: string): SafeHtml =>
   html`<div class="bg-white rounded-lg shadow p-4 mb-6">
     <h2 class="text-lg font-semibold mb-3">Create Imposter</h2>
     ${error ? html`<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3 mb-3">${error}</div>` : html``}
-    <form hx-post="/_ui/imposters" hx-target="#imposter-list" hx-swap="innerHTML" class="flex flex-wrap gap-3 items-end">
+    <form hx-post="/_ui/imposters" hx-target="#imposter-list" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful) this.reset()" class="flex flex-wrap gap-3 items-end">
       <div>
         <label class="block text-xs text-gray-500 mb-1">Name (optional)</label>
         <input name="name" type="text" class="border rounded p-2 text-sm w-40" placeholder="My Service" />
@@ -79,5 +80,33 @@ export const createFormPartial = (error?: string): SafeHtml =>
     </form>
   </div>`
 
-export const adminErrorPartial = (message: string): SafeHtml =>
-  html`<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3 mb-3">${message}</div>`
+export const adminErrorPartial = (message: string): SafeHtml => errorBox(message)
+
+// The counts above the table. Every action re-sends it out of band (wrapped in a
+// <template>, which parses anywhere, even beside table rows) so it never goes stale.
+export const summaryBarPartial = (imposters: ReadonlyArray<AdminImposterData>, opts?: { readonly oob?: boolean }) => {
+  const total = imposters.length
+  const running = imposters.filter((i) => i.status === "running").length
+  const stopped = total - running
+  const bar = html`<div id="admin-summary" ${
+    opts?.oob === true ? raw(`hx-swap-oob="true"`) : html``
+  } class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm text-gray-500">Total Imposters</div>
+      <div class="text-2xl font-bold text-gray-800">${String(total)}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm text-gray-500">Running</div>
+      <div class="text-2xl font-bold text-green-600">${String(running)}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm text-gray-500">Stopped</div>
+      <div class="text-2xl font-bold text-gray-500">${String(stopped)}</div>
+    </div>
+  </div>`
+  return opts?.oob === true ? html`<template>${bar}</template>` : bar
+}
+
+// The imposter table's rows, out of band, for an answer whose main target is elsewhere
+export const imposterListOob = (imposters: ReadonlyArray<AdminImposterData>): SafeHtml =>
+  html`<template><tbody id="imposter-list" hx-swap-oob="innerHTML">${imposterListPartial(imposters)}</tbody></template>`

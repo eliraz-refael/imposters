@@ -1,10 +1,11 @@
 import type { ImposterConfig } from "../../domain/imposter.js"
+import { HttpProtocol } from "../../schemas/common.js"
 import type { RequestLogEntry } from "../../schemas/RequestLogSchema.js"
 import type { Stub } from "../../schemas/StubSchema.js"
-import { html, raw } from "../html.js"
+import { html } from "../html.js"
 import type { SafeHtml } from "../html.js"
 import { layout } from "../layout.js"
-import { methodBadge, statusBadge, stubCardPartial } from "../partials.js"
+import { formatTimestampUtc, methodBadge, statusBadge, stubCardPartial } from "../partials.js"
 
 export interface RequestDetailData {
   readonly config: ImposterConfig
@@ -12,16 +13,14 @@ export interface RequestDetailData {
   readonly matchedStub: Stub | null
 }
 
-const formatTimestamp = (ts: unknown): string => {
-  try {
-    const d = typeof (ts as { epochMillis: bigint }).epochMillis === "bigint"
-      ? new Date(Number((ts as { epochMillis: bigint }).epochMillis))
-      : new Date(String(ts))
-    return d.toISOString()
-  } catch {
-    return String(ts)
-  }
-}
+// What answered a request that matched no stub: the proxy, the imposter's extension
+// (it is terminal, so it answers everything unmatched), or the 404 fallback
+const unmatchedLabel = (config: ImposterConfig, entry: RequestLogEntry): string =>
+  entry.response.proxied
+    ? "No matching stub (proxied)"
+    : config.protocol !== HttpProtocol
+    ? `No matching stub (answered by ${config.protocol})`
+    : "No matching stub"
 
 const formatBody = (body: unknown): string => {
   if (body === undefined || body === null) return "(empty)"
@@ -55,10 +54,9 @@ const queryTable = (query: Record<string, string>): SafeHtml => {
 
 export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
   const { entry, matchedStub } = data
-  const timestamp = formatTimestamp(entry.timestamp)
+  const timestamp = formatTimestampUtc(entry.timestamp)
   const reqBody = formatBody(entry.request.body)
   const respBody = formatBody(entry.response.body)
-  const respHeaders = entry.response.headers ?? {}
 
   const content = html`
     <div class="mb-4">
@@ -79,7 +77,7 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
         ${
     entry.response.matchedStubId
       ? html`<span class="ml-4">Matched Stub: <span class="font-mono text-indigo-600">${entry.response.matchedStubId}</span></span>`
-      : html`<span class="ml-4 text-orange-500">No matching stub</span>`
+      : html`<span class="ml-4 text-orange-500">${unmatchedLabel(data.config, entry)}</span>`
   }
       </div>
     </div>
@@ -90,11 +88,11 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
         <div class="bg-white rounded-lg shadow p-4 space-y-3">
           <div>
             <h4 class="text-sm font-medium text-gray-700 mb-1">Headers</h4>
-            ${headersTable(entry.request.headers as Record<string, string>)}
+            ${headersTable(entry.request.headers)}
           </div>
           <div>
             <h4 class="text-sm font-medium text-gray-700 mb-1">Query Parameters</h4>
-            ${queryTable(entry.request.query as Record<string, string>)}
+            ${queryTable(entry.request.query)}
           </div>
           <div>
             <h4 class="text-sm font-medium text-gray-700 mb-1">Body</h4>
@@ -111,7 +109,7 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
           </div>
           <div>
             <h4 class="text-sm font-medium text-gray-700 mb-1">Headers</h4>
-            ${headersTable(respHeaders as Record<string, string>)}
+            ${headersTable(entry.response.headers)}
           </div>
           <div>
             <h4 class="text-sm font-medium text-gray-700 mb-1">Body</h4>
@@ -125,7 +123,7 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
     matchedStub !== null
       ? html`<div>
           <h3 class="text-lg font-semibold mb-3">Matched Stub</h3>
-          ${raw(stubCardPartial(matchedStub).value)}
+          ${stubCardPartial(matchedStub, { deletable: false })}
         </div>`
       : html``
   }`
@@ -140,3 +138,21 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
     content
   )
 }
+
+// A detail link for an entry that is gone (log cleared or rotated, imposter restarted) or never existed
+export const requestNotFoundPage = (config: ImposterConfig, entryId: string): SafeHtml =>
+  layout(
+    {
+      title: `${config.name} — Request not found`,
+      imposterName: config.name,
+      port: config.port,
+      activeTab: "requests"
+    },
+    html`<div class="mb-4">
+      <a href="/_admin/requests" class="text-indigo-600 hover:underline text-sm">&larr; Back to Requests</a>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <h1 class="text-lg font-semibold mb-1">Request not found</h1>
+      <p class="text-sm text-gray-500">No logged request has id <span class="font-mono">${entryId}</span>. The log keeps the last 100 requests and is emptied when the imposter stops.</p>
+    </div>`
+  )

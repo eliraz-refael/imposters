@@ -1,17 +1,25 @@
-import { Effect, Ref } from "effect"
+import * as Clock from "effect/Clock"
+import * as Data from "effect/Data"
+import * as Effect from "effect/Effect"
+import * as Ref from "effect/Ref"
+import * as Schema from "effect/Schema"
 import type { ImposterConfig } from "../domain/imposter.js"
 import type { ImposterRepositoryShape } from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
-import type { Stub } from "../schemas/StubSchema.js"
+import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
 import type { RequestLoggerShape } from "../services/RequestLogger.js"
+import { faviconResponse } from "./favicon.js"
+import { html } from "./html.js"
+import { errorBox, errorResponse, formString, htmlResponse } from "./htmx.js"
 import { dashboardPage } from "./pages/dashboard.js"
-import { requestDetailPage } from "./pages/request-detail.js"
+import { requestDetailPage, requestNotFoundPage } from "./pages/request-detail.js"
 import { requestsPage, testResultPartial } from "./pages/requests.js"
 import { stubsPage } from "./pages/stubs.js"
-import { errorPartial, requestTablePartial, stubListPartial } from "./partials.js"
+import { requestTablePartial, stubListPartial } from "./partials.js"
 
 export interface UiDeps {
   readonly id: string
+  // The config at start; pages read the current one from the repository and fall back to this
   readonly config: ImposterConfig
   readonly stubsRef: Ref.Ref<ReadonlyArray<Stub>>
   readonly repo: ImposterRepositoryShape
@@ -21,189 +29,153 @@ export interface UiDeps {
   readonly fetchSelf: (request: Request) => Promise<Response>
 }
 
-const htmlResponse = (body: string, status = 200): Response =>
-  new Response(body, {
-    status,
-    headers: { "content-type": "text/html; charset=utf-8" }
+const ADMIN_PREFIX = "/_admin"
+
+// A failed UI action: the message the user sees and the status it is sent with
+class UiError extends Data.TaggedError("UiError")<{ readonly message: string; readonly status: number }> {}
+
+// The add/edit stub form: JSON text fields, decoded exactly as the admin API decodes a stub
+const PredicatesJson = Schema.fromJsonString(Schema.Array(Predicate))
+const ResponsesJson = Schema.fromJsonString(Schema.NonEmptyArray(ResponseConfig))
+const StubForm = Schema.Struct({ predicates: PredicatesJson, responses: ResponsesJson, responseMode: ResponseMode })
+const StubPatchForm = Schema.Struct({
+  predicates: Schema.optional(PredicatesJson),
+  responses: Schema.optional(ResponsesJson),
+  responseMode: Schema.optional(ResponseMode)
+})
+
+const decodeForm = <A>(decode: (input: unknown) => Effect.Effect<A, Schema.SchemaError>, input: unknown) =>
+  decode(input).pipe(
+    Effect.mapError((err) =>
+      new UiError({ message: `Invalid stub: ${err.message.replaceAll("\n", " ")}`, status: 400 })
+    )
+  )
+
+const readForm = (request: Request): Effect.Effect<FormData, UiError> =>
+  Effect.tryPromise({
+    try: () => request.formData(),
+    catch: () => new UiError({ message: "Expected a form submission.", status: 400 })
   })
 
-const parseStubIdFromPath = (path: string): string | null => {
-  const match = path.match(/^\/stubs\/(.+)$/)
-  return match ? match[1]! : null
+// The form's text fields with blank ones left out, so a blank field means "not given"
+const nonBlankFields = (form: FormData, names: ReadonlyArray<string>): Record<string, string> => {
+  const fields: Record<string, string> = {}
+  for (const name of names) {
+    const value = formString(form, name)?.trim()
+    if (value !== undefined && value !== "") fields[name] = value
+  }
+  return fields
 }
 
-export const makeUiRouter = (deps: UiDeps) => async (request: Request): Promise<Response | null> => {
-  const url = new URL(request.url)
-  if (!url.pathname.startsWith("/_admin")) return null
+const parseStubIdFromPath = (path: string): string | null => {
+  const match = /^\/stubs\/([^/]+)$/.exec(path)
+  return match?.[1] ?? null
+}
 
-  const path = url.pathname.slice("/_admin".length) || "/"
-  const method = request.method.toUpperCase()
+const stubListOob = (stubs: ReadonlyArray<Stub>) =>
+  html`<div id="stub-list" hx-swap-oob="innerHTML">${stubListPartial(stubs)}</div>`
 
-  // GET / — dashboard
-  if (method === "GET" && (path === "/" || path === "")) {
-    return deps.runPromise(
-      Effect.gen(function*() {
-        const stubs = yield* Ref.get(deps.stubsRef)
-        const requestCount = yield* deps.requestLogger.getCount(deps.id)
-        const recentRequests = yield* deps.requestLogger.getEntries(deps.id, { limit: 10 })
-        return htmlResponse(
-          dashboardPage({
-            config: deps.config,
-            stubCount: stubs.length,
-            requestCount,
-            recentRequests: recentRequests.slice().reverse()
-          }).value
-        )
+export const makeUiRouter = (deps: UiDeps) => {
+  const currentConfig: Effect.Effect<ImposterConfig> = deps.repo.get(deps.id).pipe(
+    Effect.map((record) => record.config),
+    Effect.catch(() => Effect.succeed(deps.config))
+  )
+
+  // Re-reads the stubs from the repository into the running server's Ref (hot reload)
+  const reloadStubs: Effect.Effect<ReadonlyArray<Stub>> = deps.repo.getStubs(deps.id).pipe(
+    Effect.tap((stubs) => Ref.set(deps.stubsRef, stubs)),
+    Effect.catch(() => Ref.get(deps.stubsRef))
+  )
+
+  const imposterGone = () => new UiError({ message: "This imposter no longer exists.", status: 404 })
+
+  const addStub = (request: Request): Effect.Effect<Response, UiError> =>
+    Effect.gen(function*() {
+      const form = yield* readForm(request)
+      const fields = nonBlankFields(form, ["predicates", "responses", "responseMode"])
+      if (fields.responses === undefined) {
+        return yield* new UiError({ message: "Responses field is required.", status: 400 })
+      }
+      // The schema's own wording for this one ("Missing key at [0]") reads as a puzzle
+      if (fields.responses.replaceAll(/\s/g, "") === "[]") {
+        return yield* new UiError({ message: "Responses must be a non-empty array.", status: 400 })
+      }
+      const decoded = yield* decodeForm(Schema.decodeUnknownEffect(StubForm), {
+        predicates: "[]",
+        responseMode: "sequential",
+        ...fields
       })
-    )
-  }
+      const stub: Stub = { id: NonEmptyString.make(crypto.randomUUID().slice(0, 8)), ...decoded }
+      yield* deps.repo.addStub(deps.id, stub).pipe(Effect.mapError(imposterGone))
+      return htmlResponse(stubListPartial(yield* reloadStubs))
+    })
 
-  // GET /stubs — stubs page
-  if (method === "GET" && path === "/stubs") {
-    return deps.runPromise(
-      Effect.gen(function*() {
-        const stubs = yield* Ref.get(deps.stubsRef)
-        return htmlResponse(stubsPage({ config: deps.config, stubs }).value)
-      })
-    )
-  }
-
-  // POST /stubs — add stub
-  if (method === "POST" && path === "/stubs") {
-    try {
-      const formData = await request.formData()
-      const predicatesRaw = formData.get("predicates") as string | null
-      const responsesRaw = formData.get("responses") as string | null
-      const responseMode = (formData.get("responseMode") as string | null) || "sequential"
-
-      if (!responsesRaw) {
-        return htmlResponse(errorPartial("Responses field is required.").value, 200)
-      }
-
-      let predicates: unknown
-      let responses: unknown
-      try {
-        predicates = JSON.parse(predicatesRaw || "[]")
-        responses = JSON.parse(responsesRaw)
-      } catch {
-        return htmlResponse(errorPartial("Invalid JSON in predicates or responses.").value, 200)
-      }
-
-      if (!Array.isArray(responses) || responses.length === 0) {
-        return htmlResponse(errorPartial("Responses must be a non-empty array.").value, 200)
-      }
-
-      const stubId = NonEmptyString.make(crypto.randomUUID().slice(0, 8))
-      const stub: Stub = {
-        id: stubId,
-        predicates: predicates as Stub["predicates"],
-        responses: responses as unknown as Stub["responses"],
-        responseMode: responseMode as Stub["responseMode"]
-      }
-
-      return await deps.runPromise(
-        Effect.gen(function*() {
-          yield* deps.repo.addStub(deps.id, stub).pipe(
-            Effect.catch(() => Effect.void)
-          )
-          const updated = yield* deps.repo.getStubs(deps.id).pipe(
-            Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
-          )
-          yield* Ref.set(deps.stubsRef, updated)
-          return htmlResponse(stubListPartial(updated).value)
-        })
+  const updateStub = (request: Request, stubId: string): Effect.Effect<Response, UiError> =>
+    Effect.gen(function*() {
+      const form = yield* readForm(request)
+      const patch = yield* decodeForm(
+        Schema.decodeUnknownEffect(StubPatchForm),
+        nonBlankFields(form, ["predicates", "responses", "responseMode"])
       )
-    } catch {
-      return htmlResponse(errorPartial("Failed to parse form data.").value, 200)
-    }
-  }
-
-  // DELETE /stubs/:id — delete stub
-  const deleteStubId = method === "DELETE" ? parseStubIdFromPath(path) : null
-  if (deleteStubId !== null) {
-    return deps.runPromise(
-      Effect.gen(function*() {
-        yield* deps.repo.removeStub(deps.id, deleteStubId).pipe(
-          Effect.catch(() => Effect.void)
-        )
-        const updated = yield* deps.repo.getStubs(deps.id).pipe(
-          Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
-        )
-        yield* Ref.set(deps.stubsRef, updated)
-        return htmlResponse(stubListPartial(updated).value)
-      })
-    )
-  }
-
-  // PUT /stubs/:id — update stub
-  const putStubId = method === "PUT" ? parseStubIdFromPath(path) : null
-  if (putStubId !== null) {
-    try {
-      const formData = await request.formData()
-      const predicatesRaw = formData.get("predicates") as string | null
-      const responsesRaw = formData.get("responses") as string | null
-      const responseMode = formData.get("responseMode") as string | null
-
-      return await deps.runPromise(
-        Effect.gen(function*() {
-          yield* deps.repo.updateStub(deps.id, putStubId, (existing) => ({
-            ...existing,
-            ...(predicatesRaw ? { predicates: JSON.parse(predicatesRaw) } : {}),
-            ...(responsesRaw ? { responses: JSON.parse(responsesRaw) } : {}),
-            ...(responseMode ? { responseMode: responseMode as Stub["responseMode"] } : {})
-          })).pipe(Effect.catch(() => Effect.void))
-          const updated = yield* deps.repo.getStubs(deps.id).pipe(
-            Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
-          )
-          yield* Ref.set(deps.stubsRef, updated)
-          return htmlResponse(stubListPartial(updated).value)
-        })
+      yield* deps.repo.updateStub(deps.id, stubId, (existing) => ({
+        ...existing,
+        ...(patch.predicates !== undefined ? { predicates: patch.predicates } : {}),
+        ...(patch.responses !== undefined ? { responses: patch.responses } : {}),
+        ...(patch.responseMode !== undefined ? { responseMode: patch.responseMode } : {})
+      })).pipe(
+        Effect.catchTag(
+          "StubNotFoundError",
+          () => Effect.fail(new UiError({ message: "Stub not found.", status: 404 }))
+        ),
+        Effect.catchTag("ImposterNotFoundError", () => Effect.fail(imposterGone()))
       )
-    } catch {
-      return htmlResponse(errorPartial("Failed to parse form data.").value, 200)
-    }
-  }
+      return htmlResponse(stubListPartial(yield* reloadStubs))
+    })
 
-  // GET /requests — full page
-  if (method === "GET" && path === "/requests") {
-    return deps.runPromise(
-      Effect.gen(function*() {
-        const entries = yield* deps.requestLogger.getEntries(deps.id, { limit: 100 })
-        return htmlResponse(requestsPage({ config: deps.config, entries }).value)
-      })
+  const deleteStub = (stubId: string): Effect.Effect<Response> =>
+    deps.repo.removeStub(deps.id, stubId).pipe(
+      Effect.andThen(reloadStubs),
+      Effect.map((stubs) => htmlResponse(stubListPartial(stubs))),
+      // Already gone (deleted elsewhere): say so, and refresh the list the user is looking at
+      Effect.catch(() =>
+        reloadStubs.pipe(
+          Effect.map((stubs) => errorResponse(`Stub ${stubId} no longer exists.`, 404, stubListOob(stubs)))
+        )
+      )
     )
-  }
 
-  // GET /requests/list — HTMX partial (filtered table body)
-  if (method === "GET" && path === "/requests/list") {
-    const params = url.searchParams
-    return deps.runPromise(
-      Effect.gen(function*() {
-        const opts: { limit?: number; method?: string; path?: string; status?: number } = { limit: 100 }
-        const methodFilter = params.get("method")
-        if (methodFilter) opts.method = methodFilter
-        const pathFilter = params.get("path")
-        if (pathFilter) opts.path = pathFilter
-        const statusFilter = params.get("status")
-        if (statusFilter) opts.status = Number(statusFilter)
-        const entries = yield* deps.requestLogger.getEntries(deps.id, opts)
-        return htmlResponse(requestTablePartial(entries.slice().reverse()).value)
-      })
-    )
-  }
+  const listRequests = (params: URLSearchParams): Effect.Effect<Response, UiError> =>
+    Effect.gen(function*() {
+      const opts: { limit?: number; method?: string; path?: string; status?: number } = { limit: 100 }
+      const methodFilter = params.get("method")?.trim()
+      if (methodFilter) opts.method = methodFilter
+      const pathFilter = params.get("path")?.trim()
+      if (pathFilter) opts.path = pathFilter
+      const statusFilter = params.get("status")?.trim()
+      if (statusFilter) {
+        const status = Number(statusFilter)
+        if (!Number.isInteger(status)) {
+          return yield* new UiError({ message: `Status filter must be a number, got "${statusFilter}".`, status: 400 })
+        }
+        opts.status = status
+      }
+      const entries = yield* deps.requestLogger.getEntries(deps.id, opts)
+      return htmlResponse(requestTablePartial(entries.slice().reverse()))
+    })
 
-  // POST /requests/test — send test request to own port
-  if (method === "POST" && path === "/requests/test") {
-    try {
-      const formData = await request.formData()
-      const testMethod = (formData.get("method") as string) || "GET"
-      const testPath = (formData.get("path") as string) || "/"
-      const testBody = formData.get("body") as string | null
-      const testContentType = (formData.get("contentType") as string) || "application/json"
-      const testHeadersRaw = (formData.get("headers") as string) || ""
+  // Errors here stay in #test-result (no retarget): that is where the user looks for the answer
+  const sendTestRequest = (request: Request): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const form = yield* readForm(request)
+      const testMethod = formString(form, "method") || "GET"
+      const rawPath = formString(form, "path")?.trim() || "/"
+      const testPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`
+      const testBody = formString(form, "body") || undefined
+      const testContentType = formString(form, "contentType") || "application/json"
+      const testHeadersRaw = formString(form, "headers") ?? ""
 
       const headers: Record<string, string> = {}
-      if (testContentType && testBody) {
+      if (testBody !== undefined) {
         headers["content-type"] = testContentType
       }
       for (const line of testHeadersRaw.split("\n")) {
@@ -213,70 +185,116 @@ export const makeUiRouter = (deps: UiDeps) => async (request: Request): Promise<
         }
       }
 
-      const startTime = Date.now()
-      const testResp = await deps.fetchSelf(
-        new Request(`http://localhost:${deps.config.port}${testPath}`, {
-          method: testMethod,
-          headers,
-          ...(testBody && testMethod !== "GET" && testMethod !== "HEAD" ? { body: testBody } : {})
-        })
-      )
-      const duration = Date.now() - startTime
+      const testRequest = yield* Effect.try({
+        try: () =>
+          new Request(`http://localhost:${deps.config.port}${testPath}`, {
+            method: testMethod,
+            headers,
+            ...(testBody !== undefined && testMethod !== "GET" && testMethod !== "HEAD" ? { body: testBody } : {})
+          }),
+        catch: (err) => new UiError({ message: `Invalid test request: ${String(err)}`, status: 400 })
+      })
 
-      const respBody = await testResp.text()
+      const startTime = yield* Clock.currentTimeMillis
+      const testResp = yield* Effect.tryPromise({
+        try: () => deps.fetchSelf(testRequest),
+        catch: (err) => new UiError({ message: `Request failed: ${String(err)}`, status: 502 })
+      })
+      const respBody = yield* Effect.tryPromise({
+        try: () => testResp.text(),
+        catch: (err) => new UiError({ message: `Reading the response failed: ${String(err)}`, status: 502 })
+      })
+      const duration = (yield* Clock.currentTimeMillis) - startTime
+
       const respHeaders: Record<string, string> = {}
       testResp.headers.forEach((val, key) => {
         respHeaders[key] = val
       })
 
       return htmlResponse(
-        testResultPartial({ status: testResp.status, headers: respHeaders, body: respBody, duration }).value
+        testResultPartial({ status: testResp.status, headers: respHeaders, body: respBody, duration })
       )
-    } catch (err) {
-      return htmlResponse(
-        `<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3">Request failed: ${String(err)}</div>`
-      )
+    }).pipe(Effect.catchTag("UiError", (err) => Effect.succeed(htmlResponse(errorBox(err.message), err.status))))
+
+  const requestDetail = (entryId: string): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const config = yield* currentConfig
+      const entry = yield* deps.requestLogger.getEntryById(deps.id, entryId)
+      if (entry === null) {
+        return htmlResponse(requestNotFoundPage(config, entryId), 404)
+      }
+      const stubs = yield* Ref.get(deps.stubsRef)
+      const matchedStub = stubs.find((s) => s.id === entry.response.matchedStubId) ?? null
+      return htmlResponse(requestDetailPage({ config, entry, matchedStub }))
+    })
+
+  const route = (request: Request, url: URL): Effect.Effect<Response, UiError> => {
+    const path = url.pathname.slice(ADMIN_PREFIX.length) || "/"
+    const method = request.method.toUpperCase()
+
+    if (method === "GET" && path === "/favicon.svg") return Effect.succeed(faviconResponse())
+
+    if (method === "GET" && path === "/") {
+      return Effect.gen(function*() {
+        const config = yield* currentConfig
+        const stubs = yield* Ref.get(deps.stubsRef)
+        const requestCount = yield* deps.requestLogger.getCount(deps.id)
+        const recentRequests = yield* deps.requestLogger.getEntries(deps.id, { limit: 10 })
+        return htmlResponse(
+          dashboardPage({
+            config,
+            stubCount: stubs.length,
+            requestCount,
+            recentRequests: recentRequests.slice().reverse()
+          })
+        )
+      })
     }
+
+    if (method === "GET" && path === "/stubs") {
+      return Effect.gen(function*() {
+        const config = yield* currentConfig
+        const stubs = yield* Ref.get(deps.stubsRef)
+        return htmlResponse(stubsPage({ config, stubs }))
+      })
+    }
+
+    if (method === "POST" && path === "/stubs") return addStub(request)
+
+    const stubId = parseStubIdFromPath(path)
+    if (method === "DELETE" && stubId !== null) return deleteStub(stubId)
+    if (method === "PUT" && stubId !== null) return updateStub(request, stubId)
+
+    if (method === "GET" && path === "/requests") {
+      return Effect.gen(function*() {
+        const config = yield* currentConfig
+        const entries = yield* deps.requestLogger.getEntries(deps.id, { limit: 100 })
+        return htmlResponse(requestsPage({ config, entries }))
+      })
+    }
+
+    if (method === "GET" && path === "/requests/list") return listRequests(url.searchParams)
+
+    if (method === "POST" && path === "/requests/test") return sendTestRequest(request)
+
+    if (method === "DELETE" && path === "/requests") {
+      return deps.requestLogger.clear(deps.id).pipe(Effect.as(htmlResponse(requestTablePartial([]))))
+    }
+
+    const detailMatch = /^\/requests\/([^/]+)$/.exec(path)
+    if (method === "GET" && detailMatch?.[1] !== undefined) return requestDetail(detailMatch[1])
+
+    return Effect.succeed(htmlResponse(html`<h1>Not Found</h1>`, 404))
   }
 
-  // DELETE /requests — clear log
-  if (method === "DELETE" && path === "/requests") {
+  return async (request: Request): Promise<Response | null> => {
+    const url = new URL(request.url)
+    // Only the prefix itself or a path under it: /_admin-api and the like belong to the stubs
+    if (url.pathname !== ADMIN_PREFIX && !url.pathname.startsWith(`${ADMIN_PREFIX}/`)) return null
     return deps.runPromise(
-      Effect.gen(function*() {
-        yield* deps.requestLogger.clear(deps.id)
-        return htmlResponse(requestTablePartial([]).value)
-      })
+      route(request, url).pipe(
+        Effect.catchTag("UiError", (err) => Effect.succeed(errorResponse(err.message, err.status)))
+      )
     )
   }
-
-  // GET /requests/:id — detail page
-  if (method === "GET" && path.startsWith("/requests/")) {
-    const entryId = path.slice("/requests/".length)
-    if (entryId && !entryId.includes("/")) {
-      return deps.runPromise(
-        Effect.gen(function*() {
-          const entry = yield* deps.requestLogger.getEntryById(deps.id, entryId)
-          if (entry === null) {
-            return htmlResponse("<h1>Request not found</h1>", 404)
-          }
-          // Try to find matched stub
-          let matchedStub: Stub | null = null
-          if (entry.response.matchedStubId) {
-            try {
-              const stubs = yield* deps.repo.getStubs(deps.id).pipe(
-                Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>))
-              )
-              matchedStub = stubs.find((s) => s.id === entry.response.matchedStubId) ?? null
-            } catch {
-              // ignore
-            }
-          }
-          return htmlResponse(requestDetailPage({ config: deps.config, entry, matchedStub }).value)
-        })
-      )
-    }
-  }
-
-  // Fallback: 404 within /_admin
-  return htmlResponse("<h1>Not Found</h1>", 404)
 }

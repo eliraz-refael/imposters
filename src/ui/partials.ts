@@ -1,7 +1,9 @@
+import * as DateTime from "effect/DateTime"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import type { ResponseConfig, Stub } from "../schemas/StubSchema.js"
 import { html } from "./html.js"
 import type { SafeHtml } from "./html.js"
+import { errorBox } from "./htmx.js"
 
 const predicateSummary = (stub: Stub): string => {
   if (stub.predicates.length === 0) return "catch-all (no predicates)"
@@ -10,7 +12,19 @@ const predicateSummary = (stub: Stub): string => {
     .join(" AND ")
 }
 
-const formatJson = (value: unknown): string => JSON.stringify(value, null, 2)
+// A string body is sent as-is, so show it as-is rather than as a JSON string literal
+const formatBody = (value: unknown): string => typeof value === "string" ? value : JSON.stringify(value, null, 2)
+
+const pad2 = (n: number): string => String(n).padStart(2, "0")
+
+// Times render in UTC, labelled, so they read the same whatever the server's time zone
+export const formatTimeUtc = (timestamp: DateTime.DateTime): string => {
+  const parts = DateTime.toPartsUtc(timestamp)
+  return `${pad2(parts.hour)}:${pad2(parts.minute)}:${pad2(parts.second)} UTC`
+}
+
+// The full instant in ISO 8601, e.g. 2026-10-02T09:57:56.645Z
+export const formatTimestampUtc = (timestamp: DateTime.DateTime): string => DateTime.formatIso(timestamp)
 
 const responseDetail = (r: ResponseConfig, index: number, total: number): SafeHtml => {
   const label = total > 1 ? `Response ${String(index + 1)}/${String(total)}` : "Response"
@@ -27,17 +41,27 @@ const responseDetail = (r: ResponseConfig, index: number, total: number): SafeHt
     ${
     r.body !== undefined
       ? html`<pre class="mt-1 bg-white border rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap">${
-        formatJson(r.body)
+        formatBody(r.body)
       }</pre>`
       : html`<div class="text-xs text-gray-400 italic">no body</div>`
   }
   </div>`
 }
 
-export const stubCardPartial = (stub: Stub): SafeHtml => {
+// `deletable: false` drops the Delete button, for a page with no #stub-list for it to refresh
+export const stubCardPartial = (stub: Stub, opts?: { readonly deletable?: boolean }): SafeHtml => {
   const responsesHtml = stub.responses
     .map((r, i) => responseDetail(r, i, stub.responses.length))
     .reduce((acc, r) => html`${acc}${r}`, html``)
+
+  const deleteButton = opts?.deletable === false
+    ? html``
+    : html`<button
+          hx-delete="/_admin/stubs/${stub.id}"
+          hx-target="#stub-list"
+          hx-swap="innerHTML"
+          hx-confirm="Delete this stub?"
+          class="text-red-500 hover:text-red-700 text-sm">Delete</button>`
 
   return html`<div class="bg-white rounded-lg shadow p-4 mb-3" id="stub-${stub.id}">
     <div class="flex items-center justify-between mb-2">
@@ -46,12 +70,7 @@ export const stubCardPartial = (stub: Stub): SafeHtml => {
         <span class="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">${stub.responseMode}</span>
       </div>
       <div class="flex gap-2">
-        <button
-          hx-delete="/_admin/stubs/${stub.id}"
-          hx-target="#stub-list"
-          hx-swap="innerHTML"
-          hx-confirm="Delete this stub?"
-          class="text-red-500 hover:text-red-700 text-sm">Delete</button>
+        ${deleteButton}
       </div>
     </div>
     <div class="text-sm text-gray-600 mb-2">
@@ -76,8 +95,7 @@ export const stubListPartial = (stubs: ReadonlyArray<Stub>): SafeHtml => {
 export const emptyStubMessage = (): SafeHtml =>
   html`<p class="text-gray-400 text-center py-8">No stubs configured. Add one above.</p>`
 
-export const errorPartial = (message: string): SafeHtml =>
-  html`<div class="bg-red-50 border border-red-200 text-red-700 rounded p-3 mb-3">${message}</div>`
+export const errorPartial = (message: string): SafeHtml => errorBox(message)
 
 export const methodBadge = (method: string): SafeHtml => {
   const colors: Record<string, string> = {
@@ -110,13 +128,11 @@ export const requestTablePartial = (
     return html`<tr><td colspan="7" class="text-center py-4 text-gray-400">No requests recorded.</td></tr>`
   }
   const rows = entries.map((entry) => {
-    const d = new Date(Number((entry.timestamp as unknown as { epochMillis: bigint }).epochMillis))
-    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${
-      String(d.getSeconds()).padStart(2, "0")
-    }`
     const stubId = entry.response.matchedStubId ?? "-"
     const rowContent = html`
-      <td class="py-2 px-3 text-xs text-gray-500">${time}</td>
+      <td class="py-2 px-3 text-xs text-gray-500" title="${formatTimestampUtc(entry.timestamp)}">${
+      formatTimeUtc(entry.timestamp)
+    }</td>
       <td class="py-2 px-3">${methodBadge(entry.request.method)}</td>
       <td class="py-2 px-3 font-mono text-sm">${entry.request.path}</td>
       <td class="py-2 px-3">${statusBadge(entry.response.status)}</td>
