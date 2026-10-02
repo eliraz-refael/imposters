@@ -37,6 +37,13 @@ No `any` remains in `src/`. Standard 2 still has known breaches, kept current in
 | `src/matching/RequestMatcher.ts`, `src/repositories/ImposterRepository.ts`, `src/client/HandlerHttpClient.ts`, `src/services/MetricsService.ts` (2) | Non-null assertions on index access |
 | `src/client/testing.ts` | `as` casts to the branded `PortNumber` / `NonEmptyString`, the stub responses, and the returned id and port |
 
+Standards 5 and 6 also have breaches:
+
+| Location | Issue |
+|---|---|
+| `src/server/ImposterServer.ts` | Request timing uses `Date.now()`, and log entry ids use `crypto.randomUUID()`, instead of `Clock` and the `Uuid` service |
+| `src/ui/UiRouter.ts` | Stubs added from the UI get `crypto.randomUUID().slice(0, 8)` ids rather than the `Uuid` service the API uses |
+
 ---
 
 ## Architecture as built
@@ -173,7 +180,10 @@ Work that is currently outstanding and not on the public roadmap, or the impleme
 - **S3: `?policy` and `?ownershipControls` PUTs are accepted but not enforced.** They answer 204 / 200 on an existing bucket and are discarded: no GET-back, and a policy never denies a request.
 - **S3: `aws-chunked` / `STREAMING-*` bodies answer 501.** SDK 3.1131.0 sends a `Uint8Array` PutObject as a plain signed payload (verified in `test/e2e/s3.test.ts`), but stream bodies and unknown-length uploads use aws-chunked encoding with trailing checksums. Needs a chunk decoder that strips the chunk framing before storing. Public: [#32](https://github.com/eliraz-refael/imposters/issues/32).
 - **Pass the raw request path to extensions so S3 keys with dot segments survive.** The WHATWG `URL` parse in the Node server resolves `.` / `..` (and `%2e`) segments before `RequestContext` is built, so `DELETE /b/k/..` reaches S3 as DeleteBucket. Needs the core to carry the raw path in `RequestContext`. Public: [#32](https://github.com/eliraz-refael/imposters/issues/32).
-- **Advertise the bind address in imposter URLs.** `adminUrl` (`src/api/Conversions.ts`) and the admin dashboard's "Open UI" link (`src/ui/admin/partials.ts`) are hard-coded to `http://localhost:<port>`. With `--host` set to one specific non-loopback address, both point at an address nothing listens on. Needs the bind host passed into the API conversions and the admin UI.
+- **Advertise the bind address in imposter URLs.** `adminUrl` (`src/api/Conversions.ts`) is hard-coded to `http://localhost:<port>`, so with `--host` set to one specific non-loopback address it points at an address nothing listens on. Needs the bind host passed into the API conversions. (The admin dashboard's "Open UI" link was fixed in #44: it uses the host the dashboard was reached through.)
+- **`adminPath` is accepted but ignored.** `POST` / `PATCH /imposters` take it, but `UiRouter` always serves `/_admin`, and `Conversions.ts` always returns `adminPath: "/_admin"`. Either honour it in the UI router or drop it from the API.
+- **The imposter UI owns all of `/_admin/*`.** It shadows a user's stub on that prefix and an S3 bucket named `_admin`, and `HEAD /_admin` answers 404. Honouring `adminPath` (above) would let a user move it out of the way.
+- **Imposter names are not validated by the API.** `src/domain/imposter.ts` restricts names to letters, digits, `-` and `_`, but the API's create schema doesn't apply that rule, so names with spaces are accepted. Decide on one rule and use it in both.
 - **S3: ListObjectsV2 pagination and `delimiter` answer 501.** A listing longer than `max-keys` (capped at 1000) is refused rather than truncated; `continuation-token`, `start-after` and `delimiter` / `CommonPrefixes` are not implemented. Public: [#32](https://github.com/eliraz-refael/imposters/issues/32).
 - **Binary stubs for proxy record mode** (the record-mode item above): a recorded stub cannot hold binary bytes, which also rules out recording S3 GetObject answers as stubs.
 - **`--runtime bun` only applies to the admin server.** `MainLayer` hard-codes `NodeServerFactoryLive` for imposters, so under Bun they run on Bun's `node:http` compatibility layer.
@@ -184,6 +194,7 @@ Work that is currently outstanding and not on the public roadmap, or the impleme
 
 ### Recently completed
 
+- Both web UIs work end to end (#44): errors are visible (htmx 2 discards 4xx/5xx by default), UI stubs are validated with the API's schemas, request times render in UTC, and the browser's favicon request no longer lands in an imposter's log.
 - The ESM build loads in plain Node: every relative import in `src/` carries its `.js` extension, `src` compiles under `NodeNext` so a missing one fails `bun check`, and `bun run verify-dist` (CI and publish) loads every export through `import()` and `require()`. The root barrel no longer re-exports `Program` / `cli/Commands`, which ran the CLI on import.
 - Every server binds `127.0.0.1` unless `--host` / `IMPOSTERS_HOST` says otherwise (#25).
 - Each GitHub release carries the npm tarball, checked against npm's integrity hash (#24).
