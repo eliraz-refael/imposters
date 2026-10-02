@@ -202,6 +202,24 @@ The `admin` block is optional and reserved: it is validated, but the CLI current
 | `GET` | `/imposters/:id/stats` | Get imposter statistics |
 | `DELETE` | `/imposters/:id/stats` | Reset imposter statistics |
 
+`GET /imposters?stats=true` adds each imposter's `statistics` to the list.
+
+Each captured request records what answered it in `response.outcome`: `stub`, `extension`, `proxy` or `unmatched` (the 404). When a stub answered, `response.responseIndex` says which of its responses it gave.
+
+Statistics count from the imposter's last start. They include:
+
+| Field | What it holds |
+|---|---|
+| `totalRequests`, `requestsPerMinute`, `requestsByMethod`, `requestsByStatusCode` | Request counts |
+| `errorRate` / `serverErrorRate` | The share of answers that were 4xx or 5xx / 5xx only |
+| `averageResponseTime`, `p50ResponseTime`, `p95ResponseTime`, `p99ResponseTime` | Latency in ms, over the last 1,000 requests |
+| `timeline` | The last 15 minutes as 30 buckets of 30 s, oldest first. Each has a `start` time and `requests`, `serverErrors` and `unmatched` counts |
+| `last15Minutes` | The timeline summed |
+| `stubs` | One row per stub, in matching order: `hits`, `byResponse` (hits per response), `lastHitAt`, and `nextResponseIndex` (absent in `random` mode) |
+| `unmatched` | Requests no stub, extension or proxy answered, grouped by `method` and `path` with a `count` and `lastSeenAt`. Most recently seen first. Up to 50 groups are kept; the least recently seen is dropped first |
+
+Starting an imposter and `DELETE /imposters/:id/stats` reset all of these. Deleting a stub drops its row. Changing a stub's `responses` or `responseMode` restarts its counters and its response cycle. A change to its predicates only keeps both.
+
 ## Stub Matching
 
 Each stub has an array of **predicates** that are AND-combined. A request matches a stub when all predicates pass. Stubs are evaluated in order — the first match wins.

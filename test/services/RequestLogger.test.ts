@@ -33,6 +33,7 @@ const makeEntry = (overrides: {
     status: overrides.status ?? 200,
     headers: {},
     proxied: false,
+    outcome: overrides.matchedStubId !== undefined ? "stub" : "unmatched",
     ...(overrides.matchedStubId !== undefined
       ? { matchedStubId: NonEmptyString.make(overrides.matchedStubId) }
       : {})

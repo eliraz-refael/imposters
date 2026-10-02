@@ -1,6 +1,10 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { NonEmptyString } from "./common.js"
+import { NonEmptyString, NonNegativeInt } from "./common.js"
+
+// What answered a request: a stub, the imposter's extension, its proxy, or nothing (the 404)
+export const RequestOutcome = Schema.Literals(["stub", "extension", "proxy", "unmatched"])
+export type RequestOutcome = Schema.Schema.Type<typeof RequestOutcome>
 
 export const RequestLogEntry = Schema.Struct({
   id: NonEmptyString,
@@ -18,7 +22,10 @@ export const RequestLogEntry = Schema.Struct({
     headers: Schema.Record(Schema.String, Schema.String).pipe(Schema.withDecodingDefault(Effect.sync(() => ({})))),
     body: Schema.optional(Schema.String),
     matchedStubId: Schema.optional(NonEmptyString),
-    proxied: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false)))
+    proxied: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+    outcome: RequestOutcome,
+    // Which of the matched stub's responses answered (only when `outcome` is "stub")
+    responseIndex: Schema.optional(NonNegativeInt)
   }),
   duration: Schema.Number
 })

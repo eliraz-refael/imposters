@@ -1,7 +1,8 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import type { RequestContext } from "imposters/matching/RequestMatcher"
-import { buildResponse, makeResponseState } from "imposters/matching/ResponseGenerator"
+import { buildResponse, makeResponseState, peekIndex } from "imposters/matching/ResponseGenerator"
 import type { ResponseConfig } from "imposters/schemas/StubSchema"
 import { describe, expect } from "vitest"
 
@@ -75,6 +76,58 @@ describe("makeResponseState", () => {
       const afterReset = yield* state.getNextIndex("imp1", "stub1", 3, "sequential")
       expect(afterReset).toBe(0)
     }))
+
+  it.effect("peekNextIndex tells the sequential answer to come without consuming it", () =>
+    Effect.gen(function*() {
+      const state = yield* makeResponseState()
+      const peeks: Array<Option.Option<number>> = []
+      for (let i = 0; i < 4; i++) {
+        const peeked = yield* state.peekNextIndex("imp1", "s", 3, "sequential")
+        // Peeking twice changes nothing
+        expect(yield* state.peekNextIndex("imp1", "s", 3, "sequential")).toEqual(peeked)
+        peeks.push(peeked)
+        expect(Option.some(yield* state.getNextIndex("imp1", "s", 3, "sequential"))).toEqual(peeked)
+      }
+      expect(peeks).toEqual([0, 1, 2, 0].map(Option.some))
+    }))
+
+  it.effect("peekNextIndex stays on the last response in repeat mode", () =>
+    Effect.gen(function*() {
+      const state = yield* makeResponseState()
+      const peeks: Array<Option.Option<number>> = []
+      for (let i = 0; i < 4; i++) {
+        peeks.push(yield* state.peekNextIndex("imp1", "s", 2, "repeat"))
+        yield* state.getNextIndex("imp1", "s", 2, "repeat")
+      }
+      expect(peeks).toEqual([0, 1, 1, 1].map(Option.some))
+    }))
+
+  it.effect("peekNextIndex is None in random mode", () =>
+    Effect.gen(function*() {
+      const state = yield* makeResponseState()
+      expect(yield* state.peekNextIndex("imp1", "s", 3, "random")).toEqual(Option.none())
+      yield* state.getNextIndex("imp1", "s", 3, "random")
+      expect(yield* state.peekNextIndex("imp1", "s", 3, "random")).toEqual(Option.none())
+    }))
+
+  it.effect("resetStub restarts one stub's cycle and leaves the others", () =>
+    Effect.gen(function*() {
+      const state = yield* makeResponseState()
+      yield* state.getNextIndex("imp1", "a", 3, "sequential")
+      yield* state.getNextIndex("imp1", "a", 3, "sequential")
+      yield* state.getNextIndex("imp1", "b", 3, "sequential")
+      yield* state.resetStub("imp1", "a")
+      expect(yield* state.peekNextIndex("imp1", "a", 3, "sequential")).toEqual(Option.some(0))
+      expect(yield* state.peekNextIndex("imp1", "b", 3, "sequential")).toEqual(Option.some(1))
+    }))
+})
+
+describe("peekIndex", () => {
+  it("maps a counter to the next index for each mode", () => {
+    expect(peekIndex(4, 3, "sequential")).toEqual(Option.some(1))
+    expect(peekIndex(4, 3, "repeat")).toEqual(Option.some(2))
+    expect(peekIndex(0, 3, "random")).toEqual(Option.none())
+  })
 })
 
 describe("buildResponse", () => {

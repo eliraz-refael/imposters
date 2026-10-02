@@ -5,9 +5,12 @@ import * as Option from "effect/Option"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { ImposterConfig, type ProxyConfigDomain } from "../domain/imposter.js"
 import { Extensions, findExtension, supportedProtocols } from "../extensions/Extension.js"
-import { ImposterRepository } from "../repositories/ImposterRepository.js"
+import { type ImposterRecord, ImposterRepository } from "../repositories/ImposterRepository.js"
 import { HttpProtocol, NonEmptyString } from "../schemas/common.js"
+import type { Statistics } from "../schemas/ImposterSchema.js"
+import type { Stub } from "../schemas/StubSchema.js"
 import { ImposterServer } from "../server/ImposterServer.js"
+import { StubChange } from "../server/StubChange.js"
 import { AppConfig } from "../services/AppConfig.js"
 import { MetricsService } from "../services/MetricsService.js"
 import { PortAllocator } from "../services/PortAllocator.js"
@@ -15,7 +18,7 @@ import { RequestLogger } from "../services/RequestLogger.js"
 import { Uuid } from "../services/Uuid.js"
 import { AdminApi } from "./AdminApi.js"
 import { ApiBadRequestError, ApiConflictError, ApiNotFoundError, ApiServiceError } from "./ApiErrors.js"
-import { buildPaginationMeta, toImposterResponse } from "./Conversions.js"
+import { buildPaginationMeta, toImposterResponse, toStatistics } from "./Conversions.js"
 
 // Extensions are terminal (they answer every unmatched request), so a proxy on one would never run
 const proxyOnExtensionError = (protocol: string) =>
@@ -45,6 +48,26 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
             message: `Unknown protocol "${protocol}". Available: ${supportedProtocols(extensions).join(", ")}`
           })
         )
+
+    const statisticsFor = (id: string, stubs: ReadonlyArray<Stub>): Effect.Effect<Statistics> =>
+      Effect.gen(function*() {
+        const snapshot = yield* metricsService.getStats(id)
+        const next = new Map<string, number>()
+        for (const stub of stubs) {
+          const index = yield* imposterServer.nextResponseIndex(id, stub.id)
+          if (Option.isSome(index)) next.set(stub.id, index.value)
+        }
+        return toStatistics(snapshot, stubs, next)
+      })
+
+    const withStatistics = (record: ImposterRecord) =>
+      Effect.all({ response: toImposterResponse(record), statistics: statisticsFor(record.config.id, record.stubs) })
+        .pipe(Effect.map(({ response, statistics }) => ({ ...response, statistics })))
+
+    const imposterNotFound = (e: { readonly id: string }) =>
+      new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
+    const stubNotFound = (e: { readonly stubId: string }) =>
+      new ApiNotFoundError({ message: "Stub not found", resourceType: "stub", resourceId: e.stubId })
 
     return handlers
       .handle("createImposter", ({ payload }) =>
@@ -99,7 +122,7 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
 
           const total = filtered.length
           const paged = filtered.slice(query.offset, query.offset + query.limit)
-          const imposters = yield* Effect.all(paged.map(toImposterResponse))
+          const imposters = yield* Effect.forEach(paged, query.stats === true ? withStatistics : toImposterResponse)
 
           return {
             imposters,
@@ -268,20 +291,13 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
             responseMode: payload.responseMode
           }
 
-          const result = yield* repo.addStub(params.imposterId, stub).pipe(
-            Effect.catchTag("ImposterNotFoundError", (e) =>
-              Effect.fail(
-                new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
-              ))
+          // Hot-reloads a running imposter
+          return yield* imposterServer.applyStubChange(params.imposterId, StubChange.Add({ stub })).pipe(
+            Effect.catchTags({
+              ImposterNotFoundError: (e) => Effect.fail(imposterNotFound(e)),
+              StubNotFoundError: (e) => Effect.fail(stubNotFound(e))
+            })
           )
-
-          // Hot-reload if running
-          const running = yield* imposterServer.isRunning(params.imposterId)
-          if (running) {
-            yield* imposterServer.updateStubs(params.imposterId)
-          }
-
-          return result
         }))
       .handle("listStubs", ({ params }) =>
         Effect.gen(function*() {
@@ -294,53 +310,25 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
         }))
       .handle("updateStub", ({ params, payload }) =>
         Effect.gen(function*() {
-          const result = yield* repo.updateStub(params.imposterId, params.stubId, (s) => ({
-            ...s,
-            ...(payload.predicates !== undefined ? { predicates: payload.predicates } : {}),
-            ...(payload.responses !== undefined ? { responses: payload.responses } : {}),
-            ...(payload.responseMode !== undefined ? { responseMode: payload.responseMode } : {})
-          })).pipe(
-            Effect.catchTag("ImposterNotFoundError", (e) =>
-              Effect.fail(
-                new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
-              )),
-            Effect.catchTag("StubNotFoundError", (e) =>
-              Effect.fail(
-                new ApiNotFoundError({ message: "Stub not found", resourceType: "stub", resourceId: e.stubId })
-              ))
+          // Hot-reloads a running imposter; new responses or responseMode restart the stub's counters and cycle
+          const change = StubChange.Update({ stubId: params.stubId, patch: payload })
+          return yield* imposterServer.applyStubChange(params.imposterId, change).pipe(
+            Effect.catchTags({
+              ImposterNotFoundError: (e) => Effect.fail(imposterNotFound(e)),
+              StubNotFoundError: (e) => Effect.fail(stubNotFound(e))
+            })
           )
-
-          // Hot-reload if running
-          const running = yield* imposterServer.isRunning(params.imposterId)
-          if (running) {
-            yield* imposterServer.updateStubs(params.imposterId)
-          }
-
-          return result
         }))
       .handle("deleteStub", ({ params }) =>
         Effect.gen(function*() {
-          const result = yield* repo.removeStub(params.imposterId, params.stubId).pipe(
-            Effect.catchTag("ImposterNotFoundError", (e) =>
-              Effect.fail(
-                new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
-              )),
-            Effect.catchTag(
-              "StubNotFoundError",
-              (e) =>
-                Effect.fail(
-                  new ApiNotFoundError({ message: "Stub not found", resourceType: "stub", resourceId: e.stubId })
-                )
-            )
+          // Hot-reloads a running imposter and drops the stub's counters
+          const change = StubChange.Remove({ stubId: params.stubId })
+          return yield* imposterServer.applyStubChange(params.imposterId, change).pipe(
+            Effect.catchTags({
+              ImposterNotFoundError: (e) => Effect.fail(imposterNotFound(e)),
+              StubNotFoundError: (e) => Effect.fail(stubNotFound(e))
+            })
           )
-
-          // Hot-reload if running
-          const running = yield* imposterServer.isRunning(params.imposterId)
-          if (running) {
-            yield* imposterServer.updateStubs(params.imposterId)
-          }
-
-          return result
         }))
       .handle("listRequests", ({ params, query }) =>
         Effect.gen(function*() {
@@ -376,13 +364,10 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
         }))
       .handle("getImposterStats", ({ params }) =>
         Effect.gen(function*() {
-          yield* repo.get(params.id).pipe(
-            Effect.catchTag("ImposterNotFoundError", (e) =>
-              Effect.fail(
-                new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
-              ))
+          const record = yield* repo.get(params.id).pipe(
+            Effect.catchTag("ImposterNotFoundError", (e) => Effect.fail(imposterNotFound(e)))
           )
-          return yield* metricsService.getStats(params.id)
+          return yield* statisticsFor(params.id, record.stubs)
         }))
       .handle("resetImposterStats", ({ params }) =>
         Effect.gen(function*() {

@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as HashMap from "effect/HashMap"
+import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
 import type { ResponseConfig, ResponseMode } from "../schemas/StubSchema.js"
 import type { RequestContext } from "./RequestMatcher.js"
@@ -7,6 +8,16 @@ import { applyTemplates } from "./TemplateEngine.js"
 
 type CounterMap = HashMap.HashMap<string, number>
 type CounterResult = readonly [Effect.Effect<number, never>, CounterMap]
+
+// `counter` is how many times the stub has answered in sequential/repeat mode
+const indexFor = (counter: number, count: number, mode: "sequential" | "repeat"): number =>
+  mode === "sequential" ? counter % count : Math.min(counter, count - 1)
+
+/** The response the next request will get, or None when `mode` is random (it cannot be known) */
+export const peekIndex = (counter: number, count: number, mode: ResponseMode): Option.Option<number> =>
+  mode === "random" || count <= 0 ? Option.none() : Option.some(indexFor(counter, count, mode))
+
+const counterKey = (imposterId: string, stubId: string) => `${imposterId}:${stubId}`
 
 export const makeResponseState = () =>
   Effect.gen(function*() {
@@ -18,26 +29,33 @@ export const makeResponseState = () =>
       count: number,
       mode: ResponseMode
     ): Effect.Effect<number> => {
-      const key = `${imposterId}:${stubId}`
+      const key = counterKey(imposterId, stubId)
       return Ref.modify(countersRef, (counters): CounterResult => {
         const current = HashMap.get(counters, key)
         const index = current._tag === "Some" ? current.value : 0
-        let result: number
-        switch (mode) {
-          case "sequential":
-            result = index % count
-            break
-          case "random":
-            result = Math.floor(Math.random() * count)
-            break
-          case "repeat":
-            result = Math.min(index, count - 1)
-            break
+        if (mode === "random") {
+          return [Effect.succeed(Math.floor(Math.random() * count)), counters]
         }
-        const nextIndex = mode === "random" ? index : index + 1
-        return [Effect.succeed(result), HashMap.set(counters, key, nextIndex)]
+        return [Effect.succeed(indexFor(index, count, mode)), HashMap.set(counters, key, index + 1)]
       }).pipe(Effect.flatten)
     }
+
+    /** What `getNextIndex` would answer next, without consuming it; None for random */
+    const peekNextIndex = (
+      imposterId: string,
+      stubId: string,
+      count: number,
+      mode: ResponseMode
+    ): Effect.Effect<Option.Option<number>> =>
+      Ref.get(countersRef).pipe(
+        Effect.map((counters) =>
+          peekIndex(Option.getOrElse(HashMap.get(counters, counterKey(imposterId, stubId)), () => 0), count, mode)
+        )
+      )
+
+    /** Restarts one stub's cycle at its first response */
+    const resetStub = (imposterId: string, stubId: string): Effect.Effect<void> =>
+      Ref.update(countersRef, HashMap.remove(counterKey(imposterId, stubId)))
 
     const reset = (imposterId: string): Effect.Effect<void> =>
       Ref.update(countersRef, (counters) => {
@@ -50,8 +68,10 @@ export const makeResponseState = () =>
         return updated
       })
 
-    return { getNextIndex, reset }
+    return { getNextIndex, peekNextIndex, resetStub, reset }
   })
+
+export type ResponseState = Effect.Success<ReturnType<typeof makeResponseState>>
 
 // The Fetch spec forbids a body on these statuses: `new Response("", { status: 204 })` throws
 const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([204, 205, 304])

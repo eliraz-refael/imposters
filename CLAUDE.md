@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 566 tests across 52 files.
+All three gates pass: `bun check`, `bun lint`, and 658 tests across 59 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -193,7 +193,7 @@ Note: `bun test` (Bun's native runner) is **not** the same as `bun run test` (vi
 
 ### Known deviations (tech debt, not precedent)
 
-No `any` survives. About nine non-null assertions do (regex-match and index access in `AdminUiRouter`, `UiRouter`, `MetricsService`, `RequestMatcher`, `ImposterRepository`, `HandlerHttpClient`), plus the `as` casts in `src/client/testing.ts`. Clean them up rather than copying them.
+No `any` survives. About seven non-null assertions do (regex-match and index access in `AdminUiRouter`, `UiRouter`, `RequestMatcher`, `ImposterRepository`, `HandlerHttpClient`), plus the `as` casts in `src/client/testing.ts`. Clean them up rather than copying them.
 
 ## Effect Gotchas (hard-won — read before debugging)
 
