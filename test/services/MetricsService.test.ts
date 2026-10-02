@@ -194,6 +194,24 @@ describe("MetricsService", () => {
   })
 })
 
+describe("MetricsService: requests recorded out of order", () => {
+  // Requests are recorded when they finish, so a slow one can be recorded after a later one
+  it("keeps lastRequestAt the latest and firstRequestAt the earliest", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const metrics = yield* MetricsService
+        const impId = "imp-out-of-order"
+        yield* metrics.recordRequest(makeEntry({ imposterId: impId, atMs: 120_000 }))
+        yield* metrics.recordRequest(makeEntry({ imposterId: impId, atMs: 60_000 }))
+        const stats = yield* metrics.getStats(impId)
+        expect(stats.lastRequestAt).toEqual(DateTime.makeUnsafe(120_000))
+        // Two requests over the minute between them
+        expect(stats.requestsPerMinute).toBe(2)
+      })
+    )
+  })
+})
+
 describe("MetricsService: per-stub, unmatched and timeline", () => {
   it("computes serverErrorRate from 5xx only, beside errorRate", async () => {
     await runtime.runPromise(

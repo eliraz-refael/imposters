@@ -171,9 +171,10 @@ export const ImposterServerLive = Layer.effect(
           return runPromise(
             Effect.gen(function*() {
               const startTime = yield* Clock.currentTimeMillis
+              const ctx = yield* Effect.promise(() => extractRequestContext(request))
+              // Read after the body: a stub change made during a slow upload must not be answered with the old stubs
               const stubs = yield* Ref.get(stubsRef)
               const proxyConfig = yield* Ref.get(proxyConfigRef)
-              const ctx = yield* Effect.promise(() => extractRequestContext(request))
               const stub = findMatchingStub(ctx, stubs)
 
               // Stubs first, then the extension (terminal), then the proxy, then 404
@@ -218,7 +219,18 @@ export const ImposterServerLive = Layer.effect(
                 duration
               }
               yield* requestLogger.log(logEntry).pipe(Effect.catch(() => Effect.void))
-              yield* metricsService.recordRequest(logEntry).pipe(Effect.catch(() => Effect.void))
+              // Only this run counts: a request still in flight from a stopped run (or one that
+              // finished after a restart) would otherwise land in the new run's stats
+              const registered = HashMap.get(yield* Ref.get(stateMapRef), id)
+              if (Option.isSome(registered) && registered.value.stubsRef === stubsRef) {
+                // A stub removed, or whose answers changed, while this request was in flight has had
+                // its counters restarted; this hit belongs to the old version, so it is not attributed
+                const current = (yield* Ref.get(stubsRef)).find((s) => s.id === stub?.id)
+                const stale = stub !== undefined && (current === undefined || answersChanged(stub, current))
+                const { matchedStubId: _matched, responseIndex: _index, ...unattributed } = logEntry.response
+                const metricsEntry: RequestLogEntry = stale ? { ...logEntry, response: unattributed } : logEntry
+                yield* metricsService.recordRequest(metricsEntry).pipe(Effect.catch(() => Effect.void))
+              }
 
               return response
             }).pipe(
@@ -377,20 +389,26 @@ export const ImposterServerLive = Layer.effect(
       change: StubChange
     ): Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError> =>
       Effect.gen(function*() {
-        const stub = yield* StubChange.$match(change, {
-          Add: ({ stub }) => repo.addStub(id, stub),
-          Remove: ({ stubId }) => repo.removeStub(id, stubId).pipe(Effect.tap(() => forgetStub(id, stubId))),
-          Update: ({ patch, stubId }) =>
-            Effect.gen(function*() {
-              const before = (yield* repo.getStubs(id)).find((s) => s.id === stubId)
-              const after = yield* repo.updateStub(id, stubId, (s) => applyStubPatch(s, patch))
-              if (before === undefined || answersChanged(before, after)) {
-                yield* forgetStub(id, stubId)
-              }
-              return after
-            })
+        // Whether the change invalidates the stub's counters and cycle
+        const { forget, stub } = yield* StubChange.$match(change, {
+          Add: ({ stub }) => repo.addStub(id, stub).pipe(Effect.map((added) => ({ stub: added, forget: false }))),
+          Remove: ({ stubId }) =>
+            repo.removeStub(id, stubId).pipe(Effect.map((removed) => ({ stub: removed, forget: true }))),
+          Update: ({ patch, stubId }) => {
+            // Captured inside the repository's atomic update, so a concurrent edit cannot skew the comparison
+            let before: Stub | undefined
+            return repo.updateStub(id, stubId, (s) => {
+              before = s
+              return applyStubPatch(s, patch)
+            }).pipe(
+              Effect.map((after) => ({ stub: after, forget: before === undefined || answersChanged(before, after) }))
+            )
+          }
         })
+        // Hot-reload first: a request that still matched the old stub between a reset and the
+        // reload would otherwise advance the new stub's cycle and count against it
         yield* updateStubs(id)
+        if (forget) yield* forgetStub(id, stub.id)
         return stub
       })
 

@@ -67,6 +67,9 @@ export interface MetricsSnapshot {
   readonly unmatched: ReadonlyArray<UnmatchedSummary>
 }
 
+/** @deprecated Use MetricsSnapshot */
+export type Statistics = MetricsSnapshot
+
 const makeEmptyMetrics = (now: DateTime.Utc): ImposterMetrics => ({
   totalRequests: 0,
   requestsByMethod: {},
@@ -191,7 +194,9 @@ const recordEntry = (metrics: ImposterMetrics, entry: RequestLogEntry): Imposter
     // Error tracking: errorRate counts 4xx + 5xx, serverErrorRate 5xx only
     errorCount: metrics.errorCount + (status >= 400 ? 1 : 0),
     serverErrorCount: metrics.serverErrorCount + (serverError ? 1 : 0),
-    lastRequestAt: entry.timestamp,
+    // Entries are recorded when they finish, so a slow request can arrive after a later one
+    firstRequestAt: DateTime.min(metrics.firstRequestAt, entry.timestamp),
+    lastRequestAt: DateTime.max(metrics.lastRequestAt, entry.timestamp),
     timeline: recordInTimeline(metrics.timeline, atMs, {
       requests: 1,
       serverErrors: serverError ? 1 : 0,
