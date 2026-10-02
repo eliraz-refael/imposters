@@ -72,7 +72,11 @@ async (req, res) => {
     response.headers.forEach((val, key) => {
       respHeaders[key] = val
     })
-    await writeResponse(res, response.status, respHeaders, response.body)
+    // A HEAD answer has no body, and Node discards writes to one without ever pushing back, so
+    // reading it would spin a never-ending stream forever and hold the head until it ended
+    const respBody = req.method === "HEAD" ? null : response.body
+    if (respBody === null) response.body?.cancel().catch(() => undefined)
+    await writeResponse(res, response.status, respHeaders, respBody)
   } catch (err) {
     // Once the head is out a JSON 500 cannot follow it: drop the connection, so the client
     // sees a truncated response rather than a clean end

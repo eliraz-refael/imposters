@@ -193,7 +193,7 @@ describe("BunServerFactoryLive", () => {
     }).pipe(Effect.provide(BunServerFactoryLive)))
 })
 
-// Streaming bodies: ports 9740-9749. These drive raw sockets and real timers, so they are
+// Streaming bodies: ports 9740-9750. These drive raw sockets and real timers, so they are
 // plain async tests around a server started with Effect.runPromise.
 const utf8 = (text: string) => new TextEncoder().encode(text)
 
@@ -443,6 +443,29 @@ describe("NodeServerFactoryLive - streaming bodies", () => {
       expect(resp.status).toBe(500)
       expect(resp.body).toContain("Internal server error")
       expect(resp.body).toContain("boom")
+    })
+  })
+
+  // Node discards HEAD body writes without backpressure and flushes the head only at end(),
+  // so reading a never-ending body would hang the client and spin the producer forever
+  it("answers HEAD at once and cancels a body that never ends", async () => {
+    const cancelled = makeGate()
+    const handler = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(utf8("x"))
+          },
+          cancel() {
+            cancelled.open()
+          }
+        })
+      )
+    await withServer(9750, handler, async () => {
+      const conn = await rawRequest(9750, get("/", "HEAD"))
+      await within(conn.closed)
+      expect(conn.received()).toMatch(/^HTTP\/1\.1 200/)
+      await within(cancelled.opened)
     })
   })
 
