@@ -1,4 +1,18 @@
-import { Cause, Clock, Context, Data, Deferred, Effect, Exit, Fiber, HashMap, Layer, Option, Ref } from "effect"
+import {
+  Cause,
+  Clock,
+  Context,
+  Data,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  HashMap,
+  Layer,
+  Option,
+  Ref,
+  Semaphore
+} from "effect"
 import * as DateTime from "effect/DateTime"
 import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter.js"
 import { type ExtensionInstance, Extensions, findExtension } from "../extensions/Extension.js"
@@ -76,6 +90,10 @@ export const ImposterServerLive = Layer.effect(
     const proxyService = yield* ProxyService
     const extensions = yield* Extensions
     const stateMapRef = yield* Ref.make<HashMap.HashMap<string, ImposterState>>(HashMap.empty())
+    // Serialises every write of a running imposter's stubsRef with the repository write it mirrors.
+    // Without it two concurrent changes can reload out of order (each reads the repository, then
+    // sets the Ref), leaving the server on an older stub list than the repository holds.
+    const stubsLock = yield* Semaphore.make(1)
 
     // The API rejects unknown protocols at create, so a miss here means the registration changed underneath
     const makeExtension = (id: string, config: ImposterConfig): Effect.Effect<ExtensionInstance, ImposterServerError> =>
@@ -218,11 +236,16 @@ export const ImposterServerLive = Layer.effect(
                 },
                 duration
               }
-              yield* requestLogger.log(logEntry).pipe(Effect.catch(() => Effect.void))
               // Only this run counts: a request still in flight from a stopped run (or one that
-              // finished after a restart) would otherwise land in the new run's stats
-              const registered = HashMap.get(yield* Ref.get(stateMapRef), id)
-              if (Option.isSome(registered) && registered.value.stubsRef === stubsRef) {
+              // finished after a restart) would otherwise land in the new run's log and stats.
+              // Checked again before the stats, since the log also publishes to subscribers.
+              const isCurrentRun = Ref.get(stateMapRef).pipe(
+                Effect.map((map) => Option.exists(HashMap.get(map, id), (state) => state.stubsRef === stubsRef))
+              )
+              if (yield* isCurrentRun) {
+                yield* requestLogger.log(logEntry).pipe(Effect.catch(() => Effect.void))
+              }
+              if (yield* isCurrentRun) {
                 // A stub removed, or whose answers changed, while this request was in flight has had
                 // its counters restarted; this hit belongs to the old version, so it is not attributed
                 const current = (yield* Ref.get(stubsRef)).find((s) => s.id === stub?.id)
@@ -267,7 +290,8 @@ export const ImposterServerLive = Layer.effect(
               Effect.andThen((latest) =>
                 Effect.all([Ref.set(stubsRef, latest.stubs), Ref.set(proxyConfigRef, latest.config.proxy)])
               ),
-              Effect.catch(() => Effect.void)
+              Effect.catch(() => Effect.void),
+              stubsLock.withPermit
             )
           ),
           Effect.tap(() => Deferred.succeed(ready, undefined))
@@ -284,7 +308,14 @@ export const ImposterServerLive = Layer.effect(
           // Crash supervision: runs for bind failures, crashes after start, and stop()
           Effect.onError(() =>
             Effect.gen(function*() {
-              yield* Ref.update(stateMapRef, HashMap.remove(id))
+              // Only this run's state: never one a later start registered under the same id
+              yield* Ref.update(
+                stateMapRef,
+                (map) =>
+                  Option.exists(HashMap.get(map, id), (state) => state.stubsRef === stubsRef)
+                    ? HashMap.remove(map, id)
+                    : map
+              )
               yield* repo.update(id, (r) => ({
                 ...r,
                 config: ImposterConfig({ ...r.config, status: "stopped" })
@@ -321,8 +352,9 @@ export const ImposterServerLive = Layer.effect(
 
     const stop = (id: string): Effect.Effect<void> =>
       Effect.gen(function*() {
+        // The fiber's onError drops its hot-reload state; removing it here as well would race a
+        // concurrent start and drop the new run's state, losing its hot-reload and its stats
         yield* fiberManager.stop(id)
-        yield* Ref.update(stateMapRef, HashMap.remove(id))
         yield* repo.update(id, (r) => ({
           ...r,
           config: ImposterConfig({ ...r.config, status: "stopped" })
@@ -330,7 +362,8 @@ export const ImposterServerLive = Layer.effect(
         yield* requestLogger.removeImposter(id)
       })
 
-    const updateStubs = (id: string): Effect.Effect<void> =>
+    // Callers hold stubsLock
+    const reloadStubs = (id: string): Effect.Effect<void> =>
       Effect.gen(function*() {
         const stubs = yield* repo.getStubs(id).pipe(Effect.catch(() => Effect.succeed([] as ReadonlyArray<Stub>)))
         const stateMap = yield* Ref.get(stateMapRef)
@@ -339,6 +372,8 @@ export const ImposterServerLive = Layer.effect(
           yield* Ref.set(state.value.stubsRef, stubs)
         }
       })
+
+    const updateStubs = (id: string): Effect.Effect<void> => stubsLock.withPermit(reloadStubs(id))
 
     const updateProxyConfig = (id: string): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -388,6 +423,8 @@ export const ImposterServerLive = Layer.effect(
       id: string,
       change: StubChange
     ): Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError> =>
+      // Locked, so changes reload in the order they were written; uninterruptible, so a caller
+      // that goes away after the write cannot leave the server or the counters behind the repository
       Effect.gen(function*() {
         // Whether the change invalidates the stub's counters and cycle
         const { forget, stub } = yield* StubChange.$match(change, {
@@ -407,10 +444,10 @@ export const ImposterServerLive = Layer.effect(
         })
         // Hot-reload first: a request that still matched the old stub between a reset and the
         // reload would otherwise advance the new stub's cycle and count against it
-        yield* updateStubs(id)
+        yield* reloadStubs(id)
         if (forget) yield* forgetStub(id, stub.id)
         return stub
-      })
+      }).pipe(Effect.uninterruptible, stubsLock.withPermit)
 
     return {
       start,

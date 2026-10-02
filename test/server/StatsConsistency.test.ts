@@ -1,16 +1,17 @@
 import * as DateTime from "effect/DateTime"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { ImposterConfig } from "imposters/domain/imposter"
-import { Extensions } from "imposters/extensions/Extension"
+import { Extensions, type ImposterExtension } from "imposters/extensions/Extension"
 import { ImposterRepository, ImposterRepositoryLive } from "imposters/repositories/ImposterRepository"
 import { Stub, UpdateStubRequest } from "imposters/schemas/StubSchema"
-import { FiberManagerLive } from "imposters/server/FiberManager"
-import { ImposterServer, ImposterServerLive } from "imposters/server/ImposterServer"
+import { FiberManager, FiberManagerLive } from "imposters/server/FiberManager"
+import { ImposterServer, ImposterServerLive, type ImposterServerShape } from "imposters/server/ImposterServer"
 import { ServerFactory } from "imposters/server/ServerFactory"
 import { StubChange } from "imposters/server/StubChange"
 import { MetricsService, MetricsServiceLive } from "imposters/services/MetricsService"
@@ -35,11 +36,48 @@ const pass = (gate: Gate) => Effect.andThen(Deferred.succeed(gate.reached, undef
 let gateNextGetStubs: Gate | undefined
 let gateGetStubsAfterUpdate: Gate | undefined
 let gateNextLog: Gate | undefined
+let gateNextExtension: Gate | undefined
+let gateAfterFiberStop: Gate | undefined
 afterEach(() => {
   gateNextGetStubs = undefined
   gateGetStubsAfterUpdate = undefined
   gateNextLog = undefined
+  gateNextExtension = undefined
+  gateAfterFiberStop = undefined
 })
+
+const takeAndPass = (gate: Gate | undefined): Effect.Effect<void> => gate === undefined ? Effect.void : pass(gate)
+
+// stop() parks once the imposter's fiber is gone, before the rest of stop runs
+const GatedFiberManager = Layer.effect(
+  FiberManager,
+  Effect.gen(function*() {
+    const live = yield* FiberManager
+    return {
+      ...live,
+      stop: (id: string) =>
+        live.stop(id).pipe(Effect.andThen(Effect.suspend(() => {
+          const gate = gateAfterFiberStop
+          gateAfterFiberStop = undefined
+          return takeAndPass(gate)
+        })))
+    }
+  })
+).pipe(Layer.provide(FiberManagerLive))
+
+// An extension whose answer can be held, parking a request before it is logged or counted
+const GatedExtension: ImposterExtension = {
+  protocol: "GATED",
+  make: () =>
+    Effect.succeed({
+      handle: () =>
+        Effect.suspend(() => {
+          const gate = gateNextExtension
+          gateNextExtension = undefined
+          return takeAndPass(gate)
+        }).pipe(Effect.as(new Response("gated")))
+    })
+}
 
 // getStubs reads first and then waits, so it returns what the repository held when it got there
 const GatedRepository = Layer.effect(
@@ -96,13 +134,13 @@ const CapturingServerFactory = Layer.succeed(ServerFactory)({
 const TestLayer = ImposterServerLive.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
-      FiberManagerLive,
+      GatedFiberManager,
       GatedRepository,
       CapturingServerFactory,
       GatedRequestLogger,
       MetricsServiceLive,
       ProxyServiceLive.pipe(Layer.provide(UuidLive)),
-      Extensions.layer([])
+      Extensions.layer([GatedExtension])
     )
   )
 )
@@ -120,12 +158,12 @@ const decodePatch = Schema.decodeUnknownSync(UpdateStubRequest)
 
 let nextPort = 1
 // A started imposter with one stub `s` on `path`; the port is only the key of its handler
-const startImposter = async (id: string, path: string, responses: ReadonlyArray<unknown>) => {
+const startImposter = async (id: string, path: string, responses: ReadonlyArray<unknown>, protocol = "HTTP") => {
   const port = nextPort++
   await run(Effect.gen(function*() {
     const repo = yield* ImposterRepository
     yield* repo.create(
-      ImposterConfig({ id, name: id, port, protocol: "HTTP", status: "stopped", createdAt: DateTime.nowUnsafe() })
+      ImposterConfig({ id, name: id, port, protocol, status: "stopped", createdAt: DateTime.nowUnsafe() })
     )
     yield* repo.addStub(
       id,
@@ -266,22 +304,95 @@ describe("stats stay consistent with what was served", () => {
     expect(stats.stubs.has("s")).toBe(false)
   })
 
-  // Finding 5: the "before" stub was read apart from the write, so a concurrent edit skewed the comparison
-  it("a predicate-only edit racing a responses edit does not reset the counters the latter started", async () => {
+  // Two changes reloaded out of order, leaving the server on the older stub list (and, before that,
+  // the "before" stub was read apart from the write). Changes now hold one lock, so B waits for A.
+  // Without the lock B runs to completion while A is parked: its fiber is started before the
+  // release and has no asynchronous step of its own, so the scheduler runs it first.
+  it("concurrent edits apply in order and a predicate-only one keeps the counters a responses edit started", async () => {
     const id = "race-concurrent-puts"
     const imp = await startImposter(id, "/a", [{ status: 200 }])
     const gate = makeGate()
-    gateNextGetStubs = gate
+    gateGetStubsAfterUpdate = gate
 
-    // A: predicates only, parked at its first repository read
+    // A: predicates only, parked at its reload after its repository write
     const predicateEdit = changeStub(id, { predicates: [{ field: "path", operator: "startsWith", value: "/a" }] })
     await reached(gate)
-    // B: new responses, completed while A is parked; then a hit on B's version
-    await changeStub(id, { responses: [{ status: 201 }] })
-    expect((await imp.send()).status).toBe(201)
+    // B: new responses, started while A is parked (it waits for A to finish)
+    const responsesEdit = changeStub(id, { responses: [{ status: 201 }] })
     await release(gate)
-    await predicateEdit
+    await Promise.all([predicateEdit, responsesEdit])
 
+    // The server holds B's version, not the list A read before B wrote
+    expect((await imp.send()).status).toBe(201)
+    expect((await statsOf(id)).stubs.get("s")).toMatchObject({ hits: 1, byResponse: [1] })
+  })
+})
+
+describe("restarts and aborted changes do not lose or leak state", () => {
+  const server = <A>(f: (s: ImposterServerShape) => Effect.Effect<A, unknown>) =>
+    run(Effect.gen(function*() {
+      return yield* f(yield* ImposterServer)
+    }))
+  const logOf = (id: string) =>
+    runtime.runPromise(Effect.gen(function*() {
+      return yield* (yield* RequestLogger).getEntries(id)
+    }))
+
+  // A request in flight across a stop was written to the log stop had just cleared
+  it("a request in flight across a stop is not written to the request log", async () => {
+    const id = "race-stop-log"
+    const imp = await startImposter(id, "/stubbed", [{ status: 200 }], "GATED")
+    const gate = makeGate()
+    gateNextExtension = gate
+    const inFlight = imp.send({ path: "/to-the-extension" })
+    await reached(gate)
+    await server((s) => s.stop(id))
+    await release(gate)
+    expect(await (await inFlight).text()).toBe("gated")
+
+    expect(await logOf(id)).toEqual([])
+    expect((await statsOf(id)).totalRequests).toBe(0)
+  })
+
+  // stop dropped the registration after the fiber was gone, so a start in between lost it
+  it("a start that runs while a stop finishes keeps hot reload and its stats", async () => {
+    const id = "race-stop-start"
+    const imp = await startImposter(id, "/h", [{ status: 200 }])
+    const gate = makeGate()
+    gateAfterFiberStop = gate
+    const stopping = server((s) => s.stop(id))
+    await reached(gate)
+    await server((s) => s.start(id))
+    await release(gate)
+    await stopping
+
+    // The new run is still registered: a stub change reaches it, and its requests are counted
+    await changeStub(id, { responses: [{ status: 202 }] })
+    expect((await imp.send()).status).toBe(202)
+    expect((await statsOf(id)).stubs.get("s")).toMatchObject({ hits: 1, byResponse: [1] })
+  })
+
+  // A caller that went away after the repository write left the server and counters behind it
+  it("a stub change interrupted after its repository write is still applied in full", async () => {
+    const id = "race-interrupted-change"
+    const imp = await startImposter(id, "/i", [{ status: 200 }, { status: 201 }])
+    expect((await imp.send()).status).toBe(200)
+    const gate = makeGate()
+    gateGetStubsAfterUpdate = gate
+
+    const change = runtime.runFork(Effect.gen(function*() {
+      return yield* (yield* ImposterServer).applyStubChange(
+        id,
+        StubChange.Update({ stubId: "s", patch: decodePatch({ responses: [{ status: 299 }] }) })
+      )
+    }))
+    await reached(gate)
+    // Interrupting waits for the fiber to end, so do not await it before the gate opens
+    const interrupted = runtime.runPromise(Fiber.interrupt(change))
+    await release(gate)
+    await interrupted
+
+    expect((await imp.send()).status).toBe(299)
     expect((await statsOf(id)).stubs.get("s")).toMatchObject({ hits: 1, byResponse: [1] })
   })
 })
