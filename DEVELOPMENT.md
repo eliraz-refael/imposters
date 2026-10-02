@@ -41,7 +41,7 @@ Standards 5 and 6 also have breaches:
 
 | Location | Issue |
 |---|---|
-| `src/server/ImposterServer.ts` | Request timing uses `Date.now()`, and log entry ids use `crypto.randomUUID()`, instead of `Clock` and the `Uuid` service |
+| `src/server/ImposterServer.ts` | Log entry ids use `crypto.randomUUID()` instead of the `Uuid` service (request timing moved to `Clock` in #47) |
 | `src/ui/UiRouter.ts` | Stubs added from the UI get `crypto.randomUUID().slice(0, 8)` ids rather than the `Uuid` service the API uses |
 
 ---
