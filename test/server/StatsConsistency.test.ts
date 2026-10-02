@@ -35,12 +35,17 @@ const pass = (gate: Gate) => Effect.andThen(Deferred.succeed(gate.reached, undef
 // Each gate is used once: whatever reaches its point first takes it
 let gateNextGetStubs: Gate | undefined
 let gateGetStubsAfterUpdate: Gate | undefined
+// The repository read after the change's own reload: the /_admin UI's read for rendering
+let gateSecondGetStubsAfterUpdate: Gate | undefined
+let getStubsToSkip = 0
 let gateNextLog: Gate | undefined
 let gateNextExtension: Gate | undefined
 let gateAfterFiberStop: Gate | undefined
 afterEach(() => {
   gateNextGetStubs = undefined
   gateGetStubsAfterUpdate = undefined
+  gateSecondGetStubsAfterUpdate = undefined
+  getStubsToSkip = 0
   gateNextLog = undefined
   gateNextExtension = undefined
   gateAfterFiberStop = undefined
@@ -88,6 +93,10 @@ const GatedRepository = Layer.effect(
       ...live,
       getStubs: (id: string) =>
         live.getStubs(id).pipe(Effect.tap(() => {
+          if (gateNextGetStubs !== undefined && getStubsToSkip > 0) {
+            getStubsToSkip -= 1
+            return Effect.void
+          }
           const gate = gateNextGetStubs
           gateNextGetStubs = undefined
           return gate === undefined ? Effect.void : pass(gate)
@@ -98,6 +107,10 @@ const GatedRepository = Layer.effect(
             if (gateGetStubsAfterUpdate !== undefined) {
               gateNextGetStubs = gateGetStubsAfterUpdate
               gateGetStubsAfterUpdate = undefined
+            } else if (gateSecondGetStubsAfterUpdate !== undefined) {
+              gateNextGetStubs = gateSecondGetStubsAfterUpdate
+              getStubsToSkip = 1
+              gateSecondGetStubsAfterUpdate = undefined
             }
           })
         ))
@@ -394,5 +407,31 @@ describe("restarts and aborted changes do not lose or leak state", () => {
 
     expect((await imp.send()).status).toBe(299)
     expect((await statsOf(id)).stubs.get("s")).toMatchObject({ hits: 1, byResponse: [1] })
+  })
+
+  // The UI re-read the repository after its change and wrote that list into the server outside
+  // the lock, so an API change made in between was overwritten by the UI's older list
+  it("an API change made while a UI change re-reads the stubs is not overwritten", async () => {
+    const id = "race-ui-reload"
+    const imp = await startImposter(id, "/u", [{ status: 200 }])
+    const gate = makeGate()
+    gateSecondGetStubsAfterUpdate = gate
+
+    // UI: predicates only, parked at its read for rendering (after applyStubChange returned)
+    const uiEdit = imp.send({
+      path: "/_admin/stubs/s",
+      method: "PUT",
+      headers: { "content-type": "application/x-www-form-urlencoded", "hx-request": "true" },
+      body: new URLSearchParams({
+        predicates: JSON.stringify([{ field: "path", operator: "startsWith", value: "/u" }])
+      }).toString()
+    })
+    await reached(gate)
+    // API: new responses, completed under the lock while the UI is parked
+    await changeStub(id, { responses: [{ status: 201 }] })
+    await release(gate)
+    expect((await uiEdit).status).toBe(200)
+
+    expect((await imp.send()).status).toBe(201)
   })
 })

@@ -84,9 +84,9 @@ export const makeUiRouter = (deps: UiDeps) => {
     Effect.catch(() => Effect.succeed(deps.config))
   )
 
-  // Re-reads the stubs from the repository into the running server's Ref (hot reload)
+  // The stubs to render after a change. Read only: applyStubChange has already hot-reloaded the
+  // server under its lock, and writing the Ref here would bypass that lock
   const reloadStubs: Effect.Effect<ReadonlyArray<Stub>> = deps.repo.getStubs(deps.id).pipe(
-    Effect.tap((stubs) => Ref.set(deps.stubsRef, stubs)),
     Effect.catch(() => Ref.get(deps.stubsRef))
   )
 
