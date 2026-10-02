@@ -345,6 +345,17 @@ describe("evaluatePredicate - body", () => {
     )).toBe(false)
   })
 
+  it("contains, startsWith and matches fail on an empty body instead of throwing", () => {
+    const ctx = makeCtx({ body: undefined })
+    for (const operator of ["contains", "startsWith", "matches"] as const) {
+      for (const caseSensitive of [true, false]) {
+        // "undefined" is what the missing body used to be searched as
+        expect(evaluatePredicate(ctx, makePredicate({ field: "body", operator, value: "undefined", caseSensitive })))
+          .toBe(false)
+      }
+    }
+  })
+
   it("matches evaluates regex on body JSON", () => {
     const ctx = makeCtx({ body: { name: "Alice" } })
     expect(evaluatePredicate(

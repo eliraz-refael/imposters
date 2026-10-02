@@ -129,6 +129,10 @@ const matchBody = (
   operator: Predicate["operator"],
   caseSensitive: boolean
 ): boolean => {
+  // An empty or binary body has no text to search (and JSON.stringify(undefined) is undefined, not a string)
+  if (actual === undefined && (operator === "contains" || operator === "startsWith" || operator === "matches")) {
+    return false
+  }
   switch (operator) {
     case "exists":
       return actual !== null && actual !== undefined
