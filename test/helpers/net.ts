@@ -67,3 +67,69 @@ export const reachability = (port: number, host: string): Promise<"reachable" | 
     socket.once("connect", () => settle("reachable"))
     socket.once("error", () => settle("unreachable"))
   })
+
+export interface RawConnection {
+  // Every byte received so far, decoded one byte per character (latin1)
+  readonly received: () => string
+  // Resolves with the received text once it satisfies the predicate. Rejects when the
+  // connection closes first, or after timeoutMs, so a response that never arrives fails
+  // the test rather than hanging it.
+  readonly waitFor: (predicate: (text: string) => boolean, timeoutMs?: number) => Promise<string>
+  // Resolves once the connection is closed, by either side
+  readonly closed: Promise<void>
+  readonly isClosed: () => boolean
+  // Closes the connection from the client side
+  readonly destroy: () => void
+}
+
+// Sends `head` (a whole request, CRLFs included) over a fresh raw socket and records the
+// reply as it arrives. For assertions about when bytes arrive and how the server ends the
+// connection, which fetch and http.get hide behind buffering and pooling.
+export const rawRequest = (port: number, head: string, host = "127.0.0.1"): Promise<RawConnection> =>
+  new Promise((resolve, reject) => {
+    const socket = net.connect({ port, host })
+    let text = ""
+    let isClosed = false
+    const listeners = new Set<() => void>()
+    const notify = () => listeners.forEach((listener) => listener())
+    const closed = new Promise<void>((done) => socket.once("close", () => done()))
+    socket.on("data", (chunk: Buffer) => {
+      text += chunk.toString("latin1")
+      notify()
+    })
+    socket.once("close", () => {
+      isClosed = true
+      notify()
+    })
+    socket.once("error", reject)
+    socket.once("connect", () => {
+      // From here a reset is just a close, which the test reads from `closed`
+      socket.off("error", reject)
+      socket.on("error", () => undefined)
+      socket.write(head)
+      resolve({
+        received: () => text,
+        waitFor: (predicate, timeoutMs = 2000) =>
+          new Promise((satisfied, failed) => {
+            const finish = (settle: () => void) => {
+              clearTimeout(timer)
+              listeners.delete(check)
+              settle()
+            }
+            const check = () => {
+              if (predicate(text)) finish(() => satisfied(text))
+              else if (isClosed) finish(() => failed(new Error(`connection closed; received ${JSON.stringify(text)}`)))
+            }
+            const timer = setTimeout(
+              () => finish(() => failed(new Error(`timed out; received ${JSON.stringify(text)}`))),
+              timeoutMs
+            )
+            listeners.add(check)
+            check()
+          }),
+        closed,
+        isClosed: () => isClosed,
+        destroy: () => socket.destroy()
+      })
+    })
+  })

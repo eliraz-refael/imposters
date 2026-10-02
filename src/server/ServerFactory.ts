@@ -72,11 +72,85 @@ async (req, res) => {
     response.headers.forEach((val, key) => {
       respHeaders[key] = val
     })
-    res.writeHead(response.status, respHeaders)
-    res.end(new Uint8Array(await response.arrayBuffer()))
+    // A HEAD answer has no body, and Node discards writes to one without ever pushing back, so
+    // reading it would spin a never-ending stream forever and hold the head until it ended
+    const respBody = req.method === "HEAD" ? null : response.body
+    if (respBody === null) response.body?.cancel().catch(() => undefined)
+    await writeResponse(res, response.status, respHeaders, respBody)
   } catch (err) {
-    res.writeHead(500)
-    res.end(JSON.stringify({ error: "Internal server error", details: String(err) }))
+    // Once the head is out a JSON 500 cannot follow it: drop the connection, so the client
+    // sees a truncated response rather than a clean end
+    if (res.headersSent) res.destroy(err instanceof Error ? err : new Error(String(err)))
+    else {
+      res.writeHead(500)
+      res.end(JSON.stringify({ error: "Internal server error", details: String(err) }))
+    }
+  }
+}
+
+// Resolves on 'drain', or on 'close' so a client that went away cannot leave the writer waiting
+const drainedOrClosed = (res: http.ServerResponse): Promise<void> =>
+  new Promise((resolve) => {
+    const settle = () => {
+      res.off("drain", settle)
+      res.off("close", settle)
+      resolve()
+    }
+    res.once("drain", settle)
+    res.once("close", settle)
+  })
+
+/**
+ * Writes a Web response body to Node chunk by chunk, so a body that never ends (server-sent
+ * events) reaches the client as it is produced. Nothing is buffered: a producer that answers
+ * every read at once is just a fast stream, held back by backpressure.
+ *
+ * The head waits for the first read. A body that fails there gets the caller's JSON 500, and an
+ * empty one ends with the head. A body already in memory (every `new Response(bytes)`) is one
+ * chunk and then the end: the same bytes on the wire as when the adapter buffered. The cost: a
+ * stream with nothing to say yet holds its head until its first chunk, so an event stream
+ * should open with a line (a `retry:` or a comment) at once.
+ *
+ * When the client disconnects the reader is cancelled, which interrupts whatever produces the
+ * stream (an Effect stream behind `Stream.toReadableStream` sees an interrupt). A read that
+ * fails after the head is rethrown, and the caller destroys the connection.
+ */
+const writeResponse = async (
+  res: http.ServerResponse,
+  status: number,
+  headers: Record<string, string>,
+  body: ReadableStream<Uint8Array> | null
+): Promise<void> => {
+  if (body === null) {
+    res.writeHead(status, headers)
+    res.end(new Uint8Array(0))
+    return
+  }
+
+  const reader = body.getReader()
+  const cancel = () => {
+    // A cancel that rejects has nothing left to clean up: the client is already gone
+    reader.cancel().catch(() => undefined)
+  }
+  res.once("close", cancel)
+  try {
+    let result = await reader.read()
+    if (res.destroyed) return
+    res.writeHead(status, headers)
+    if (result.done) {
+      res.end(new Uint8Array(0))
+      return
+    }
+    while (!result.done) {
+      if (!res.write(result.value)) await drainedOrClosed(res)
+      if (res.destroyed) return
+      result = await reader.read()
+      if (res.destroyed) return
+    }
+    res.end()
+  } finally {
+    res.off("close", cancel)
+    if (res.destroyed) cancel()
   }
 }
 
