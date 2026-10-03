@@ -92,6 +92,44 @@ describe("ImposterRepository", () => {
         expect(stubs[0]!.id).toBe("stub-1")
       }).pipe(Effect.provide(ImposterRepositoryLive)))
 
+    it.effect("inserts a stub at an index: 0 is first, the stub count is last", () =>
+      Effect.gen(function*() {
+        const repo = yield* ImposterRepository
+        yield* repo.create(makeConfig("imp-1", "test"))
+        yield* repo.addStub("imp-1", makeStub("b"))
+        yield* repo.addStub("imp-1", makeStub("a"), 0)
+        yield* repo.addStub("imp-1", makeStub("d"), 2)
+        yield* repo.addStub("imp-1", makeStub("c"), 2)
+        yield* repo.addStub("imp-1", makeStub("e"))
+
+        const stubs = yield* repo.getStubs("imp-1")
+        expect(stubs.map((s) => s.id)).toEqual(["a", "b", "c", "d", "e"])
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
+
+    it.effect("refuses an index past the end or below 0, and keeps the stubs as they were", () =>
+      Effect.gen(function*() {
+        const repo = yield* ImposterRepository
+        yield* repo.create(makeConfig("imp-1", "test"))
+        yield* repo.addStub("imp-1", makeStub("a"))
+
+        const past = yield* Effect.flip(repo.addStub("imp-1", makeStub("x"), 2))
+        expect(past).toMatchObject({ _tag: "StubIndexOutOfRangeError", imposterId: "imp-1", index: 2, size: 1 })
+        const negative = yield* Effect.flip(repo.addStub("imp-1", makeStub("x"), -1))
+        expect(negative._tag).toBe("StubIndexOutOfRangeError")
+        const fractional = yield* Effect.flip(repo.addStub("imp-1", makeStub("x"), 0.5))
+        expect(fractional._tag).toBe("StubIndexOutOfRangeError")
+
+        const stubs = yield* repo.getStubs("imp-1")
+        expect(stubs.map((s) => s.id)).toEqual(["a"])
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
+
+    it.effect("an insert into a missing imposter fails with ImposterNotFoundError", () =>
+      Effect.gen(function*() {
+        const repo = yield* ImposterRepository
+        const error = yield* Effect.flip(repo.addStub("nope", makeStub("x"), 0))
+        expect(error._tag).toBe("ImposterNotFoundError")
+      }).pipe(Effect.provide(ImposterRepositoryLive)))
+
     it.effect("update stub", () =>
       Effect.gen(function*() {
         const repo = yield* ImposterRepository

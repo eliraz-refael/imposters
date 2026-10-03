@@ -5,8 +5,15 @@ import * as Option from "effect/Option"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { ImposterConfig, type ProxyConfigDomain } from "../domain/imposter.js"
 import { Extensions, findExtension, supportedProtocols } from "../extensions/Extension.js"
-import { type ImposterRecord, ImposterRepository } from "../repositories/ImposterRepository.js"
+import { contextFromCaptured, explainStubs } from "../matching/Explain.js"
+import { previewStub } from "../matching/Preview.js"
+import {
+  type ImposterRecord,
+  ImposterRepository,
+  type StubIndexOutOfRangeError
+} from "../repositories/ImposterRepository.js"
 import { HttpProtocol, NonEmptyString } from "../schemas/common.js"
+import type { ExplainResponse } from "../schemas/ExplainSchema.js"
 import type { Statistics } from "../schemas/ImposterSchema.js"
 import type { Stub } from "../schemas/StubSchema.js"
 import { ImposterServer } from "../server/ImposterServer.js"
@@ -68,6 +75,8 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
       new ApiNotFoundError({ message: "Imposter not found", resourceType: "imposter", resourceId: e.id })
     const stubNotFound = (e: { readonly stubId: string }) =>
       new ApiNotFoundError({ message: "Stub not found", resourceType: "stub", resourceId: e.stubId })
+    // Only an add has a position, so an edit or a removal cannot fail with one
+    const insertOnly = (e: StubIndexOutOfRangeError) => Effect.die(e)
 
     return handlers
       .handle("createImposter", ({ payload }) =>
@@ -284,6 +293,7 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
       .handle("addStub", ({ params, payload }) =>
         Effect.gen(function*() {
           const id = yield* uuid.generateShort
+          // `index` places the stub; it is not part of it
           const stub = {
             id: NonEmptyString.make(id),
             predicates: payload.predicates,
@@ -291,13 +301,31 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
             responseMode: payload.responseMode
           }
 
-          // Hot-reloads a running imposter
-          return yield* imposterServer.applyStubChange(params.imposterId, StubChange.Add({ stub })).pipe(
+          // Hot-reloads a running imposter; the other stubs keep their counters wherever it lands
+          const change = StubChange.Add({ stub, index: payload.index })
+          return yield* imposterServer.applyStubChange(params.imposterId, change).pipe(
             Effect.catchTags({
               ImposterNotFoundError: (e) => Effect.fail(imposterNotFound(e)),
-              StubNotFoundError: (e) => Effect.fail(stubNotFound(e))
+              StubNotFoundError: (e) => Effect.fail(stubNotFound(e)),
+              StubIndexOutOfRangeError: (e) =>
+                Effect.fail(
+                  new ApiBadRequestError({
+                    message: `Stub index ${e.index} is out of range: use 0 (first) to ${e.size} (last)`
+                  })
+                )
             })
           )
+        }))
+      .handle("previewStub", ({ params, payload }) =>
+        Effect.gen(function*() {
+          const stubs = yield* repo.getStubs(params.imposterId).pipe(
+            Effect.catchTag("ImposterNotFoundError", (e) => Effect.fail(imposterNotFound(e)))
+          )
+          // A group a stub added since now answers is no longer unmatched traffic
+          const groups = (yield* metricsService.getUnmatched(params.imposterId)).filter((group) =>
+            explainStubs(contextFromCaptured(group.sample.request), stubs).match === undefined
+          )
+          return yield* previewStub(payload, groups)
         }))
       .handle("listStubs", ({ params }) =>
         Effect.gen(function*() {
@@ -315,7 +343,8 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           return yield* imposterServer.applyStubChange(params.imposterId, change).pipe(
             Effect.catchTags({
               ImposterNotFoundError: (e) => Effect.fail(imposterNotFound(e)),
-              StubNotFoundError: (e) => Effect.fail(stubNotFound(e))
+              StubNotFoundError: (e) => Effect.fail(stubNotFound(e)),
+              StubIndexOutOfRangeError: insertOnly
             })
           )
         }))
@@ -326,7 +355,8 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
           return yield* imposterServer.applyStubChange(params.imposterId, change).pipe(
             Effect.catchTags({
               ImposterNotFoundError: (e) => Effect.fail(imposterNotFound(e)),
-              StubNotFoundError: (e) => Effect.fail(stubNotFound(e))
+              StubNotFoundError: (e) => Effect.fail(stubNotFound(e)),
+              StubIndexOutOfRangeError: insertOnly
             })
           )
         }))
@@ -347,6 +377,34 @@ export const ImpostersHandlersLive = HttpApiBuilder.group(AdminApi, "imposters",
             ...(query.path !== undefined ? { path: query.path } : {}),
             ...(query.status !== undefined ? { status: query.status } : {})
           })
+        }))
+      .handle("explainRequest", ({ params }) =>
+        Effect.gen(function*() {
+          const record = yield* repo.get(params.id).pipe(
+            Effect.catchTag("ImposterNotFoundError", (e) => Effect.fail(imposterNotFound(e)))
+          )
+          const entry = yield* requestLogger.getEntryById(params.id, params.requestId)
+          if (entry === null) {
+            return yield* Effect.fail(
+              new ApiNotFoundError({
+                message: "Request not found",
+                resourceType: "request",
+                resourceId: params.requestId
+              })
+            )
+          }
+          const result = explainStubs(contextFromCaptured(entry.request), record.stubs)
+          const logged = entry.response.matchedStubId
+          const response: ExplainResponse = {
+            requestId: entry.id,
+            stubs: result.stubs,
+            ...(result.match !== undefined ? { matchedStubId: result.match.id } : {}),
+            ...(logged !== undefined ? { loggedMatchedStubId: logged } : {}),
+            // A request that would now fail to match was answered when it arrived, so that disagrees too
+            agreesWithLog: result.error === undefined && result.match?.id === logged,
+            ...(result.error !== undefined ? { error: result.error } : {})
+          }
+          return response
         }))
       .handle("clearRequests", ({ params }) =>
         Effect.gen(function*() {

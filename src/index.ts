@@ -50,11 +50,20 @@ export * as ApiLayer from "./layers/ApiLayer.js"
 
 export * as MainLayer from "./layers/MainLayer.js"
 
+export * as Explain from "./matching/Explain.js"
+
 /**
  * Extract expression content from a ${...} pattern using brace-depth counting.
  * Returns [expressionContent, endIndex] or null if no valid expression found.
  */
 export * as ExpressionEvaluator from "./matching/ExpressionEvaluator.js"
+
+/**
+ * What a candidate stub would catch of the given request groups: `matched` and `total` sum the
+ * groups' counts, and `sample` is the candidate answering the first group it matches. A predicate
+ * that would throw at runtime (an invalid regex) counts as no match and is reported in `error`.
+ */
+export * as Preview from "./matching/Preview.js"
 
 /**
  * Strict UTF-8 decode: `undefined` when the bytes are not valid UTF-8, i.e. binary.
@@ -69,6 +78,8 @@ export * as TemplateEngine from "./matching/TemplateEngine.js"
 export * as ImposterRepository from "./repositories/ImposterRepository.js"
 
 export * as ConfigFileSchema from "./schemas/ConfigFileSchema.js"
+
+export * as ExplainSchema from "./schemas/ExplainSchema.js"
 
 export * as ImposterSchema from "./schemas/ImposterSchema.js"
 

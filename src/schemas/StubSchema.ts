@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { NonEmptyString } from "./common.js"
+import { NonEmptyString, NonNegativeInt } from "./common.js"
 
 // Proxy Mode
 export const ProxyMode = Schema.Literals(["passthrough", "record"])
@@ -79,6 +79,14 @@ export const CreateStubRequest = Schema.Struct({
   responseMode: ResponseMode.pipe(Schema.withDecodingDefault(Effect.succeed("sequential" as const)))
 })
 export type CreateStubRequest = Schema.Schema.Type<typeof CreateStubRequest>
+
+// POST /imposters/:imposterId/stubs: a stub to create, and where it goes in matching order.
+// `index` runs from 0 (first) to the stub count (last, the default); it is not part of the stub.
+export const AddStubRequest = Schema.Struct({
+  ...CreateStubRequest.fields,
+  index: Schema.optional(NonNegativeInt)
+})
+export type AddStubRequest = Schema.Schema.Type<typeof AddStubRequest>
 
 // API request to update a stub
 export const UpdateStubRequest = Schema.Struct({

@@ -121,9 +121,11 @@ GET    /health                                    GET    /info
 POST   /imposters                                 GET    /imposters
 GET    /imposters/:id                             PATCH  /imposters/:id
 DELETE /imposters/:id
-POST   /imposters/:imposterId/stubs               GET    /imposters/:imposterId/stubs
+POST   /imposters/:imposterId/stubs (body index?) GET    /imposters/:imposterId/stubs
+POST   /imposters/:imposterId/stubs/preview
 PUT    /imposters/:imposterId/stubs/:stubId       DELETE /imposters/:imposterId/stubs/:stubId
 GET    /imposters/:id/requests                    DELETE /imposters/:id/requests
+GET    /imposters/:id/requests/:requestId/explain
 GET    /imposters/:id/stats                       DELETE /imposters/:id/stats
 ```
 

@@ -35,7 +35,8 @@ Both are generated from the same schemas that validate requests, so they always 
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/imposters/:id/stubs` | Add a stub |
+| `POST` | `/imposters/:id/stubs` | Add a stub. Body field `index` places it in matching order (`0` is first; omitted, it goes last) |
+| `POST` | `/imposters/:id/stubs/preview` | Try a stub without adding it: how many unmatched requests it would catch |
 | `GET` | `/imposters/:id/stubs` | List stubs, in matching order |
 | `PUT` | `/imposters/:id/stubs/:stubId` | Update a stub |
 | `DELETE` | `/imposters/:id/stubs/:stubId` | Delete a stub |
@@ -45,6 +46,7 @@ Both are generated from the same schemas that validate requests, so they always 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/imposters/:id/requests` | Captured requests. Query: `limit`, `method`, `path`, `status` |
+| `GET` | `/imposters/:id/requests/:requestId/explain` | Why a captured request matches the stub it does, against the current stubs |
 | `DELETE` | `/imposters/:id/requests` | Clear captured requests |
 | `GET` | `/imposters/:id/stats` | Statistics |
 | `DELETE` | `/imposters/:id/stats` | Reset statistics |

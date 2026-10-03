@@ -188,7 +188,8 @@ The `admin` block is optional and reserved: it is validated, but the CLI current
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/imposters/:id/stubs` | Add a stub |
+| `POST` | `/imposters/:id/stubs` | Add a stub. An `index` in the body places it in matching order (`0` is first); without one it goes last |
+| `POST` | `/imposters/:id/stubs/preview` | Try a stub without adding it: how many unmatched requests it would catch |
 | `GET` | `/imposters/:id/stubs` | List stubs |
 | `PUT` | `/imposters/:id/stubs/:stubId` | Update a stub |
 | `DELETE` | `/imposters/:id/stubs/:stubId` | Delete a stub |
@@ -198,6 +199,7 @@ The `admin` block is optional and reserved: it is validated, but the CLI current
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/imposters/:id/requests` | List captured requests |
+| `GET` | `/imposters/:id/requests/:requestId/explain` | Why a captured request matches the stub it does, against the current stubs |
 | `DELETE` | `/imposters/:id/requests` | Clear captured requests |
 | `GET` | `/imposters/:id/stats` | Get imposter statistics |
 | `DELETE` | `/imposters/:id/stats` | Reset imposter statistics |
@@ -219,6 +221,12 @@ Statistics count from the imposter's last start. They include:
 | `unmatched` | Requests no stub, extension or proxy answered, grouped by `method` and `path` with a `count` and `lastSeenAt`. Most recently seen first. Up to 50 groups are kept; the least recently seen is dropped first |
 
 Starting an imposter and `DELETE /imposters/:id/stats` reset all of these. Deleting a stub drops its row. Changing a stub's `responses` or `responseMode` restarts its counters and its response cycle. A change to its predicates only keeps both.
+
+Stubs match in order, so where a new one goes matters. The body of `POST /imposters/:id/stubs` can carry an `index`, from `0` (first) to the number of stubs (last, the default); anything else is a `400`. It places the stub and is not stored with it. Inserting a stub leaves the others' counters and response cycles as they were.
+
+`POST /imposters/:id/stubs/preview` takes the same body as adding a stub and answers `matched` and `total`, counted over the imposter's unmatched requests (the `unmatched` groups above, minus any a stub now answers). The stats keep only the latest request of each `METHOD path` group, so the candidate is tested against that one and its whole group counts toward `matched`: an estimate, which can overcount when a group's requests differ in body, headers or query. `sample` is the candidate's first response to the most recent request it matches, templated but not delayed. `error` reports a predicate that would fail at runtime, such as an invalid regex.
+
+`GET /imposters/:id/requests/:requestId/explain` checks a captured request against the current stubs, in matching order. Each stub lists its predicates with the `expected` value, the request's `actual` value and whether it `matched`. `matchedStubId` is the stub that would answer it now and `loggedMatchedStubId` the one that did; `agreesWithLog` is `false` when the stubs have changed since.
 
 ## Stub Matching
 
