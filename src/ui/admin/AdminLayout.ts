@@ -1,3 +1,5 @@
+import { favicon } from "../assets/generated.js"
+import { assetUrl } from "../assets/serve.js"
 import { html, raw } from "../html.js"
 import type { SafeHtml } from "../html.js"
 import { clearErrorOnRequest, htmxConfigMeta, uiErrorSlot } from "../htmx.js"
@@ -14,7 +16,7 @@ export const adminLayout = (opts: AdminLayoutOpts, content: SafeHtml): SafeHtml 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${opts.title}</title>
-  <link rel="icon" type="image/svg+xml" href="/_ui/favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="${assetUrl("/_ui", favicon)}">
   ${htmxConfigMeta}
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>

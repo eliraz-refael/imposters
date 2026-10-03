@@ -57,8 +57,9 @@ const extensionBoundaryConfigs = [
 
 export default [
   {
-    // site/ is the website, a separate Astro project with its own tooling; .claude/ holds agent worktrees
-    ignores: ["**/dist", "**/build", "**/docs", "**/*.md", ".claude/**", "site/**"]
+    // site/ is the website, a separate Astro project with its own tooling; .claude/ holds agent
+    // worktrees; generated.ts is written by scripts/gen-ui-assets.ts and checked by a freshness test
+    ignores: ["**/dist", "**/build", "**/docs", "**/*.md", ".claude/**", "site/**", "src/ui/assets/generated.ts"]
   },
   ...compat.extends(
     "eslint:recommended",
