@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 658 tests across 59 files.
+All three gates pass: `bun check`, `bun lint`, and 691 tests across 62 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -133,6 +133,8 @@ src/
     ApiLayer.ts            # HttpApiBuilder.layer + OpenAPI/Swagger + decode-error body + quiet logging
   matching/
     RequestMatcher.ts      # predicate evaluation, findMatchingStub
+    Explain.ts             # pure: why each stub did or didn't match; its verdict IS evaluatePredicate's
+    Preview.ts             # previewStub: a candidate stub against the unmatched groups
     ResponseGenerator.ts   # response selection + buildResponse
     TemplateEngine.ts      # {{key}} substitution
     ExpressionEvaluator.ts # ${expr} via JSONata
@@ -141,7 +143,8 @@ src/
   schemas/
     common.ts              # branded types, enums, pagination, errors
     ImposterSchema.ts
-    StubSchema.ts          # Stub, Predicate, ResponseConfig
+    StubSchema.ts          # Stub, Predicate, ResponseConfig, AddStubRequest (adds `index`)
+    ExplainSchema.ts       # explain and preview response shapes
     RequestLogSchema.ts
     ConfigFileSchema.ts
   types/
@@ -220,6 +223,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - Query params are decoded through a string-tree codec, so plain `Schema.Number` / `Schema.Boolean` parse `"50"` / `"true"`. No `NumberFromString` / `BooleanFromString`.
 - A request that fails schema decoding becomes a **defect** rendered as an empty 400. `ApiLayer`'s `DecodeErrorBody` middleware catches it with `Effect.catchDefect` and restores a JSON `HttpApiDecodeError` body. Keep it.
 - Every request is logged at INFO unless `HttpRouter.disableLogger` is provided to the route layers *and* `toWebHandler(layer, { disableLogger: true })` is set (the latter also covers unmatched routes).
+- **A `query` on an endpoint makes the generated client require `query`,** even when every field is optional, and it encodes it at runtime too. Adding one to an existing endpoint breaks every caller, which is why addStub's insert `index` is a body field (`AddStubRequest`, never stored on the stub).
 - `HttpApiGroup.make("system", { topLevel: true })` puts endpoints at the client root, not under `.system`.
 - The generated client expects the **decoded** type (with brands), not the encoded form — pass `protocol: "HTTP"`, `adminPath: "/_admin"`, a branded `PortNumber`, etc.
 - `Layer.provideMerge(self)(that)` feeds **self's** output into **that's** input (order reads backwards).
@@ -229,7 +233,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - `runPromise` wraps failures in `FiberFailure` — assert with `String(err).toContain(msg)`, not identity.
 - tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.
