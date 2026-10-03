@@ -16,7 +16,8 @@
  *   `data-sse-pause="<selector>"` pauses it; events are buffered (and counted in its
  *   `[data-sse-count]`) and flushed on resume. On reconnect, and on a page restored from the
  *   back-forward cache, the rows are re-fetched from `data-sse-reload`. The stream is closed on
- *   `pagehide`, since browsers allow about six connections per host.
+ *   `pagehide`, and for good once a swap takes the element off the page, since browsers allow
+ *   about six connections per host.
  * - `data-copy="text"` or `data-copy-from="<selector>"`: copy to the clipboard.
  * - `data-theme-toggle`: switch between dark and light, remembered in the `imposters-theme`
  *   cookie. Cookies ignore the port, so the choice holds for the admin UI and every imposter;
@@ -32,6 +33,9 @@ const FRAGMENT_HEADERS = { "x-imposters-fragment": "1" }
 
 const root = document.documentElement
 const started = new WeakSet<Element>()
+// One per running data-sse element: closes its stream once a swap has taken the element off the page
+const reapers = new Set<() => void>()
+const reap = (): void => reapers.forEach((reaper) => reaper())
 
 // ---------------------------------------------------------------- theme
 
@@ -88,15 +92,18 @@ const swap = (target: Element | null, text: string, mode: string): void => {
       init(oob)
     }
   }
-  if (target === null || mode === "none") return
-  if (mode === "outer") {
-    const added = Array.from(fragment.children)
-    target.replaceWith(fragment)
-    added.forEach(init)
-  } else {
-    target.replaceChildren(fragment)
-    init(target)
+  if (target !== null && mode !== "none") {
+    if (mode === "outer") {
+      const added = Array.from(fragment.children)
+      target.replaceWith(fragment)
+      added.forEach(init)
+    } else {
+      target.replaceChildren(fragment)
+      init(target)
+    }
   }
+  // A swap is how a live list leaves the page: close its stream now, not on some later event
+  reap()
 }
 
 const errorSlot = (): Element | null => document.querySelector("[data-error-slot]")
@@ -362,7 +369,12 @@ const startSse = (el: HTMLElement): void => {
   const detach = (): void => {
     close()
     lifetime.abort()
+    reapers.delete(reaper)
   }
+  const reaper = (): void => {
+    if (!el.isConnected) detach()
+  }
+  reapers.add(reaper)
 
   addEventListener("pagehide", close, { signal: lifetime.signal })
   addEventListener("pageshow", (event) => {

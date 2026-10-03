@@ -59,7 +59,7 @@ beforeAll(async () => {
 })
 
 describe("ui.ts live updates (data-sse)", () => {
-  it("a list swapped out closes its connection on its next event and drops its page listeners", async () => {
+  it("a list swapped out closes its connection and drops its page listeners as the swap lands", async () => {
     const old = await swapIn("first")
     const pageshow = liveWindowListeners("pageshow")
     const pagehide = liveWindowListeners("pagehide")
@@ -68,13 +68,22 @@ describe("ui.ts live updates (data-sse)", () => {
     expect(pagehide).toBeGreaterThan(0)
 
     const current = await swapIn("second")
-    old.emit("<li>late</li>")
 
+    // No event and no pageshow needed: a quiet stream must not hold a connection
     expect(old.closed).toBe(true)
     expect(current.closed).toBe(false)
     // The new list added one of each, the old one's are gone
     expect(liveWindowListeners("pageshow")).toBe(pageshow)
     expect(liveWindowListeners("pagehide")).toBe(pagehide)
+  })
+
+  it("a list removed outside a swap closes its connection on its next event", async () => {
+    const old = await swapIn("removed")
+    document.getElementById("removed")?.remove()
+
+    old.emit("<li>late</li>")
+
+    expect(old.closed).toBe(true)
     // Its late event did not land anywhere on the page
     expect(document.body.innerHTML).not.toContain("late")
   })
@@ -88,15 +97,14 @@ describe("ui.ts live updates (data-sse)", () => {
     expect(document.getElementById("fourth")?.textContent).toBe("fresh")
   })
 
-  it("a list swapped out closes its connection on the next pageshow, even with no event", async () => {
+  it("a list removed outside a swap closes its connection on the next pageshow, even with no event", async () => {
     const old = await swapIn("fifth")
-    const current = await swapIn("sixth")
+    document.getElementById("fifth")?.remove()
     const opened = FakeEventSource.instances.length
 
     window.dispatchEvent(new Event("pageshow"))
 
     expect(old.closed).toBe(true)
-    expect(current.closed).toBe(false)
     expect(FakeEventSource.instances.length).toBe(opened)
   })
 
