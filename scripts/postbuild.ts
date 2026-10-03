@@ -47,7 +47,13 @@ const fontLicenses = ["martian-mono", "geist"].map((font) => {
   return target
 })
 
+// 5. Drop the source copy of the generated assets: nothing loads it, and the fonts' base64 would
+// ship a fourth time (the ESM, CJS and CLI builds each carry their own)
+const generatedSource = path.join(distDir, "src", "ui", "assets", "generated.ts")
+fs.rmSync(generatedSource, { force: true })
+
 console.log("postbuild: patched dist/package.json with bin")
 console.log("postbuild: copied bin/imposters → dist/bin/imposters")
 console.log("postbuild: copied .npmrc → dist/.npmrc")
 console.log(`postbuild: copied font licenses → dist/licenses/{${fontLicenses.join(",")}}`)
+console.log("postbuild: removed dist/src/ui/assets/generated.ts")
