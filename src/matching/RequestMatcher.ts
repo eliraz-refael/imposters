@@ -131,6 +131,8 @@ const matchBody = (
 ): boolean => {
   // An empty or binary body has no text to search (and JSON.stringify(undefined) is undefined, not a string)
   if (actual === undefined && (operator === "contains" || operator === "startsWith" || operator === "matches")) {
+    // Still compile the pattern, so an invalid regex throws (and is reported) whatever the body
+    if (operator === "matches") new RegExp(typeof expected === "string" ? expected : JSON.stringify(expected))
     return false
   }
   switch (operator) {

@@ -356,6 +356,12 @@ describe("evaluatePredicate - body", () => {
     }
   })
 
+  it("an invalid body regex still throws on an empty body", () => {
+    const ctx = makeCtx({ body: undefined })
+    expect(() => evaluatePredicate(ctx, makePredicate({ field: "body", operator: "matches", value: "(" })))
+      .toThrow()
+  })
+
   it("matches evaluates regex on body JSON", () => {
     const ctx = makeCtx({ body: { name: "Alice" } })
     expect(evaluatePredicate(
