@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["test", "scripts/ui-assets.ts"],
+  "include": ["test", "scripts/ui-assets.ts", "ui-assets"],
   "references": [
     { "path": "tsconfig.src.json" }
   ],

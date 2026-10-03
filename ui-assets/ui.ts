@@ -309,6 +309,11 @@ const startSse = (el: HTMLElement): void => {
   }
 
   const onEvent = (event: MessageEvent): void => {
+    // Swapped out of the page: a live EventSource would hold one of the host's ~six connections
+    if (!el.isConnected) {
+      detach()
+      return
+    }
     if (typeof event.data !== "string") return
     if (paused) {
       buffer.push(event.data)
@@ -353,13 +358,23 @@ const startSse = (el: HTMLElement): void => {
     renderPause()
   })
 
-  addEventListener("pagehide", close)
+  const lifetime = new AbortController()
+  const detach = (): void => {
+    close()
+    lifetime.abort()
+  }
+
+  addEventListener("pagehide", close, { signal: lifetime.signal })
   addEventListener("pageshow", (event) => {
-    if (event.persisted && el.isConnected) {
+    if (!el.isConnected) {
+      detach()
+      return
+    }
+    if (event.persisted) {
       reloadOnOpen = true
       open()
     }
-  })
+  }, { signal: lifetime.signal })
   open()
 }
 

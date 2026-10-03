@@ -90,6 +90,7 @@
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "eslint-plugin-sort-destructure-keys": "^2.0.0",
+    "happy-dom": "20.14.5",
     "tsx": "^4.20.6",
     "typescript": "~6.0.3",
     "vite": "^8.3.0",
