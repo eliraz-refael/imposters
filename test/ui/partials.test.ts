@@ -64,6 +64,18 @@ describe("stub card", () => {
     expect(card).not.toContain("<script>")
   })
 
+  it("shows a fixed delay and a delay range, never an object's toString", () => {
+    const delayed = Schema.decodeUnknownSync(Stub)({
+      id: "stub-2",
+      predicates: [],
+      responses: [{ status: 200, delay: 250 }, { status: 200, delay: { min: 100, max: 500 } }]
+    })
+    const card = stubCardPartial(delayed).value
+    expect(card).toContain("delay 250ms")
+    expect(card).toContain("delay 100–500ms")
+    expect(card).not.toContain("[object Object]")
+  })
+
   it("has a Delete button by default and none with deletable: false", () => {
     expect(stubCardPartial(stub).value).toContain("hx-delete=\"/_admin/stubs/stub-1\"")
     expect(stubCardPartial(stub, { deletable: false }).value).not.toContain("hx-delete")

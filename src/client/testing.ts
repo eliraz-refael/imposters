@@ -22,7 +22,8 @@ interface ResponseConfigInput {
   readonly status?: number
   readonly headers?: Record<string, string>
   readonly body?: unknown
-  readonly delay?: number
+  /** Milliseconds, or a range to draw a whole number of milliseconds from on each answer */
+  readonly delay?: number | { readonly min: number; readonly max: number }
 }
 
 export interface WithImposterConfig {

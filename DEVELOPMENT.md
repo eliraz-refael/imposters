@@ -85,7 +85,7 @@ These are deliberate changes, not drift. Anyone reading the older plan should no
 The core abstraction is **stubs**, not simple routes. Each stub has:
 
 - **Predicates:** An ordered list of request matchers (method, path, headers, query, body). Combined with AND logic. Operators: `equals`, `contains`, `startsWith`, `matches` (regex), `exists` — all supporting `caseSensitive`.
-- **Responses:** An ordered list of response configs, selected by `responseMode`: `sequential` (round-robin), `random`, or `repeat`. Each response has status, headers, body, delay.
+- **Responses:** An ordered list of response configs, selected by `responseMode`: `sequential` (round-robin), `random`, or `repeat`. Each response has status, headers, body, delay (a fixed number of ms, or `{ min, max }` drawn per answer through Effect's `Random`).
 - **Template data:** Response bodies can reference `request.method`, `request.path`, `request.headers.*`, `request.query.*`, and `request.body.*`.
 
 ```
@@ -133,7 +133,7 @@ GET    /imposters/:id/stats                       DELETE /imposters/:id/stats
 
 ## Phase 3: Imposter Runtime + Route Matching ✅ COMPLETE
 
-`ImposterServer` exposes `start`/`stop`/`updateStubs`/`updateProxyConfig`/`isRunning`, plus `applyStubChange` (every stub write), `nextResponseIndex` and `resetStub` (the response cycle). Fibers are managed by `FiberManager` (a `FiberMap` wrapper); each server instance is wrapped in `Effect.acquireRelease` so interruption stops the server and frees the port. `RequestMatcher` evaluates predicates; `ResponseGenerator` selects and builds responses with delays and templating. Hot-reload works via `Ref` swap with zero downtime.
+`ImposterServer` exposes `start`/`stop`/`updateStubs`/`updateProxyConfig`/`isRunning`, plus `applyStubChange` (every stub write), `nextResponseIndex` and `resetStub` (the response cycle). Fibers are managed by `FiberManager` (a `FiberMap` wrapper); each server instance is wrapped in `Effect.acquireRelease` so interruption stops the server and frees the port. `RequestMatcher` evaluates predicates; `ResponseGenerator` selects and builds responses with delays and templating; `serveResponse` waits out the delay on the `Clock` (a range is drawn with `Random.nextIntBetween`), so tests drive it with `TestClock` and a fixed `Random`. Hot-reload works via `Ref` swap with zero downtime.
 
 ---
 
@@ -179,6 +179,7 @@ Work that is currently outstanding and not on the public roadmap, or the impleme
 - **Official Docker image.** Practical now that `--host 0.0.0.0` exists: the admin port and the imposter port range exposed from one container.
 - **No `./client` subpath export,** although `src/client/index.ts` exists: build-utils `pack-v2` always skips `**/index.ts` when it generates `exports`. Consumers import `imposters/client/ImpostersClient` and `imposters/client/testing`. Adding it means patching `exports`, `typesVersions` and a `dist/client/package.json` proxy in `scripts/postbuild.ts`.
 - **Repay the non-null-assertion and cast debt** listed under [Code Standards](#outstanding-violations).
+- **Delete the legacy route model.** `CreateRouteRequest`, `RouteResponse` and `EndpointSummary` in `src/schemas/ImposterSchema.ts`, and everything in `src/domain/route.ts` except `substituteParams` (used by TemplateEngine), predate stubs and nothing reads them. Move `substituteParams` next to TemplateEngine, then remove the rest.
 - **Proxy `record` mode corrupts binary responses.** `recordAsStub` reads the upstream response as text, and stub bodies can only hold JSON or text, so a recorded image replays corrupted. Passthrough is byte-exact since #20. Needs binary stub bodies (e.g. base64 plus a flag) in the stub schema. Public: [#31](https://github.com/eliraz-refael/imposters/issues/31).
 - **S3: three bucket-configuration PUTs answer 501.** `?publicAccessBlock`, `?encryption` and `?lifecycle` (a consumer's provisioning suite reports them as unsupported locally), plus `?cors`, versioning `PUT` and the rest. Accepting and echoing them (GET after PUT) would let provisioning apply every setting locally. Public: [#32](https://github.com/eliraz-refael/imposters/issues/32).
 - **S3: `?policy` and `?ownershipControls` PUTs are accepted but not enforced.** They answer 204 / 200 on an existing bucket and are discarded: no GET-back, and a policy never denies a request.

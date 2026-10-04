@@ -1,8 +1,10 @@
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as HashMap from "effect/HashMap"
 import * as Option from "effect/Option"
+import * as Random from "effect/Random"
 import * as Ref from "effect/Ref"
-import type { ResponseConfig, ResponseMode } from "../schemas/StubSchema.js"
+import type { Delay, ResponseConfig, ResponseMode } from "../schemas/StubSchema.js"
 import type { RequestContext } from "./RequestMatcher.js"
 import { applyTemplates } from "./TemplateEngine.js"
 
@@ -34,7 +36,7 @@ export const makeResponseState = () =>
         const current = HashMap.get(counters, key)
         const index = current._tag === "Some" ? current.value : 0
         if (mode === "random") {
-          return [Effect.succeed(Math.floor(Math.random() * count)), counters]
+          return [Random.nextIntBetween(0, count - 1), counters]
         }
         return [Effect.succeed(indexFor(index, count, mode)), HashMap.set(counters, key, index + 1)]
       }).pipe(Effect.flatten)
@@ -109,3 +111,19 @@ export const buildResponse = async (config: ResponseConfig, ctx: RequestContext)
     headers
   })
 }
+
+// The milliseconds to wait before answering: none, the fixed delay, or a whole number drawn
+// uniformly from the range's [min, max] (both inclusive) through `Random`, afresh on every call.
+// (A line comment: the index codegen would take a multi-line doc comment as this module's.)
+export const resolveDelay = (delay: Delay | undefined): Effect.Effect<number> => {
+  if (delay === undefined) return Effect.succeed(0)
+  if (typeof delay === "number") return Effect.succeed(delay)
+  return delay.min === delay.max ? Effect.succeed(delay.min) : Random.nextIntBetween(delay.min, delay.max)
+}
+
+/** Waits out the response's delay on the `Clock`, then builds it: what a stub answers when it matches */
+export const serveResponse = (config: ResponseConfig, ctx: RequestContext): Effect.Effect<Response> =>
+  resolveDelay(config.delay).pipe(
+    Effect.flatMap((ms) => ms > 0 ? Effect.sleep(Duration.millis(ms)) : Effect.void),
+    Effect.flatMap(() => Effect.promise(() => buildResponse(config, ctx)))
+  )

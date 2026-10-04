@@ -12,12 +12,11 @@ import {
   ProtocolFilter,
   StatusFilter
 } from "./common.js"
-import { ProxyConfig } from "./StubSchema.js"
+import { DelayMs, ProxyConfig } from "./StubSchema.js"
 
 const AdminPath = Schema.String.check(Schema.isStartsWith("/"))
 const HttpMethod = Schema.Literals(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 const StatusCode = Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 }))
-const DelayMs = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 60000 }))
 const NonNegativeNumber = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
 const StringRecord = Schema.Record(Schema.String, Schema.String)
