@@ -396,6 +396,32 @@ describe("E2E: /_ui start, stop and delete", () => {
     }
   })
 
+  it("refuses a form post a browser marks cross-site, and creates nothing", async () => {
+    const crossSite = (path: string, fields: Record<string, string>) =>
+      adminUi(path, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "cross-site" },
+        body: new URLSearchParams(fields).toString()
+      })
+    const resp = await crossSite("/_ui/imposters", { name: "drive-by", protocol: "HTTP" })
+    expect(resp.status).toBe(403)
+    expect(await findImposter("drive-by")).toBeUndefined()
+
+    const imp = await createImposter({ port: 9924, name: "keep-me" })
+    try {
+      expect((await crossSite(`/_ui/imposters/${imp.id}/delete`, {})).status).toBe(403)
+      expect(await findImposter("keep-me")).toBeDefined()
+      // The dashboard's own posts are same-origin
+      const own = await adminUi(`/_ui/imposters/${imp.id}/delete`, {
+        method: "POST",
+        headers: { "sec-fetch-site": "same-origin" }
+      })
+      expectSeeOther(own)
+    } finally {
+      await remove(imp.id)
+    }
+  })
+
   it("an imposter that no longer exists is a 404 that says so", async () => {
     for (const action of ["start", "stop", "delete"]) {
       const resp = await adminUi(`/_ui/imposters/nope/${action}`, fragmentPost())

@@ -106,6 +106,12 @@ const decodeSegment = (segment: string): string | null => {
 
 const NOT_FOUND = "That imposter no longer exists; it may have been deleted elsewhere."
 
+// A form post is a "simple" request, so a page on another site could send one to a loopback
+// admin server without a CORS preflight. Browsers mark such a request `Sec-Fetch-Site:
+// cross-site`; refuse it. (An imposter's own /_admin, on another port of the same host, is
+// same-site.) Tools that send no such header are unaffected.
+const isCrossSite = (request: Request): boolean => request.headers.get("sec-fetch-site") === "cross-site"
+
 export const makeAdminUiRouter = (deps: AdminUiDeps) => {
   const bindHost = deps.host ?? DEFAULT_HOST
 
@@ -279,6 +285,13 @@ export const makeAdminUiRouter = (deps: AdminUiDeps) => {
 
     if (method === "GET" && path === "/fragments/overview") {
       return htmlAnswer(overviewFragment(await loadOverview(browserHost(request))))
+    }
+
+    if (method === "POST" && isCrossSite(request)) {
+      return new Response("Cross-site form posts are refused.", {
+        status: 403,
+        headers: { "content-type": "text/plain; charset=utf-8", ...NO_STORE }
+      })
     }
 
     if (method === "POST" && path === "/imposters") return answer(request, await create(request))
