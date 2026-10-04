@@ -114,11 +114,13 @@ const NOT_FOUND = "That imposter no longer exists; it may have been deleted else
 // cross-site`; refuse it. (An imposter's own /_admin, on another port of the same host, is
 // same-site.) Browsers send Sec-Fetch-Site only to a trustworthy origin (https or loopback), so
 // an admin server bound to a LAN address over http gets none: there, an Origin whose host is
-// not the one the request was sent to (or an opaque "null" one) is refused too. Tools that send
-// neither header are unaffected.
+// not the one the request was sent to (or an opaque "null" one) is refused too. `same-site` gets
+// the same Origin check, since it also covers a sibling subdomain (blog.corp.example posting to
+// imposters.corp.example). Tools that send neither header are unaffected.
 const isCrossSite = (request: Request): boolean => {
   const site = request.headers.get("sec-fetch-site")
-  if (site !== null) return site === "cross-site"
+  if (site === "cross-site") return true
+  if (site !== null && site !== "same-site") return false
   const origin = request.headers.get("origin")
   if (origin === null) return false
   if (!URL.canParse(origin)) return true

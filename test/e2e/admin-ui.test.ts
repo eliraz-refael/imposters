@@ -468,6 +468,28 @@ describe("E2E: /_ui start, stop and delete", () => {
     if (created !== undefined) await remove(created.id)
   })
 
+  it("a same-site post from a sibling subdomain is refused; one from the same host on another port is not", async () => {
+    const post = (origin: string) =>
+      adminUi("/_ui/imposters", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          host: "imposters.corp.example:2525",
+          "sec-fetch-site": "same-site",
+          origin
+        },
+        body: new URLSearchParams({ name: "same-site-probe", protocol: "HTTP", start: "off" }).toString()
+      })
+    expect((await post("https://blog.corp.example")).status).toBe(403)
+    expect(await findImposter("same-site-probe")).toBeUndefined()
+
+    // An imposter's /_admin: same host, another port
+    expectSeeOther(await post("https://imposters.corp.example:3000"))
+    const created = await findImposter("same-site-probe")
+    expect(created).toBeDefined()
+    if (created !== undefined) await remove(created.id)
+  })
+
   it("an imposter that no longer exists is a 404 that says so", async () => {
     for (const action of ["start", "stop", "delete"]) {
       const resp = await adminUi(`/_ui/imposters/nope/${action}`, fragmentPost())
