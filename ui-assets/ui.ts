@@ -8,7 +8,8 @@
  *   `data-target` (a selector, `this`, or `closest <selector>`), swapped per `data-swap`
  *   (`inner`, the default, `outer` or `none`). With no target the page follows a redirect or
  *   reloads. `data-confirm` asks first. Any element in an answer with `data-oob` and an id
- *   replaces the page's element with that id. A failed answer's HTML goes into `[data-error-slot]`.
+ *   replaces the page's element with that id. A failed answer's HTML goes into the action's own
+ *   `[data-error-slot]` (one inside its form), else the page's first; a new action clears them all.
  * - `data-poll="ms"` with `data-url`: re-fetch into the element while the tab is visible.
  *   `data-poll-throttle="ms"` also refreshes on each SSE arrival, at most that often.
  * - `data-sse="url"`: prepend each event's HTML (`data-sse-event`, default `message`), newest
@@ -106,10 +107,15 @@ const swap = (target: Element | null, text: string, mode: string): void => {
   reap()
 }
 
-const errorSlot = (): Element | null => document.querySelector("[data-error-slot]")
+const ERROR_SLOT = "[data-error-slot]"
 
-const showError = (text: string): void => {
-  const slot = errorSlot()
+// The action's own slot (one inside its form), else the page's first
+const errorSlot = (el: Element): Element | null => el.querySelector(ERROR_SLOT) ?? document.querySelector(ERROR_SLOT)
+
+const clearErrors = (): void => document.querySelectorAll(ERROR_SLOT).forEach((slot) => slot.replaceChildren())
+
+const showError = (el: Element, text: string): void => {
+  const slot = errorSlot(el)
   if (slot !== null) slot.replaceChildren(parse(text))
   else alert(parse(text).textContent?.trim() || "The request failed.")
 }
@@ -157,7 +163,7 @@ const runAction = async (el: HTMLElement, form: HTMLFormElement | null, submitte
     body.forEach((value, name) => requestUrl.searchParams.append(name, value))
   }
 
-  errorSlot()?.replaceChildren()
+  clearErrors()
   el.setAttribute("aria-busy", "true")
   try {
     const response = await fetch(requestUrl, {
@@ -167,7 +173,7 @@ const runAction = async (el: HTMLElement, form: HTMLFormElement | null, submitte
     })
     const text = await response.text()
     if (!response.ok) {
-      showError(text)
+      showError(el, text)
       return
     }
     if (target === null && el.dataset.swap !== "none") {
@@ -178,7 +184,7 @@ const runAction = async (el: HTMLElement, form: HTMLFormElement | null, submitte
     swap(target, text, el.dataset.swap ?? "inner")
     if (form !== null && el.dataset.reset !== undefined) form.reset()
   } catch {
-    showError(`<p>Could not reach the server.</p>`)
+    showError(el, "Could not reach the server.")
   } finally {
     el.removeAttribute("aria-busy")
   }

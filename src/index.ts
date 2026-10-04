@@ -140,19 +140,47 @@ export * as UuidLive from "./services/UuidLive.js"
 
 export * as UiRouter from "./ui/UiRouter.js"
 
-export * as AdminLayout from "./ui/admin/AdminLayout.js"
-
 export * as AdminUiRouter from "./ui/admin/AdminUiRouter.js"
 
-export * as AdminDashboard from "./ui/admin/pages/AdminDashboard.js"
+/**
+ * What the /_ui overview shows, read from the admin API's JSON (`GET /imposters?stats=true`,
+ * `/health`, `/info`) and summarised by pure functions, so the page template only formats.
+ */
+export * as OverviewData from "./ui/admin/OverviewData.js"
 
-export * as partials from "./ui/admin/partials.js"
+/**
+ * The /_ui overview: every imposter with its last 15 minutes of traffic, the start/stop/delete
+ * actions, and the create form. The page polls its live region; forms work without JS.
+ */
+export * as Overview from "./ui/admin/pages/Overview.js"
+
+/**
+ * How the UIs print numbers and times. Pure: anything relative takes `now` as an argument, so a
+ * page reads the clock once (through the admin API) and every row agrees.
+ */
+export * as format from "./ui/components/format.js"
+
+/**
+ * The page header's pieces: the mark, the wordmark, the theme toggle and the live label.
+ */
+export * as header from "./ui/components/header.js"
+
+/**
+ * The UIs' small building blocks, on the classes in ui-assets/ui.css. Every interpolation goes
+ * through `html`, so names and paths from user config are escaped wherever these render.
+ */
+export * as primitives from "./ui/components/primitives.js"
 
 /**
  * A redesigned page's document: the self-hosted stylesheet, fonts, script and icon, and the
  * theme rendered on <html> so the first paint is already in it. No CDN.
  */
 export * as shell from "./ui/components/shell.js"
+
+/**
+ * Trend lines: a pure `points()` and the inline SVG that draws it.
+ */
+export * as sparkline from "./ui/components/sparkline.js"
 
 export * as favicon from "./ui/favicon.js"
 

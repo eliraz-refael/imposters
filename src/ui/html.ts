@@ -35,3 +35,7 @@ export const html = (strings: TemplateStringsArray, ...values: Array<unknown>): 
   }
   return new SafeHtml(result)
 }
+
+/** Joins rendered pieces (already escaped) into one */
+export const concat = (parts: ReadonlyArray<SafeHtml>): SafeHtml =>
+  new SafeHtml(parts.map((part) => part.value).join(""))
