@@ -337,6 +337,33 @@ describe("E2E: /_ui create form", () => {
       await release()
     }
   })
+
+  it("with JS, a failed auto-start answers like a success: the new stopped row, the headline, and the message for the form", async () => {
+    const release = await occupyPort(9915)
+    try {
+      const resp = await adminUi(
+        "/_ui/imposters",
+        fragmentPost({ name: "autostart-fails-js", port: "9915", protocol: "HTTP", start: "on" })
+      )
+      // A 2xx, so ui.js swaps the live region in and resets the form (data-reset)
+      expect(resp.status).toBe(200)
+      const html = await resp.text()
+      expect(html).not.toContain("<!DOCTYPE")
+      const created = await findImposter("autostart-fails-js")
+      expect(created?.status).toBe("stopped")
+      if (created !== undefined) {
+        expect(rowOf(html, created.id)).toContain("dot-off")
+        await remove(created.id)
+      }
+      expect(html).toContain("id=\"overview-headline\" data-oob")
+      // The form's error slot, replaced out of band, carries the message
+      expect(html).toMatch(
+        /<div class="alert form-error" id="new-error" data-error-slot role="alert" data-oob>Created autostart-fails-js, but it could not start: Failed to bind port 9915/
+      )
+    } finally {
+      await release()
+    }
+  })
 })
 
 describe("E2E: /_ui start, stop and delete", () => {

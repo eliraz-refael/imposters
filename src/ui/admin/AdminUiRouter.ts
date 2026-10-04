@@ -82,6 +82,9 @@ interface Failure {
   readonly message: string
   readonly status: number
   readonly form?: CreateFormState
+  // The change was made (the imposter exists) but did not finish (it could not start): with JS,
+  // answer like a success, so the live region shows it and the form resets, with the message
+  readonly madeChange?: boolean
 }
 
 const failed = (message: string, status: number, form?: CreateFormState): Failure =>
@@ -229,11 +232,14 @@ export const makeAdminUiRouter = (deps: AdminUiDeps) => {
       if (!startResp.ok) {
         const reason = await apiErrorMessage(startResp)
         // It exists now, so the form starts over rather than offering to create it again
-        return failed(
-          `Created ${created.value.name}, but it could not start: ${sentence(reason)}`,
-          startResp.status,
-          emptyCreateForm
-        )
+        return {
+          ...failed(
+            `Created ${created.value.name}, but it could not start: ${sentence(reason)}`,
+            startResp.status,
+            emptyCreateForm
+          ),
+          madeChange: true
+        }
       }
     }
     return null
@@ -268,12 +274,16 @@ export const makeAdminUiRouter = (deps: AdminUiDeps) => {
     )
   }
 
-  // With JS: the refreshed live region, or the message for the error slot. Without: back to the
-  // page after a success (303), or the page again with the message, at the failure's status.
+  // With JS: the refreshed live region, or the message for the error slot (with the live region
+  // too when the change was made). Without: back to the page after a success (303), or the page
+  // again with the message, at the failure's status.
   const answer = async (request: Request, failure: Failure | null): Promise<Response> => {
     if (request.headers.get(FRAGMENT_HEADER) === "1") {
-      if (isFailure(failure)) return htmlAnswer(html`${failure.message}`, failure.status)
-      return htmlAnswer(overviewFragment(await loadOverview(browserHost(request))))
+      if (isFailure(failure) && failure.madeChange !== true) {
+        return htmlAnswer(html`${failure.message}`, failure.status)
+      }
+      const data = await loadOverview(browserHost(request))
+      return htmlAnswer(overviewFragment(data, isFailure(failure) ? { formError: failure.message } : undefined))
     }
     if (isFailure(failure)) return page(request, { failure })
     return seeOther(UI_PREFIX)

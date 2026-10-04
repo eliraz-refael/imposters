@@ -207,11 +207,20 @@ const table = (data: Overview): SafeHtml => {
 
 const liveRegion = (data: Overview): SafeHtml => html`${strip(data)}${table(data)}`
 
+export interface FragmentOpts {
+  // A message for the create form's error slot, sent out of band with a 2xx answer: a create
+  // that made the imposter but could not start it, so the form resets and the row appears
+  readonly formError?: string
+}
+
 /**
  * What the poll and every action answer with: the live region, plus the headline out of band
  * (`data-oob`), since its counts change with it.
  */
-export const overviewFragment = (data: Overview): SafeHtml => html`${liveRegion(data)}${headline(data, true)}`
+export const overviewFragment = (data: Overview, opts?: FragmentOpts): SafeHtml =>
+  html`${liveRegion(data)}${headline(data, true)}${
+    opts?.formError === undefined ? html`` : formErrorSlot(opts.formError, true)
+  }`
 
 // ---------------------------------------------------------------- create form
 
@@ -225,6 +234,12 @@ export interface CreateFormState {
 }
 
 export const emptyCreateForm: CreateFormState = { name: "", port: "", protocol: "HTTP", start: true }
+
+// The create form's own error slot; `oob` marks it for an answer, whose swap replaces it by id
+const formErrorSlot = (message: string, oob: boolean): SafeHtml =>
+  html`<div class="alert form-error" id="new-error" data-error-slot role="alert"${
+    oob ? html` data-oob` : html``
+  }>${message}</div>`
 
 const createForm = (data: Overview, form: CreateFormState): SafeHtml => {
   const portHint = Option.match(data.portRange, {
@@ -248,7 +263,7 @@ const createForm = (data: Overview, form: CreateFormState): SafeHtml => {
     form.start ? html` checked` : html``
   }>start it now</label>
     <button class="btn btn-accent btn-field" type="submit">create</button>
-    <div class="alert form-error" data-error-slot role="alert">${form.error ?? ""}</div>
+    ${formErrorSlot(form.error ?? "", false)}
   </form>
 </section>`
 }
