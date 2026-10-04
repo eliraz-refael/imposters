@@ -97,18 +97,41 @@ describe("extensions: creating imposters", () => {
     expect(body.server.protocols).toEqual(["HTTP", "ECHO", "BOOM"])
   })
 
-  it("the /_ui imposter list shows each imposter's protocol", async () => {
+  it("the /_ui overview shows each imposter's protocol, and its create form offers every registered one", async () => {
     const imp = await createImposter({ port: 9813, name: "echo-in-ui", protocol: "ECHO" })
     try {
       const ui = makeAdminUiRouter({ apiHandler: server.handler, adminPort: 2525 })
-      const resp = await ui(new Request("http://localhost:2525/_ui/imposters"))
+      const resp = await ui(new Request("http://localhost:2525/_ui"))
       const html = (await resp?.text()) ?? ""
-      const row = html.slice(html.indexOf(`id="row-${imp.id}"`))
+      const row = html.slice(html.indexOf(`id="imposter-${imp.id}"`))
       expect(row).toContain("echo-in-ui")
-      expect(row.slice(0, row.indexOf("</tr>"))).toContain(">ECHO</td>")
+      expect(row.slice(0, row.indexOf("class=\"actions\""))).toContain("<span class=\"pill pill-info\">ECHO</span>")
+      const select = html.slice(html.indexOf("<select"), html.indexOf("</select>"))
+      expect(select).toContain("<option value=\"HTTP\" selected>HTTP</option>")
+      expect(select).toContain("<option value=\"ECHO\">ECHO</option>")
+      expect(select).toContain("<option value=\"BOOM\">BOOM</option>")
     } finally {
       await remove(imp.id)
     }
+  })
+
+  it("the /_ui create form makes an imposter of an extension's protocol", async () => {
+    const ui = makeAdminUiRouter({ apiHandler: server.handler, adminPort: 2525 })
+    const resp = await ui(
+      new Request("http://localhost:2525/_ui/imposters", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ name: "echo-from-form", port: "9814", protocol: "ECHO" }).toString()
+      })
+    )
+    expect(resp?.status).toBe(303)
+    const body: { imposters: ReadonlyArray<{ id: string; name: string; protocol: string; status: string }> } =
+      await (await admin("/imposters?limit=1000")).json()
+    const created = body.imposters.find((i) => i.name === "echo-from-form")
+    expect(created?.protocol).toBe("ECHO")
+    // "start it now" was not ticked
+    expect(created?.status).toBe("stopped")
+    if (created !== undefined) await remove(created.id)
   })
 
   it("the list filter selects by protocol", async () => {

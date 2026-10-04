@@ -1,66 +1,66 @@
+import * as DateTime from "effect/DateTime"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import { version } from "../../cli/version.js"
+import { PortNumber } from "../../schemas/common.js"
+import { DEFAULT_HOST } from "../../server/ServerFactory.js"
 import { assetRoute } from "../assets/serve.js"
 import { faviconResponse } from "../favicon.js"
 import { html, type SafeHtml } from "../html.js"
-import { errorResponse, formString, htmlResponse } from "../htmx.js"
-import { adminDashboardPage } from "./pages/AdminDashboard.js"
-import type { AdminImposterData } from "./partials.js"
-import { imposterListOob, imposterListPartial, imposterRowPartial, summaryBarPartial } from "./partials.js"
+import { formString } from "../htmx.js"
+import { themeFromCookie } from "../theme.js"
+import {
+  decodeHealth,
+  decodeImposterPage,
+  decodeInfo,
+  type ImposterRow,
+  type Overview,
+  summarize,
+  toRow
+} from "./OverviewData.js"
+import { type CreateFormState, emptyCreateForm, overviewFragment, overviewPage } from "./pages/Overview.js"
 
 export interface AdminUiDeps {
   readonly apiHandler: (request: Request) => Promise<Response>
   readonly adminPort: number
+  // The address the servers bind, shown in the header and the footer
+  readonly host?: string
 }
 
 const UI_PREFIX = "/_ui"
 const PAGE_SIZE = 100
+// ui.js sends this with every data-action and data-poll request: answer with a fragment, not a page
+const FRAGMENT_HEADER = "x-imposters-fragment"
 
-// The fields of the admin API's imposter JSON that the dashboard shows
-const ImposterJson = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  port: Schema.Number,
-  status: Schema.String,
-  protocol: Schema.String,
-  endpointCount: Schema.Number,
-  adminPath: Schema.String
-})
-type ImposterJson = Schema.Schema.Type<typeof ImposterJson>
-const decodeImposter = Schema.decodeUnknownOption(ImposterJson)
-const decodeImposterPage = Schema.decodeUnknownOption(
-  Schema.Struct({ imposters: Schema.Array(ImposterJson), pagination: Schema.Struct({ hasMore: Schema.Boolean }) })
-)
-const decodeCreated = Schema.decodeUnknownOption(Schema.Struct({ id: Schema.String }))
+const decodeCreated = Schema.decodeUnknownOption(Schema.Struct({ id: Schema.String, name: Schema.String }))
 const decodeApiError = Schema.decodeUnknownOption(Schema.Struct({ message: Schema.String }))
+const decodePortDigits = Schema.decodeUnknownOption(Schema.String.check(Schema.isPattern(/^\d{1,5}$/)))
+const decodePort = Schema.decodeUnknownOption(PortNumber)
 
-const readJson = async (resp: Response): Promise<unknown> => {
+const parseJson = (text: string): unknown => {
   try {
-    const body: unknown = await resp.json()
+    const body: unknown = JSON.parse(text)
     return body
   } catch {
     return undefined
   }
 }
 
+const readJson = async (resp: Response): Promise<unknown> => parseJson(await resp.text())
+
 // The message of an admin API error answer, e.g. "Port 3000 is already allocated"
 const apiErrorMessage = async (resp: Response): Promise<string> => {
   const text = await resp.text()
-  const parsed = ((): unknown => {
-    try {
-      const body: unknown = JSON.parse(text)
-      return body
-    } catch {
-      return undefined
-    }
-  })()
-  return Option.match(decodeApiError(parsed), {
+  return Option.match(decodeApiError(parseJson(text)), {
     onNone: () => text.trim() || `HTTP ${String(resp.status)}`,
     onSome: (err) => err.message
   })
 }
 
-// The host the browser reached the admin UI through, so "Open UI" links work from
+// "Port 3000 is already allocated" → "Port 3000 is already allocated."
+const sentence = (text: string): string => /[.!?]$/.test(text) ? text : `${text}.`
+
+// The host the browser reached the admin UI through, so links to an imposter's UI work from
 // another machine too (the Node server rewrites request.url to localhost)
 const browserHost = (request: Request): string => {
   const header = request.headers.get("host")
@@ -68,117 +68,199 @@ const browserHost = (request: Request): string => {
   return new URL(request.url).hostname
 }
 
-const toAdminData = (imp: ImposterJson, host: string): AdminImposterData => ({
-  id: imp.id,
-  name: imp.name,
-  port: imp.port,
-  status: imp.status,
-  protocol: imp.protocol,
-  stubCount: imp.endpointCount,
-  uiUrl: `http://${host}:${String(imp.port)}${imp.adminPath}`
-})
+const NO_STORE = { "cache-control": "no-store" }
+
+const htmlAnswer = (body: SafeHtml, status = 200): Response =>
+  new Response(body.value, { status, headers: { "content-type": "text/html; charset=utf-8", ...NO_STORE } })
+
+// After a form post without JS: back to the page, as a GET
+const seeOther = (location: string): Response => new Response(null, { status: 303, headers: { location, ...NO_STORE } })
+
+// A failed action: the plain-English message and the status it is sent with. `form` is the
+// create form to show again (with what was typed) when JS is off.
+interface Failure {
+  readonly message: string
+  readonly status: number
+  readonly form?: CreateFormState
+}
+
+const failed = (message: string, status: number, form?: CreateFormState): Failure =>
+  form === undefined ? { message, status } : { message, status, form }
+
+const isFailure = (value: Failure | null): value is Failure => value !== null
+
+type Action = "start" | "stop" | "delete"
+
+const ACTION_PATH = /^\/imposters\/([^/]+)\/(start|stop|delete)$/
+
+const actionOf = (verb: string | undefined): Action | null =>
+  verb === "start" || verb === "stop" || verb === "delete" ? verb : null
+
+const decodeSegment = (segment: string): string | null => {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return null
+  }
+}
+
+const NOT_FOUND = "That imposter no longer exists; it may have been deleted elsewhere."
 
 export const makeAdminUiRouter = (deps: AdminUiDeps) => {
+  const bindHost = deps.host ?? DEFAULT_HOST
+
   const api = (path: string, init?: RequestInit): Promise<Response> =>
     deps.apiHandler(new Request(`http://localhost${path}`, init))
 
-  const patchStatus = (id: string, status: "running" | "stopped"): Promise<Response> =>
-    api(`/imposters/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status })
-    })
+  const sendJson = (method: string, path: string, body: unknown): Promise<Response> =>
+    api(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
 
-  // Every page of the list: the dashboard shows all imposters, not the API's first page
-  const fetchImposters = async (host: string, offset = 0): Promise<ReadonlyArray<AdminImposterData>> => {
-    const resp = await api(`/imposters?limit=${String(PAGE_SIZE)}&offset=${String(offset)}`)
+  // Every page of the list, with statistics: the overview shows all imposters, not the first page
+  const fetchRows = async (host: string, offset = 0): Promise<ReadonlyArray<ImposterRow>> => {
+    const resp = await api(`/imposters?limit=${String(PAGE_SIZE)}&offset=${String(offset)}&stats=true`)
     if (!resp.ok) return []
     const page = decodeImposterPage(await readJson(resp))
     if (Option.isNone(page)) return []
-    const here = page.value.imposters.map((imp) => toAdminData(imp, host))
+    const here = page.value.imposters.map((imp) => toRow(imp, host))
     if (!page.value.pagination.hasMore || here.length === 0) return here
-    return [...here, ...await fetchImposters(host, offset + PAGE_SIZE)]
+    return [...here, ...await fetchRows(host, offset + PAGE_SIZE)]
   }
 
-  const fetchImposter = async (id: string, host: string): Promise<AdminImposterData | null> => {
-    const resp = await api(`/imposters/${id}`)
-    if (!resp.ok) return null
-    return Option.match(decodeImposter(await readJson(resp)), {
-      onNone: () => null,
-      onSome: (imp) => toAdminData(imp, host)
-    })
+  const fetchDecoded = async <A>(
+    path: string,
+    decode: (input: unknown) => Option.Option<A>
+  ): Promise<Option.Option<A>> => {
+    const resp = await api(path)
+    return resp.ok ? decode(await readJson(resp)) : Option.none()
   }
 
-  // A successful action: its main content, plus the summary counts out of band
-  const withSummary = async (main: SafeHtml, host: string, imposters?: ReadonlyArray<AdminImposterData>) => {
-    const list = imposters ?? await fetchImposters(host)
-    return htmlResponse(html`${main}${summaryBarPartial(list, { oob: true })}`)
-  }
-
-  // A failed action: the message in the error slot, and the table and counts refreshed,
-  // since the failure may come from a change made elsewhere (deleted, restarted)
-  const failure = async (message: string, status: number, host: string): Promise<Response> => {
-    const list = await fetchImposters(host)
-    return errorResponse(message, status, html`${imposterListOob(list)}${summaryBarPartial(list, { oob: true })}`)
-  }
-
-  const listResponse = async (host: string): Promise<Response> => {
-    const list = await fetchImposters(host)
-    return withSummary(imposterListPartial(list), host, list)
-  }
-
-  const create = async (request: Request, host: string): Promise<Response> => {
-    const form = await request.formData().catch(() => null)
-    if (form === null) return failure("Expected a form submission.", 400, host)
-
-    const name = formString(form, "name")?.trim() ?? ""
-    const portText = formString(form, "port")?.trim() ?? ""
-    const autoStart = formString(form, "autoStart") === "on"
-    if (portText !== "" && !/^\d+$/.test(portText)) {
-      return failure(`Port must be a whole number, got "${portText}".`, 400, host)
+  const loadOverview = async (host: string): Promise<Overview> => {
+    const [imposters, health, info] = await Promise.all([
+      fetchRows(host),
+      fetchDecoded("/health", decodeHealth),
+      fetchDecoded("/info", decodeInfo)
+    ])
+    return {
+      imposters,
+      summary: summarize(imposters),
+      health: Option.map(health, (h) => ({ nowMs: DateTime.toEpochMillis(h.timestamp), uptime: h.uptime })),
+      protocols: Option.match(info, { onNone: () => ["HTTP"], onSome: (i) => i.server.protocols }),
+      portRange: Option.map(info, (i) => i.configuration.portRange),
+      bindHost,
+      adminPort: deps.adminPort,
+      version
     }
+  }
 
-    // No protocol: the API defaults it to HTTP
-    const payload: Record<string, unknown> = {}
-    if (name !== "") payload.name = name
-    if (portText !== "") payload.port = Number(portText)
+  // ---------------------------------------------------------------- create
 
-    const createResp = await api("/imposters", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
+  const createFormState = (form: FormData): CreateFormState => ({
+    name: formString(form, "name")?.trim() ?? "",
+    port: formString(form, "port")?.trim() ?? "",
+    protocol: formString(form, "protocol")?.trim() || "HTTP",
+    start: formString(form, "start") === "on"
+  })
+
+  // The form's fields, checked before anything is created; null when they are fine
+  const validate = (state: CreateFormState, protocols: ReadonlyArray<string>): Failure | null => {
+    if (state.port !== "") {
+      const digits = decodePortDigits(state.port)
+      if (Option.isNone(digits) || Option.isNone(decodePort(Number(digits.value)))) {
+        return failed(
+          `The port must be a whole number from 1024 to 65535, like 3000. Leave it blank to pick a free one.`,
+          400,
+          state
+        )
+      }
+    }
+    if (!protocols.includes(state.protocol)) {
+      return failed(
+        `There is no "${state.protocol}" protocol here. Choose one of: ${protocols.join(", ")}.`,
+        400,
+        state
+      )
+    }
+    return null
+  }
+
+  const create = async (request: Request): Promise<Failure | null> => {
+    const form = await request.formData().catch(() => null)
+    if (form === null) return failed("Expected a form submission.", 400, emptyCreateForm)
+    const state = createFormState(form)
+
+    const protocols = Option.match(await fetchDecoded("/info", decodeInfo), {
+      onNone: () => [state.protocol],
+      onSome: (info) => info.server.protocols
+    })
+    const invalid = validate(state, protocols)
+    if (isFailure(invalid)) return invalid
+
+    const createResp = await sendJson("POST", "/imposters", {
+      ...(state.name !== "" ? { name: state.name } : {}),
+      ...(state.port !== "" ? { port: Number(state.port) } : {}),
+      protocol: state.protocol
     })
     if (!createResp.ok) {
-      return failure(`Failed to create imposter: ${await apiErrorMessage(createResp)}`, createResp.status, host)
+      const reason = await apiErrorMessage(createResp)
+      return failed(`Could not create the imposter: ${sentence(reason)}`, createResp.status, state)
     }
 
     const created = decodeCreated(await readJson(createResp))
-    if (autoStart && Option.isSome(created)) {
-      const startResp = await patchStatus(created.value.id, "running")
+    if (state.start && Option.isSome(created)) {
+      const startResp = await sendJson("PATCH", `/imposters/${encodeURIComponent(created.value.id)}`, {
+        status: "running"
+      })
       if (!startResp.ok) {
         const reason = await apiErrorMessage(startResp)
-        return failure(`Created the imposter, but it could not start: ${reason}`, startResp.status, host)
+        // It exists now, so the form starts over rather than offering to create it again
+        return failed(
+          `Created ${created.value.name}, but it could not start: ${sentence(reason)}`,
+          startResp.status,
+          emptyCreateForm
+        )
       }
     }
-    return listResponse(host)
+    return null
   }
 
-  // Start and stop resolve once the port is bound or released, so the row read after is current
-  const setStatus = async (id: string, status: "running" | "stopped", host: string): Promise<Response> => {
-    const resp = await patchStatus(id, status)
-    if (!resp.ok) {
-      const verb = status === "running" ? "start" : "stop"
-      return failure(`Failed to ${verb} imposter: ${await apiErrorMessage(resp)}`, resp.status, host)
+  // ---------------------------------------------------------------- start, stop, delete
+
+  // Start and stop resolve once the port is bound or released, so the overview read after is current
+  const act = async (id: string, action: Action): Promise<Failure | null> => {
+    const path = `/imposters/${encodeURIComponent(id)}`
+    const resp = action === "delete"
+      ? await api(`${path}?force=true`, { method: "DELETE" })
+      : await sendJson("PATCH", path, { status: action === "start" ? "running" : "stopped" })
+    if (resp.ok) return null
+    if (resp.status === 404) return failed(NOT_FOUND, 404)
+    return failed(`Could not ${action} the imposter: ${sentence(await apiErrorMessage(resp))}`, resp.status)
+  }
+
+  // ---------------------------------------------------------------- answers
+
+  const page = async (request: Request, opts?: { readonly failure?: Failure }): Promise<Response> => {
+    const failure = opts?.failure
+    const data = await loadOverview(browserHost(request))
+    const theme = themeFromCookie(request.headers.get("cookie"))
+    const form = failure?.form === undefined
+      ? { ...emptyCreateForm, protocol: data.protocols[0] ?? "HTTP" }
+      : { ...failure.form, error: failure.message }
+    const error = failure !== undefined && failure.form === undefined ? failure.message : undefined
+    return htmlAnswer(
+      overviewPage(data, { theme, form, ...(error !== undefined ? { error } : {}) }),
+      failure?.status ?? 200
+    )
+  }
+
+  // With JS: the refreshed live region, or the message for the error slot. Without: back to the
+  // page after a success (303), or the page again with the message, at the failure's status.
+  const answer = async (request: Request, failure: Failure | null): Promise<Response> => {
+    if (request.headers.get(FRAGMENT_HEADER) === "1") {
+      if (isFailure(failure)) return htmlAnswer(html`${failure.message}`, failure.status)
+      return htmlAnswer(overviewFragment(await loadOverview(browserHost(request))))
     }
-    const imp = await fetchImposter(id, host)
-    if (imp === null) return failure("Imposter not found.", 404, host)
-    return withSummary(imposterRowPartial(imp), host)
-  }
-
-  const remove = async (id: string, host: string): Promise<Response> => {
-    const resp = await api(`/imposters/${id}?force=true`, { method: "DELETE" })
-    if (!resp.ok) return failure(`Failed to delete imposter: ${await apiErrorMessage(resp)}`, resp.status, host)
-    return listResponse(host)
+    if (isFailure(failure)) return page(request, { failure })
+    return seeOther(UI_PREFIX)
   }
 
   return async (request: Request): Promise<Response | null> => {
@@ -187,29 +269,24 @@ export const makeAdminUiRouter = (deps: AdminUiDeps) => {
 
     const path = url.pathname.slice(UI_PREFIX.length) || "/"
     const method = request.method.toUpperCase()
-    const host = browserHost(request)
 
     const asset = assetRoute(request, path)
     if (asset !== null) return asset
 
     if (method === "GET" && path === "/favicon.svg") return faviconResponse()
 
-    if (method === "GET" && path === "/") {
-      return htmlResponse(adminDashboardPage({ imposters: await fetchImposters(host) }))
+    if (method === "GET" && path === "/") return page(request)
+
+    if (method === "GET" && path === "/fragments/overview") {
+      return htmlAnswer(overviewFragment(await loadOverview(browserHost(request))))
     }
 
-    // HTMX partial (imposter list)
-    if (method === "GET" && path === "/imposters") return listResponse(host)
+    if (method === "POST" && path === "/imposters") return answer(request, await create(request))
 
-    if (method === "POST" && path === "/imposters") return create(request, host)
-
-    const action = /^\/imposters\/([^/]+)\/(start|stop)$/.exec(path)
-    if (method === "POST" && action?.[1] !== undefined) {
-      return setStatus(action[1], action[2] === "start" ? "running" : "stopped", host)
-    }
-
-    const target = /^\/imposters\/([^/]+)$/.exec(path)
-    if (method === "DELETE" && target?.[1] !== undefined) return remove(target[1], host)
+    const match = ACTION_PATH.exec(path)
+    const action = actionOf(match?.[2])
+    const id = match?.[1] === undefined ? null : decodeSegment(match[1])
+    if (method === "POST" && action !== null && id !== null) return answer(request, await act(id, action))
 
     return null
   }

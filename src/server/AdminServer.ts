@@ -23,7 +23,7 @@ export const makeCompositeHandler = (
   host: string = DEFAULT_HOST
 ) => {
   const { dispose, handler: apiHandler } = makeWebHandler(extensions, host)
-  const adminUiRouter = makeAdminUiRouter({ apiHandler, adminPort })
+  const adminUiRouter = makeAdminUiRouter({ apiHandler, adminPort, host })
 
   const handler = async (request: Request): Promise<Response> => {
     const uiResponse = await adminUiRouter(request)
