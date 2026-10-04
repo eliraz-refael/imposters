@@ -901,10 +901,11 @@ a.imp-name:hover {
 
 /*
  * The imposters table as cards, below the width its 1212px of columns need (plus the panel's
- * border and the main column's 32px gutters). There is no header row, so each value prints its
- * column name (data-label) above it. Two lines a card while there is room; a stack on a phone.
+ * border, the main column's 32px gutters and a classic scrollbar's ~17px, which a media query's
+ * width includes). There is no header row, so each value prints its column name (data-label)
+ * above it. Two lines a card while there is room; a stack on a phone.
  */
-@media (max-width: 1277px) {
+@media (max-width: 1299px) {
   .table {
     min-width: 0;
   }
