@@ -67,6 +67,14 @@ describe("makeResponseState", () => {
       }
     }))
 
+  it.effect("random mode draws through Effect's Random, so a test can pick the index", () =>
+    Effect.gen(function*() {
+      const state = yield* makeResponseState()
+      expect(yield* state.getNextIndex("imp1", "stub1", 3, "random").pipe(withRandom(0))).toBe(0)
+      expect(yield* state.getNextIndex("imp1", "stub1", 3, "random").pipe(withRandom(0.5))).toBe(1)
+      expect(yield* state.getNextIndex("imp1", "stub1", 3, "random").pipe(withRandom(TOP))).toBe(2)
+    }))
+
   it.effect("different stubs have independent counters", () =>
     Effect.gen(function*() {
       const state = yield* makeResponseState()

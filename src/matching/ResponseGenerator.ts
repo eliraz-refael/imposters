@@ -36,7 +36,7 @@ export const makeResponseState = () =>
         const current = HashMap.get(counters, key)
         const index = current._tag === "Some" ? current.value : 0
         if (mode === "random") {
-          return [Effect.succeed(Math.floor(Math.random() * count)), counters]
+          return [Random.nextIntBetween(0, count - 1), counters]
         }
         return [Effect.succeed(indexFor(index, count, mode)), HashMap.set(counters, key, index + 1)]
       }).pipe(Effect.flatten)
