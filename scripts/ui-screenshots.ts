@@ -90,7 +90,8 @@ let browser: Browser | undefined
 const serverOutput: Array<string> = []
 
 const startServer = (): ChildProcess => {
-  const child = spawn("bun", ["src/Program.ts", "start", "--config", CONFIG, "--port", String(adminPort)], {
+  // process.execPath is the bun running this script, so the server never depends on PATH
+  const child = spawn(process.execPath, ["src/Program.ts", "start", "--config", CONFIG, "--port", String(adminPort)], {
     cwd: rootDir,
     env: { ...process.env, IMPOSTERS_HOST: HOST },
     stdio: ["ignore", "pipe", "pipe"]
@@ -101,6 +102,8 @@ const startServer = (): ChildProcess => {
   }
   child.stdout?.on("data", keep)
   child.stderr?.on("data", keep)
+  // Without a listener a spawn failure would crash the script; waitUntilReady reports it instead
+  child.on("error", (error) => keep(Buffer.from(`spawn failed: ${error.message}\n`)))
   return child
 }
 
@@ -109,31 +112,38 @@ const exited = (child: ChildProcess): Promise<void> =>
     ? Promise.resolve()
     : new Promise((resolve) => child.once("exit", () => resolve()))
 
+// `server` stays set until the child has exited, so the exit handler below can still SIGKILL it
+// if the process exits while it is stopping
 const stopServer = async (): Promise<void> => {
   const child = server
-  server = undefined
-  if (child === undefined || child.exitCode !== null || child.signalCode !== null) return
-  child.kill("SIGTERM")
-  const stopped = await Promise.race([exited(child).then(() => true), deadline(5_000).then(() => false)])
-  if (!stopped) {
-    child.kill("SIGKILL")
-    await exited(child)
+  if (child === undefined) return
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGTERM")
+    const stopped = await Promise.race([exited(child).then(() => true), deadline(5_000).then(() => false)])
+    if (!stopped) {
+      child.kill("SIGKILL")
+      await exited(child)
+    }
   }
+  server = undefined
 }
 
-const cleanup = async (): Promise<void> => {
-  const open = browser
-  browser = undefined
-  await open?.close().catch(() => undefined)
-  await stopServer()
-}
+// One cleanup, shared: a signal during main's own cleanup waits for it rather than exiting
+// half-way through
+let cleaning: Promise<void> | undefined
+const cleanup = (): Promise<void> =>
+  cleaning ??= (async () => {
+    await browser?.close().catch(() => undefined)
+    browser = undefined
+    await stopServer()
+  })()
 
 // A last resort if the process exits some other way: never leave the server holding its ports
 process.on("exit", () => server?.kill("SIGKILL"))
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
   process.once(signal, () => {
     console.error(`\n${signal}: stopping`)
-    void cleanup().finally(() => process.exit(130))
+    void cleanup().finally(() => process.exit(code))
   })
 }
 
