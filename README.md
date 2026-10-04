@@ -164,6 +164,7 @@ The `admin` block is optional and reserved: it is validated, but the CLI current
 | [`fault-injection.json`](examples/fault-injection.json) | `/orders` alternates 200 and 503 (`"responseMode": "sequential"`); `/slow` answers after a 2 s `delay`; `/jittery` after a random 100–800 ms (`"delay": { "min": 100, "max": 800 }`) | `curl -w ' %{http_code}\n' localhost:3001/orders`, several times |
 | [`s3.json`](examples/s3.json) | An in-memory S3 on port 7070 | Point the AWS SDK at `http://localhost:7070` with `forcePathStyle: true` |
 | [`s3-fault-injection.json`](examples/s3-fault-injection.json) | An S3 on port 7071 where `GET /my-bucket/flaky.pdf` is throttled with a 503 `SlowDown`; every other request reaches the emulator | `curl localhost:7071/my-bucket/flaky.pdf` |
+| [`ui-showcase.json`](examples/ui-showcase.json) | Five imposters for the web UIs: templated responses, a flaky API (`"responseMode": "random"` with a 503), a slow one (delay ranges), an S3 with a throttled key, and a spare (`bun run screenshots` stops it to show a stopped imposter) | Open `localhost:2525/_ui`, then `curl localhost:3201/users/42` |
 | [`vitest/users.test.ts`](examples/vitest/users.test.ts) | A vitest suite that mocks an API with `withImposter` | Copy it into a project with `imposters`, `effect` and `vitest`, then `npx vitest run` |
 
 ## API Reference
