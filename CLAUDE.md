@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 726 tests across 67 files.
+All three gates pass: `bun check`, `bun lint`, and 754 tests across 68 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -239,10 +239,11 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - **`ui-assets/ui.ts` is tested in happy-dom,** opted into per file with `// @vitest-environment happy-dom` (everything else stays on node), against a fake `EventSource` and `fetch`.
 - **UI tokens:** every `--im-*` value must match `site/src/styles/theme.css` (a test checks it); UI-only tokens are `--ui-*`. The `imposters-theme` cookie is set on both `/_ui` and `/_admin`.
+- **Randomness goes through Effect's `Random`** (delay ranges, random response mode), never `Math.random`. In tests, fix it with `Effect.provideService(Random.Random, { nextDoubleUnsafe: () => d, nextIntUnsafe: () => 0 })` or `Random.withSeed(seed)`. `Random.nextIntBetween(min, max)` includes both ends unless `{ halfOpen: true }`.
 - `runPromise` wraps failures in `FiberFailure` — assert with `String(err).toContain(msg)`, not identity.
 - tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.
 
@@ -266,6 +267,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - **Imports need `.js` extensions (NodeNext).** `tsc` emits specifiers as written and Node's ESM loader wants the file, so every relative import in `src/` ends in `.js` (`./dir/index.js` for a directory). `tsconfig.src.json` (and so `tsconfig.build.json`) uses `module`/`moduleResolution: NodeNext`, so a missing extension is a `bun check` error (TS2835). `test/` stays on `Bundler` from the base config, since it imports through the `imposters/*` aliases. `bun run verify-dist` loads every `exports` entry from a temp consumer in plain Node; it runs in the Check workflow's Build job and in publish's "Verify dist". After `rm -rf build`, also delete `.tsbuildinfo/`, or `bun check` trusts stale build info and reports TS6305.
 - The CLI ships as an **esbuild CJS bundle** (`dist/bin/cli.cjs`, target node18) because the ESM library build was not usable as a Node `bin`. `bin/imposters` is a three-line shim that `require`s it.
 - `scripts/postbuild.ts` copies the shim into `dist/bin/`, chmods it 755, injects the `bin` field into `dist/package.json`, copies `.npmrc`, and copies the fonts' OFL licenses to `dist/licenses/`.
+- **The index codegen takes the first multi-line `/**` comment in a module as its doc in `src/index.ts`.** Give functions `//` or single-line `/** */` comments, or the barrel changes. `bun run build` also adds blank lines to `src/index.ts`; revert that churn.
 - **`src/cli/version.ts` is intentionally `"0.0.0"`.** CI `sed`s the real version into the bundle and both `dist/dist/{cjs,esm}/cli/version.js` at publish time. Do not "fix" it.
 - Publishing uses npm **trusted publishing / OIDC**: `NODE_AUTH_TOKEN: ""` with `id-token: write` and `--provenance`. The empty token is intentional.
 - Each release attaches `npm pack dist/` as `imposters-<version>.tgz` to its GitHub release, for networks where the public npm registry is blocked. The workflow checks the file's integrity against `npm view dist.integrity` and only warns on a mismatch. v0.5.0's file was uploaded by hand; its files match npm's.
