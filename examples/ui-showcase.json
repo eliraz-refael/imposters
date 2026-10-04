@@ -1,0 +1,176 @@
+{
+  "imposters": [
+    {
+      "name": "users-api",
+      "port": 3201,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "equals", "value": "/users" }
+          ],
+          "responses": [
+            {
+              "headers": { "content-type": "application/json" },
+              "body": [
+                { "id": 1, "name": "Alice", "role": "admin" },
+                { "id": 2, "name": "Bob", "role": "member" },
+                { "id": 3, "name": "Carol", "role": "member" }
+              ]
+            }
+          ]
+        },
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "matches", "value": "^/users/\\d+$" }
+          ],
+          "responses": [
+            {
+              "headers": { "content-type": "application/json" },
+              "body": {
+                "id": "${$number($substringAfter(request.path, '/users/'))}",
+                "name": "Alice",
+                "email": "alice@example.com"
+              }
+            }
+          ]
+        },
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "equals", "value": "/search" }
+          ],
+          "responses": [
+            {
+              "headers": { "content-type": "application/json" },
+              "body": { "query": "{{request.query.q}}", "results": [] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "orders-api",
+      "port": 3202,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "equals", "value": "/orders" }
+          ],
+          "responseMode": "random",
+          "responses": [
+            { "status": 200, "headers": { "content-type": "application/json" }, "body": { "orders": [{ "id": "ord_1001", "total": 42.5 }] } },
+            { "status": 200, "headers": { "content-type": "application/json" }, "body": { "orders": [{ "id": "ord_1001", "total": 42.5 }] } },
+            { "status": 503, "headers": { "content-type": "application/json" }, "body": { "error": "service_unavailable" } }
+          ]
+        },
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "POST" },
+            { "field": "path", "operator": "equals", "value": "/orders" },
+            { "field": "headers", "operator": "contains", "value": { "content-type": "application/json" } }
+          ],
+          "responses": [
+            {
+              "status": 201,
+              "headers": { "content-type": "application/json" },
+              "body": {
+                "id": "${'ord_' & $string($floor($random() * 9000) + 1000)}",
+                "customer": "{{request.body.customer}}",
+                "items": "${$count(request.body.items)}",
+                "total": "${$sum(request.body.items.price)}",
+                "status": "pending"
+              }
+            }
+          ]
+        },
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "POST" },
+            { "field": "path", "operator": "equals", "value": "/payments" }
+          ],
+          "responseMode": "sequential",
+          "responses": [
+            { "status": 202, "body": { "status": "accepted" } },
+            { "status": 202, "body": { "status": "accepted" } },
+            { "status": 500, "body": { "error": "gateway_timeout" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "catalog-api",
+      "port": 3203,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "equals", "value": "/products" }
+          ],
+          "responses": [
+            {
+              "delay": { "min": 150, "max": 900 },
+              "headers": { "content-type": "application/json" },
+              "body": { "products": [{ "sku": "tee-black-m", "price": 19 }, { "sku": "mug-white", "price": 9 }] }
+            }
+          ]
+        },
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "startsWith", "value": "/products/" }
+          ],
+          "responses": [
+            {
+              "delay": { "min": 40, "max": 160 },
+              "headers": { "content-type": "application/json" },
+              "body": { "sku": "${$substringAfter(request.path, '/products/')}", "price": 19, "stock": 12 }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "media-s3",
+      "port": 3204,
+      "protocol": "S3",
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "GET" },
+            { "field": "path", "operator": "equals", "value": "/media/videos/intro.mp4" }
+          ],
+          "responses": [
+            {
+              "status": 503,
+              "headers": { "content-type": "application/xml" },
+              "body": "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "payments-sandbox",
+      "port": 3205,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "POST" },
+            { "field": "path", "operator": "equals", "value": "/charges" }
+          ],
+          "responses": [{ "status": 201, "body": { "id": "ch_test_1", "status": "succeeded" } }]
+        },
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "POST" },
+            { "field": "path", "operator": "matches", "value": "^/charges/[^/]+/refund$" }
+          ],
+          "responses": [{ "status": 200, "body": { "status": "refunded" } }]
+        }
+      ]
+    }
+  ]
+}
