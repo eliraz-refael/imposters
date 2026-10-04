@@ -899,6 +899,138 @@ a.imp-name:hover {
   }
 }
 
+/*
+ * The imposters table as cards, below the width its 1212px of columns need (plus the panel's
+ * border and the main column's 32px gutters). There is no header row, so each value prints its
+ * column name (data-label) above it. Two lines a card while there is room; a stack on a phone.
+ */
+@media (max-width: 1277px) {
+  .table {
+    min-width: 0;
+  }
+  .row-imposters.row-head {
+    display: none;
+  }
+  .row-head + .row-imposters {
+    border-top: 0;
+  }
+  /* Flex, not the table's grid: the name, pill, port and actions on the first line, then the
+     traffic line and the numbers, by `order`; a zero-height ::after breaks the line */
+  .row-imposters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 16px 18px;
+    padding: 18px 20px;
+  }
+  .row-imposters::after {
+    content: "";
+    order: 1;
+    flex-basis: 100%;
+    margin-top: -16px;
+  }
+  .row-imposters > .cell-name {
+    flex: 1 1 0;
+    align-items: flex-start;
+  }
+  .row-imposters > .cell-name > .dot-on,
+  .row-imposters > .cell-name > .dot-off {
+    margin-top: 6px;
+  }
+  /* Wrap, never truncate: a long name or status line takes another line */
+  .row-imposters .cell-name .ellipsis {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .row-imposters > .port {
+    line-height: 22px;
+  }
+  .row-imposters > [data-label] {
+    order: 3;
+    flex: 0 0 76px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    text-align: left;
+  }
+  .row-imposters > [data-label]::before {
+    content: attr(data-label);
+    font-family: var(--im-font-mono);
+    font-stretch: var(--im-stretch-code);
+    font-size: 11px;
+    color: var(--im-muted);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .row-imposters > .num {
+    font-size: 14px;
+  }
+  .row-imposters > .cell-spark {
+    order: 2;
+    flex: 1 1 0;
+  }
+  .cell-spark > .sparkline {
+    width: 100%;
+    height: 32px;
+  }
+  .cell-spark .spark {
+    vector-effect: non-scaling-stroke;
+  }
+  .row-imposters .actions .btn {
+    min-height: 40px;
+  }
+  .row-imposters .actions .btn-icon {
+    width: 40px;
+  }
+}
+/* A phone: one stack, with the traffic line and the action row full width and the stubs left to
+   the status line of a stopped imposter (and the imposter's own page) */
+@media (max-width: 720px) {
+  .row-imposters {
+    gap: 14px 12px;
+    padding: 16px;
+  }
+  .row-imposters::after {
+    display: none;
+  }
+  .row-imposters > .actions {
+    order: 4;
+  }
+  .row-imposters > .cell-stubs {
+    display: none;
+  }
+  .row-imposters > .cell-spark,
+  .row-imposters > .actions {
+    flex: 1 1 100%;
+  }
+  .row-imposters > .num {
+    flex: 1 1 0;
+  }
+  .row-imposters .actions .btn {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+  .row-imposters .actions .btn-icon {
+    flex: 0 0 44px;
+  }
+}
+/* Too narrow for the pill and port beside the name and its status line: they go under it */
+@media (max-width: 480px) {
+  .row-imposters > .cell-name {
+    flex-basis: 100%;
+  }
+  .row-imposters > .cell-protocol {
+    margin-left: 21px;
+  }
+}
+/* Too narrow for four labels in a row ("unmatched" is the widest): two by two */
+@media (max-width: 374px) {
+  .row-imposters > .num {
+    flex-basis: calc(50% - 6px);
+  }
+}
+
 @media (max-width: 720px) {
   .top-in,
   .main {

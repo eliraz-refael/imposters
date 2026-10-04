@@ -35,8 +35,11 @@ export interface SparklineOpts {
   readonly tone?: SparkTone
 }
 
-/** A decorative trend line; the numbers beside it carry the meaning, so it is hidden from screen readers */
+/**
+ * A decorative trend line; the numbers beside it carry the meaning, so it is hidden from screen readers.
+ * It does not keep its aspect ratio, so CSS can stretch it across a narrow screen's card.
+ */
 export const sparkline = (opts: SparklineOpts): SafeHtml =>
-  html`<svg class="sparkline" width="${opts.width}" height="${opts.height}" viewBox="0 0 ${opts.width} ${opts.height}" aria-hidden="true"><polyline class="${
+  html`<svg class="sparkline" width="${opts.width}" height="${opts.height}" viewBox="0 0 ${opts.width} ${opts.height}" preserveAspectRatio="none" aria-hidden="true"><polyline class="${
     toneClass[opts.tone ?? "on"]
   }" points="${points(opts.values, opts.width, opts.height)}"></polyline></svg>`
