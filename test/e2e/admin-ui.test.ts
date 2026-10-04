@@ -422,6 +422,25 @@ describe("E2E: /_ui start, stop and delete", () => {
     }
   })
 
+  it("without Sec-Fetch-Site (plain http to a LAN address), a foreign Origin is refused", async () => {
+    const post = (headers: Record<string, string>) =>
+      adminUi("/_ui/imposters", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+        body: new URLSearchParams({ name: "origin-probe", protocol: "HTTP", start: "off" }).toString()
+      })
+    expect((await post({ host: "192.168.1.5:2525", origin: "http://evil.example" })).status).toBe(403)
+    expect((await post({ host: "192.168.1.5:2525", origin: "null" })).status).toBe(403)
+    expect(await findImposter("origin-probe")).toBeUndefined()
+
+    // The page's own post: same host, any port
+    const own = await post({ host: "192.168.1.5:2525", origin: "http://192.168.1.5:2525" })
+    expectSeeOther(own)
+    const created = await findImposter("origin-probe")
+    expect(created).toBeDefined()
+    if (created !== undefined) await remove(created.id)
+  })
+
   it("an imposter that no longer exists is a 404 that says so", async () => {
     for (const action of ["start", "stop", "delete"]) {
       const resp = await adminUi(`/_ui/imposters/nope/${action}`, fragmentPost())

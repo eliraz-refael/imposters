@@ -109,8 +109,18 @@ const NOT_FOUND = "That imposter no longer exists; it may have been deleted else
 // A form post is a "simple" request, so a page on another site could send one to a loopback
 // admin server without a CORS preflight. Browsers mark such a request `Sec-Fetch-Site:
 // cross-site`; refuse it. (An imposter's own /_admin, on another port of the same host, is
-// same-site.) Tools that send no such header are unaffected.
-const isCrossSite = (request: Request): boolean => request.headers.get("sec-fetch-site") === "cross-site"
+// same-site.) Browsers send Sec-Fetch-Site only to a trustworthy origin (https or loopback), so
+// an admin server bound to a LAN address over http gets none: there, an Origin whose host is
+// not the one the request was sent to (or an opaque "null" one) is refused too. Tools that send
+// neither header are unaffected.
+const isCrossSite = (request: Request): boolean => {
+  const site = request.headers.get("sec-fetch-site")
+  if (site !== null) return site === "cross-site"
+  const origin = request.headers.get("origin")
+  if (origin === null) return false
+  if (!URL.canParse(origin)) return true
+  return new URL(origin).hostname !== browserHost(request)
+}
 
 export const makeAdminUiRouter = (deps: AdminUiDeps) => {
   const bindHost = deps.host ?? DEFAULT_HOST
