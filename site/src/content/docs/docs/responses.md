@@ -10,7 +10,7 @@ A stub's `responses` is a non-empty list. Each response is:
 | `status` | `200` | HTTP status, `100` to `599` |
 | `headers` | none | An object of header names to string values. Values are templated |
 | `body` | none | Any JSON value. A string is sent as-is; anything else is sent as JSON. Templated |
-| `delay` | none | Milliseconds to wait before answering, `0` to `60000` |
+| `delay` | none | Milliseconds to wait before answering, `0` to `60000`, or a range `{ "min", "max" }` to draw from (see [Delays](#delays)) |
 
 When `headers` has no `content-type`, a string body is sent as `text/plain` and any other body as `application/json`. A `204`, `205` or `304` is sent without a body.
 
@@ -121,3 +121,28 @@ curl -s -o /dev/null -w "%{time_total}s\n" http://localhost:3000/slow
 ```text
 1.502136s
 ```
+
+### Delay ranges
+
+A fixed delay makes every answer equally slow. To simulate jitter, give `delay` a range instead: each time the response is served, Imposters waits a random whole number of milliseconds between `min` and `max`, both included.
+
+```json
+{
+  "predicates": [{ "field": "path", "operator": "equals", "value": "/jittery" }],
+  "responses": [{ "status": 200, "delay": { "min": 100, "max": 800 }, "body": "sometimes slow" }]
+}
+```
+
+```bash
+for i in 1 2 3; do curl -s -o /dev/null -w "%{time_total}s\n" http://localhost:3000/jittery; done
+```
+
+```text
+0.614203s
+0.137950s
+0.402871s
+```
+
+Both bounds take `0` to `60000`, and `min` must not be above `max`; the API answers 400 otherwise, naming `["responses", 0, "delay", "max"]`. `{ "min": 500, "max": 500 }` behaves like `500`. Reading the stub back returns `delay` exactly as it was given, a number or a range.
+
+The stub preview (`POST /imposters/:id/stubs/preview`) never waits, whichever form the delay takes.

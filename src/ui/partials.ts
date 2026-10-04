@@ -1,6 +1,6 @@
 import * as DateTime from "effect/DateTime"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
-import type { ResponseConfig, Stub } from "../schemas/StubSchema.js"
+import type { Delay, ResponseConfig, Stub } from "../schemas/StubSchema.js"
 import { html } from "./html.js"
 import type { SafeHtml } from "./html.js"
 import { errorBox } from "./htmx.js"
@@ -26,6 +26,10 @@ export const formatTimeUtc = (timestamp: DateTime.DateTime): string => {
 // The full instant in ISO 8601, e.g. 2026-10-02T09:57:56.645Z
 export const formatTimestampUtc = (timestamp: DateTime.DateTime): string => DateTime.formatIso(timestamp)
 
+// "250ms", or "100–500ms" for a range
+const formatDelay = (delay: Delay): string =>
+  typeof delay === "number" ? `${String(delay)}ms` : `${String(delay.min)}–${String(delay.max)}ms`
+
 const responseDetail = (r: ResponseConfig, index: number, total: number): SafeHtml => {
   const label = total > 1 ? `Response ${String(index + 1)}/${String(total)}` : "Response"
   const headers = r.headers
@@ -35,7 +39,7 @@ const responseDetail = (r: ResponseConfig, index: number, total: number): SafeHt
     <div class="flex items-center gap-2 mb-1">
       <span class="font-medium text-gray-700">${label}</span>
       <span class="px-1.5 py-0.5 rounded text-xs font-mono bg-indigo-100 text-indigo-700">${String(r.status)}</span>
-      ${r.delay !== undefined ? html`<span class="text-xs text-gray-400">delay ${String(r.delay)}ms</span>` : html``}
+      ${r.delay !== undefined ? html`<span class="text-xs text-gray-400">delay ${formatDelay(r.delay)}</span>` : html``}
     </div>
     ${headers !== null ? html`<div class="text-xs text-gray-500 mb-1">Headers: ${headers}</div>` : html``}
     ${

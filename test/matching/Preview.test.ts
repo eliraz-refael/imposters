@@ -79,6 +79,13 @@ describe("previewStub", () => {
       expect(preview).toMatchObject({ matched: 6, total: 6, sample: { response: { status: 200 } } })
     }))
 
+  it.effect("does not wait out a delay range either", () =>
+    Effect.gen(function*() {
+      const candidate = decodeCandidate({ responses: [{ status: 200, delay: { min: 30000, max: 60000 } }] })
+      const preview = yield* previewStub(candidate, groups)
+      expect(preview).toMatchObject({ matched: 6, total: 6, sample: { response: { status: 200 } } })
+    }))
+
   it.effect("gives no body for a status that cannot have one", () =>
     Effect.gen(function*() {
       const preview = yield* previewStub(decodeCandidate({ responses: [{ status: 204, body: "ignored" }] }), groups)

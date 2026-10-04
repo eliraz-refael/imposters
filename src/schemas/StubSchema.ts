@@ -52,6 +52,23 @@ export type Predicate = Schema.Schema.Type<typeof Predicate>
 export const ResponseMode = Schema.Literals(["sequential", "random", "repeat"])
 export type ResponseMode = Schema.Schema.Type<typeof ResponseMode>
 
+// A delay in milliseconds, up to a minute
+export const DelayMs = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 60000 }))
+
+// A delay drawn uniformly, in whole milliseconds, from [min, max] (both inclusive) each time the response is served
+export const DelayRange = Schema.Struct({ min: DelayMs, max: DelayMs }).check(
+  Schema.makeFilter((range) =>
+    range.min <= range.max
+      ? undefined
+      : { path: ["max"], issue: `max (${range.max}) must be greater than or equal to min (${range.min})` }
+  )
+)
+export type DelayRange = Schema.Schema.Type<typeof DelayRange>
+
+// A response's delay: a fixed number of milliseconds, or a range to draw from
+export const Delay = Schema.Union([DelayMs, DelayRange])
+export type Delay = Schema.Schema.Type<typeof Delay>
+
 // A single response configuration
 export const ResponseConfig = Schema.Struct({
   status: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 })).pipe(
@@ -59,7 +76,7 @@ export const ResponseConfig = Schema.Struct({
   ),
   headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   body: Schema.optional(Schema.Unknown),
-  delay: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 60000 })))
+  delay: Schema.optional(Delay)
 })
 export type ResponseConfig = Schema.Schema.Type<typeof ResponseConfig>
 

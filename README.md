@@ -34,6 +34,7 @@ Imposters lets you spin up fake HTTP servers ("imposters") that respond to reque
 - **Stub matching** — Match requests by method, path, headers, query params, or body using operators like `equals`, `contains`, `startsWith`, `matches`, and `exists`
 - **Response templates** — Use `{{key}}` for simple substitution or `${expr}` for JSONata expressions that reference the incoming request
 - **Multiple responses** — Cycle through responses sequentially, randomly, or repeat the last one
+- **Delays** — Hold a response back for a fixed time, or a random time in a range, to exercise timeouts and jitter
 - **Proxy mode** — Passthrough to a real service or record responses as stubs
 - **S3 emulator** — An in-memory S3 imposter (`"protocol": "S3"`) for the AWS SDK, with stubs for fault injection
 - **Per-imposter admin UI** — HTMX-powered UI at each imposter's `/_admin` path
@@ -160,7 +161,7 @@ The `admin` block is optional and reserved: it is validated, but the CLI current
 | File | What it shows | Try it |
 |---|---|---|
 | [`users-api.json`](examples/users-api.json) | A templated path parameter (the demo above) | `curl localhost:3000/users/42` → `{"id":"42","name":"Alice"}` |
-| [`fault-injection.json`](examples/fault-injection.json) | `/orders` alternates 200 and 503 (`"responseMode": "sequential"`); `/slow` answers after a 2 s `delay` | `curl -w ' %{http_code}\n' localhost:3001/orders`, several times |
+| [`fault-injection.json`](examples/fault-injection.json) | `/orders` alternates 200 and 503 (`"responseMode": "sequential"`); `/slow` answers after a 2 s `delay`; `/jittery` after a random 100–800 ms (`"delay": { "min": 100, "max": 800 }`) | `curl -w ' %{http_code}\n' localhost:3001/orders`, several times |
 | [`s3.json`](examples/s3.json) | An in-memory S3 on port 7070 | Point the AWS SDK at `http://localhost:7070` with `forcePathStyle: true` |
 | [`s3-fault-injection.json`](examples/s3-fault-injection.json) | An S3 on port 7071 where `GET /my-bucket/flaky.pdf` is throttled with a 503 `SlowDown`; every other request reaches the emulator | `curl localhost:7071/my-bucket/flaky.pdf` |
 | [`vitest/users.test.ts`](examples/vitest/users.test.ts) | A vitest suite that mocks an API with `withImposter` | Copy it into a project with `imposters`, `effect` and `vitest`, then `npx vitest run` |
@@ -321,6 +322,21 @@ Use [JSONata](https://jsonata.org/) for computed values. The expression context 
 ```
 
 If an entire string is a single `${...}` expression, the raw result type is preserved (number, object, etc.). When mixed with other text, results are concatenated as strings.
+
+## Delays
+
+A response's `delay` holds it back before it is sent. A number is a fixed delay in milliseconds; `{ "min", "max" }` waits a random whole number of milliseconds between the two, both included, drawn afresh each time the response is served:
+
+```json
+{
+  "responses": [
+    { "status": 200, "delay": 1500, "body": "always 1.5 s late" },
+    { "status": 200, "delay": { "min": 100, "max": 800 }, "body": "somewhere between" }
+  ]
+}
+```
+
+Both forms take `0` to `60000`, and a range needs `min <= max` (otherwise a 400 names the field). `{ "min": 500, "max": 500 }` is the same as `500`. A stub reads back with `delay` in the form it was given.
 
 ## Proxy Mode
 

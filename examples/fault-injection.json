@@ -22,6 +22,14 @@
           "responses": [
             { "status": 200, "delay": 2000, "body": { "status": "eventually" } }
           ]
+        },
+        {
+          "predicates": [
+            { "field": "path", "operator": "equals", "value": "/jittery" }
+          ],
+          "responses": [
+            { "status": 200, "delay": { "min": 100, "max": 800 }, "body": { "status": "sometimes slow" } }
+          ]
         }
       ]
     }

@@ -17,7 +17,7 @@ import * as DateTime from "effect/DateTime"
 import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter.js"
 import { type ExtensionInstance, Extensions, findExtension } from "../extensions/Extension.js"
 import { extractRequestContext, findMatchingStub, type RequestContext } from "../matching/RequestMatcher.js"
-import { buildResponse, makeResponseState, peekIndex, type ResponseState } from "../matching/ResponseGenerator.js"
+import { makeResponseState, peekIndex, type ResponseState, serveResponse } from "../matching/ResponseGenerator.js"
 import {
   ImposterRepository,
   type StubIndexOutOfRangeError,
@@ -144,11 +144,7 @@ export const ImposterServerLive = Layer.effect(
             const next = yield* responseState.getNextIndex(id, stub.id, stub.responses.length, stub.responseMode)
             const responseIndex = next < stub.responses.length ? next : 0
             const responseConfig = stub.responses[responseIndex] ?? stub.responses[0]
-            const delay = responseConfig.delay
-            if (delay !== undefined && delay > 0) {
-              yield* Effect.sleep(`${delay} millis`)
-            }
-            const response = yield* Effect.promise(() => buildResponse(responseConfig, ctx))
+            const response = yield* serveResponse(responseConfig, ctx)
             return { response, kind: "stub", matchedStubId: stub.id, responseIndex }
           })
 

@@ -1,8 +1,17 @@
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Option from "effect/Option"
+import * as Random from "effect/Random"
+import { TestClock } from "effect/testing"
 import type { RequestContext } from "imposters/matching/RequestMatcher"
-import { buildResponse, makeResponseState, peekIndex } from "imposters/matching/ResponseGenerator"
+import {
+  buildResponse,
+  makeResponseState,
+  peekIndex,
+  resolveDelay,
+  serveResponse
+} from "imposters/matching/ResponseGenerator"
 import type { ResponseConfig } from "imposters/schemas/StubSchema"
 import { describe, expect } from "vitest"
 
@@ -180,4 +189,100 @@ describe("buildResponse", () => {
     const resp = await buildResponse(config, ctx)
     expect(resp.headers.get("x-method")).toBe("POST")
   })
+})
+
+// A Random whose every draw is `double` (in [0, 1)), so the delay it picks is known in advance
+const fixedRandom = (double: number): Random.Random => ({
+  nextDoubleUnsafe: () => double,
+  nextIntUnsafe: () => 0
+})
+const withRandom = (double: number) => Effect.provideService(Random.Random, fixedRandom(double))
+// The largest double below 1, the top of a draw
+const TOP = 1 - Number.EPSILON
+
+describe("resolveDelay", () => {
+  it.effect("is 0 without a delay, and the number itself for a fixed one", () =>
+    Effect.gen(function*() {
+      expect(yield* resolveDelay(undefined)).toBe(0)
+      expect(yield* resolveDelay(0)).toBe(0)
+      expect(yield* resolveDelay(250).pipe(withRandom(TOP))).toBe(250)
+    }))
+
+  it.effect("draws a whole number in [min, max], both ends included", () =>
+    Effect.gen(function*() {
+      const range = { min: 100, max: 200 }
+      expect(yield* resolveDelay(range).pipe(withRandom(0))).toBe(100)
+      expect(yield* resolveDelay(range).pipe(withRandom(0.5))).toBe(150)
+      expect(yield* resolveDelay(range).pipe(withRandom(TOP))).toBe(200)
+    }))
+
+  it.effect("covers the whole range uniformly and never leaves it, draw after draw", () =>
+    Effect.gen(function*() {
+      const counts = new Map<number, number>()
+      for (let i = 0; i < 2000; i++) {
+        const ms = yield* resolveDelay({ min: 3, max: 7 })
+        counts.set(ms, (counts.get(ms) ?? 0) + 1)
+      }
+      expect([...counts.keys()].sort()).toEqual([3, 4, 5, 6, 7])
+      // 400 expected per value; a seeded run is deterministic, the bound only guards against a skew
+      for (const count of counts.values()) expect(count).toBeGreaterThan(300)
+    }).pipe(Random.withSeed("delay-ranges")))
+
+  it.effect("is fixed when min equals max, whatever the draw", () =>
+    Effect.gen(function*() {
+      expect(yield* resolveDelay({ min: 300, max: 300 }).pipe(withRandom(0))).toBe(300)
+      expect(yield* resolveDelay({ min: 300, max: 300 }).pipe(withRandom(TOP))).toBe(300)
+      expect(yield* resolveDelay({ min: 0, max: 0 }).pipe(withRandom(TOP))).toBe(0)
+    }))
+})
+
+// it.effect runs on a TestClock, so these waits are virtual: nothing really sleeps
+describe("serveResponse", () => {
+  const ctx = makeCtx()
+
+  // Forks the answer, then moves the clock: still waiting 1ms short of `ms`, answered at `ms`
+  const expectWaits = (config: ResponseConfig, ms: number) =>
+    Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(serveResponse(config, ctx), { startImmediately: true })
+      if (ms > 0) {
+        yield* TestClock.adjust(ms - 1)
+        expect(fiber.pollUnsafe()).toBeUndefined()
+        yield* TestClock.adjust(1)
+      }
+      const response = yield* Fiber.join(fiber)
+      expect(response.status).toBe(config.status)
+    })
+
+  it.effect("answers at once without a delay", () => expectWaits(makeResponse({ status: 201 }), 0))
+
+  it.effect("waits exactly a fixed delay", () => expectWaits(makeResponse({ delay: 250 }), 250))
+
+  it.effect("waits exactly the delay drawn from a range", () =>
+    // 0.5 of [100, 200] draws 150
+    expectWaits(makeResponse({ delay: { min: 100, max: 200 } }), 150).pipe(withRandom(0.5)))
+
+  it.effect("waits the range's max on the top draw", () =>
+    expectWaits(makeResponse({ delay: { min: 100, max: 200 } }), 200).pipe(withRandom(TOP)))
+
+  it.effect("draws afresh for every answer", () =>
+    Effect.gen(function*() {
+      const config = makeResponse({ delay: { min: 10, max: 20 } })
+      yield* expectWaits(config, 10).pipe(withRandom(0))
+      yield* expectWaits(config, 20).pipe(withRandom(TOP))
+    }))
+
+  it.effect("waits exactly n for a range of n to n", () =>
+    expectWaits(makeResponse({ delay: { min: 75, max: 75 } }), 75).pipe(withRandom(TOP)))
+
+  it.effect("builds the response after the wait", () =>
+    Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(
+        serveResponse(makeResponse({ status: 202, body: { ok: true }, delay: 40 }), ctx),
+        { startImmediately: true }
+      )
+      yield* TestClock.adjust(40)
+      const response = yield* Fiber.join(fiber)
+      expect(response.status).toBe(202)
+      expect(yield* Effect.promise(() => response.json())).toEqual({ ok: true })
+    }))
 })

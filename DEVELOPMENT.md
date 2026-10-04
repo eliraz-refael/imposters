@@ -85,7 +85,7 @@ These are deliberate changes, not drift. Anyone reading the older plan should no
 The core abstraction is **stubs**, not simple routes. Each stub has:
 
 - **Predicates:** An ordered list of request matchers (method, path, headers, query, body). Combined with AND logic. Operators: `equals`, `contains`, `startsWith`, `matches` (regex), `exists` — all supporting `caseSensitive`.
-- **Responses:** An ordered list of response configs, selected by `responseMode`: `sequential` (round-robin), `random`, or `repeat`. Each response has status, headers, body, delay.
+- **Responses:** An ordered list of response configs, selected by `responseMode`: `sequential` (round-robin), `random`, or `repeat`. Each response has status, headers, body, delay (a fixed number of ms, or `{ min, max }` drawn per answer through Effect's `Random`).
 - **Template data:** Response bodies can reference `request.method`, `request.path`, `request.headers.*`, `request.query.*`, and `request.body.*`.
 
 ```
@@ -133,7 +133,7 @@ GET    /imposters/:id/stats                       DELETE /imposters/:id/stats
 
 ## Phase 3: Imposter Runtime + Route Matching ✅ COMPLETE
 
-`ImposterServer` exposes `start`/`stop`/`updateStubs`/`updateProxyConfig`/`isRunning`, plus `applyStubChange` (every stub write), `nextResponseIndex` and `resetStub` (the response cycle). Fibers are managed by `FiberManager` (a `FiberMap` wrapper); each server instance is wrapped in `Effect.acquireRelease` so interruption stops the server and frees the port. `RequestMatcher` evaluates predicates; `ResponseGenerator` selects and builds responses with delays and templating. Hot-reload works via `Ref` swap with zero downtime.
+`ImposterServer` exposes `start`/`stop`/`updateStubs`/`updateProxyConfig`/`isRunning`, plus `applyStubChange` (every stub write), `nextResponseIndex` and `resetStub` (the response cycle). Fibers are managed by `FiberManager` (a `FiberMap` wrapper); each server instance is wrapped in `Effect.acquireRelease` so interruption stops the server and frees the port. `RequestMatcher` evaluates predicates; `ResponseGenerator` selects and builds responses with delays and templating; `serveResponse` waits out the delay on the `Clock` (a range is drawn with `Random.nextIntBetween`), so tests drive it with `TestClock` and a fixed `Random`. Hot-reload works via `Ref` swap with zero downtime.
 
 ---
 
