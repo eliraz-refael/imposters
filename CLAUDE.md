@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 804 tests across 73 files.
+All three gates pass: `bun check`, `bun lint`, and 806 tests across 74 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -173,7 +173,7 @@ src/
 ui-assets/                 # UI sources: tokens.css, fonts.css, ui.css, ui.ts (browser runtime, own tsconfig)
 scripts/ui-assets.ts       # the asset generator (gen-ui-assets.ts is its CLI)
 test/                      # mirrors src/, plus test/e2e/ and test/helpers/
-examples/                  # config files, e.g. s3.json (an S3 imposter on 7070)
+examples/                  # config files, e.g. s3.json (an S3 imposter on 7070), ui-showcase.json (the screenshots script's data)
 ```
 
 ## Development Commands
@@ -186,6 +186,7 @@ bun run test       # vitest --run (single run, NOT watch; ~3s — files run in p
 bun coverage
 bun run build      # codegen + esm + cjs + esbuild CLI bundle + postbuild
 bun run verify-dist  # after a build: import()/require() every dist export in plain Node, run the bin, GET /_ui and a hashed asset
+bun run screenshots  # needs Google Chrome: starts examples/ui-showcase.json (admin 2599, imposters 3201–3205), sends traffic, writes screenshots/ in both themes
 bun gen-ui-assets    # regenerate src/ui/assets/generated.ts from ui-assets/ (codegen and the build run it; a freshness test fails while it is stale)
 ```
 
@@ -239,7 +240,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - **`ui-assets/ui.ts` is tested in happy-dom,** opted into per file with `// @vitest-environment happy-dom` (everything else stays on node), against a fake `EventSource` and `fetch`.
 - **`/_ui` POSTs refuse cross-site requests** (403): `Sec-Fetch-Site: cross-site`, or, when the header is `same-site` or absent, an `Origin` whose host differs from the request's. Keep that guard on any new UI form endpoint: the admin API has no auth, and a form post needs no CORS preflight.
