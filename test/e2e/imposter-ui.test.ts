@@ -2,6 +2,7 @@ import * as Layer from "effect/Layer"
 import { HttpRouter } from "effect/unstable/http"
 import { ApiLayer } from "imposters/layers/ApiLayer"
 import { MainLayer } from "imposters/layers/MainLayer"
+import { favicon } from "imposters/ui/assets/generated"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const FullLayer = ApiLayer.pipe(Layer.provide(MainLayer))
@@ -220,7 +221,7 @@ describe("E2E: Imposter UI fixes", () => {
   it("serves its favicon under /_admin, and UI traffic never lands in the request log", async () => {
     await withRunningImposter(9621, async (id) => {
       const page = await (await fetch("http://localhost:9621/_admin")).text()
-      expect(page).toContain("href=\"/_admin/favicon.svg\"")
+      expect(page).toContain(`href="/_admin/assets/${favicon.name}"`)
 
       const icon = await fetch("http://localhost:9621/_admin/favicon.svg")
       expect(icon.status).toBe(200)

@@ -1,5 +1,6 @@
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import { assetRoute } from "../assets/serve.js"
 import { faviconResponse } from "../favicon.js"
 import { html, type SafeHtml } from "../html.js"
 import { errorResponse, formString, htmlResponse } from "../htmx.js"
@@ -187,6 +188,9 @@ export const makeAdminUiRouter = (deps: AdminUiDeps) => {
     const path = url.pathname.slice(UI_PREFIX.length) || "/"
     const method = request.method.toUpperCase()
     const host = browserHost(request)
+
+    const asset = assetRoute(request, path)
+    if (asset !== null) return asset
 
     if (method === "GET" && path === "/favicon.svg") return faviconResponse()
 

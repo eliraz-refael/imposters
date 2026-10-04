@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["ui-assets"],
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "tsBuildInfoFile": ".tsbuildinfo/ui-assets.tsbuildinfo",
+    "rootDir": "ui-assets",
+    "noEmit": true,
+    "plugins": []
+  }
+}
