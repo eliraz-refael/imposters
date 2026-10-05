@@ -31,8 +31,9 @@ export const Step = Schema.Union([
   Schema.TaggedStruct("Log", { count: Schema.Literals([1, 2, 25]) }),
   Schema.TaggedStruct("Pause", {}),
   Schema.TaggedStruct("Resume", {}),
-  // The oldest re-fetch in flight is answered: the newest rows as of when it was sent, or an error
-  Schema.TaggedStruct("AnswerOk", {}),
+  // The oldest re-fetch in flight is answered: the newest rows as of when it was sent (the server
+  // read its log at once) or as of now (the server read it just before answering), or an error
+  Schema.TaggedStruct("AnswerOk", { late: Schema.Boolean }),
   Schema.TaggedStruct("AnswerFail", {}),
   Schema.TaggedStruct("Advance", { ms: Schema.Literals([100, 1000, 5000, 30000]) }),
   Schema.TaggedStruct("PageHide", {}),
@@ -171,10 +172,11 @@ const persistedPageshow = (persisted: boolean): Event => {
   return event
 }
 
-const answerOldest = (ok: boolean): void => {
+const answerOldest = (ok: boolean, late: boolean): void => {
   const next = world.inFlight.shift()
   if (next === undefined) return
-  next.answer(ok ? new Response(rowsHtml(next.rows)) : new Response("unavailable", { status: 503 }))
+  const rows = late ? newest(world.log) : next.rows
+  next.answer(ok ? new Response(rowsHtml(rows)) : new Response("unavailable", { status: 503 }))
 }
 
 const apply = async (step: Step): Promise<void> => {
@@ -215,8 +217,10 @@ const apply = async (step: Step): Promise<void> => {
       if (isPaused()) element("[data-sse-pause]").click()
       break
     case "AnswerOk":
+      answerOldest(true, step.late)
+      break
     case "AnswerFail":
-      answerOldest(step._tag === "AnswerOk")
+      answerOldest(false, false)
       break
     case "Advance":
       await vi.advanceTimersByTimeAsync(step.ms)
@@ -263,7 +267,7 @@ const quiesce = async (): Promise<void> => {
     if (world.hidden) await apply({ _tag: "PageShow", persisted: true })
     if (isPaused()) await apply({ _tag: "Resume" })
     await apply({ _tag: "Open" })
-    while (world.inFlight.length > 0) await apply({ _tag: "AnswerOk" })
+    while (world.inFlight.length > 0) await apply({ _tag: "AnswerOk", late: false })
     await apply({ _tag: "Advance", ms: 30000 })
   }
 }

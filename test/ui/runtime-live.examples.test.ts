@@ -23,7 +23,7 @@ describe("ui.ts live list: found by the property test", () => {
 
   pinned("a re-fetch that lands while paused leaves the list as it is", {
     initial: 0,
-    steps: [{ _tag: "Log", count: 2 }, { _tag: "Open" }, { _tag: "Pause" }, { _tag: "AnswerOk" }]
+    steps: [{ _tag: "Log", count: 2 }, { _tag: "Open" }, { _tag: "Pause" }, { _tag: "AnswerOk", late: false }]
   })
 
   pinned("a stream opened after a re-fetch re-fetches what it missed before it opened", {
@@ -34,5 +34,34 @@ describe("ui.ts live list: found by the property test", () => {
   pinned("rows queued before a re-fetch are not added on top of its newer answer", {
     initial: 0,
     steps: [{ _tag: "Open" }, { _tag: "Log", count: 25 }, { _tag: "PageHide" }, { _tag: "Log", count: 25 }]
+  })
+
+  pinned("rows a stream sent before it dropped are not put on top of a newer re-fetch answer", {
+    initial: 0,
+    steps: [
+      { _tag: "Open" },
+      { _tag: "AnswerOk", late: false },
+      { _tag: "Drop" },
+      { _tag: "Open" },
+      { _tag: "Log", count: 1 },
+      { _tag: "Drop" },
+      { _tag: "Log", count: 25 },
+      { _tag: "AnswerOk", late: true }
+    ]
+  })
+
+  pinned("after a give-up, a failed re-fetch does not show old rows over a newer answer", {
+    initial: 0,
+    steps: [
+      { _tag: "Open" },
+      { _tag: "AnswerOk", late: false },
+      { _tag: "Drop" },
+      { _tag: "Open" },
+      { _tag: "Log", count: 1 },
+      { _tag: "GiveUp" },
+      { _tag: "Log", count: 25 },
+      { _tag: "AnswerOk", late: true },
+      { _tag: "AnswerFail" }
+    ]
   })
 })

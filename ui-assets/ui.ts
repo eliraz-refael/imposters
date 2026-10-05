@@ -398,6 +398,10 @@ const startSse = (el: HTMLElement): void => {
         }
         swap(el, rows, "inner")
         waiting.splice(0, covered)
+        // The stream went down while it was out: the rows it sent before that may be older than
+        // the whole answer (the server read its log later), so they would land on top of newer
+        // rows. They were logged before the next open, whose re-fetch covers them.
+        if (!connected) waiting.splice(0)
       }
     } finally {
       reloading = false
