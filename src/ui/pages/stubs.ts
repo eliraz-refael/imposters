@@ -17,13 +17,13 @@ const json = (value: unknown): string => JSON.stringify(value, null, 2)
 const draftNote = (draft: DraftRequest | undefined) =>
   draft === undefined
     ? html``
-    : html`<p class="mb-3 text-sm text-indigo-700 bg-indigo-50 rounded p-2">A draft for ${draft.method} ${draft.path}: review it, then Add Stub.</p>`
+    : html`<p id="draft-note" class="mb-3 text-sm text-indigo-700 bg-indigo-50 rounded p-2">A draft for ${draft.method} ${draft.path}: review it, then Add Stub.</p>`
 
 const addStubForm = (draft: DraftRequest | undefined) =>
   html`<div class="bg-white rounded-lg shadow p-4 mb-6" id="add-stub">
     <h2 class="text-lg font-semibold mb-3">Add Stub</h2>
     ${draftNote(draft)}
-    <form hx-post="/_admin/stubs" hx-target="#stub-list" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful) this.reset()">
+    <form hx-post="/_admin/stubs" hx-target="#stub-list" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){this.elements.predicates.defaultValue='[]';this.elements.responses.defaultValue='';this.reset();document.getElementById('draft-note')?.remove()}">
       <div class="mb-3">
         <label class="block text-sm font-medium text-gray-700 mb-1">Predicates (JSON array)</label>
         <textarea name="predicates" rows="${
