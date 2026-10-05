@@ -326,6 +326,10 @@ const startSse = (el: HTMLElement): void => {
   // subscribed, would otherwise never show
   let stale = reloadUrl !== undefined
   const waiting: Array<string> = []
+  // A failed re-fetch with the stream still open tries again after `retryMs` (doubling to 30s);
+  // a stream that drops instead re-fetches when it opens
+  let retry: ReturnType<typeof setTimeout> | undefined
+  let retryMs = 1000
 
   // A row already in the list (by id) is not added again: a re-fetch and an event can both carry it
   const isShown = (row: Element): boolean => {
@@ -362,13 +366,14 @@ const startSse = (el: HTMLElement): void => {
   const awaitingOpen = (): boolean => source !== null && !connected && source.readyState !== 2
 
   // Replaces the rows with the server's latest until nothing has gone stale meanwhile (a
-  // reconnect, a full queue), then settles. A failed re-fetch leaves the list stale for the
-  // next open or resume, and shows the waiting rows meanwhile.
+  // reconnect, a full queue), then settles. A pause stops it between re-fetches: resume
+  // re-fetches. A failed re-fetch leaves the list stale for a retry, the next open or resume,
+  // and shows the waiting rows meanwhile.
   const reload = async (url: string): Promise<void> => {
     reloading = true
     let failed = false
     try {
-      while (stale && !awaitingOpen()) {
+      while (stale && !paused && !awaitingOpen()) {
         stale = false
         if (!(await fetchInto(el, url, "inner"))) {
           stale = true
@@ -378,9 +383,26 @@ const startSse = (el: HTMLElement): void => {
       }
     } finally {
       reloading = false
-      if (failed && !paused) waiting.splice(0).forEach(insert)
-      else settle()
+      if (failed) {
+        if (!paused) waiting.splice(0).forEach(insert)
+        retryLater()
+      } else {
+        clearTimeout(retry)
+        retry = undefined
+        retryMs = 1000
+        settle()
+      }
     }
+  }
+
+  const retryLater = (): void => {
+    if (retry !== undefined) return
+    retry = setTimeout(() => {
+      retry = undefined
+      // Hidden (no stream) or swapped out: pageshow or nothing takes it from here
+      if (source !== null && el.isConnected) settle()
+    }, retryMs)
+    retryMs = Math.min(retryMs * 2, 30_000)
   }
 
   // Brings the list up to date when it may change: not while paused or mid re-fetch
@@ -437,6 +459,8 @@ const startSse = (el: HTMLElement): void => {
     source?.close()
     source = null
     connected = false
+    clearTimeout(retry)
+    retry = undefined
   }
 
   el.addEventListener("ui:pause-toggle", () => {

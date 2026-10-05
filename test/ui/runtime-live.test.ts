@@ -324,6 +324,41 @@ describe("ui.ts on the live page", () => {
     await vi.waitFor(() => expect(paths()).toEqual(["/after-the-failure"]))
   })
 
+  it("a failed re-fetch while the stream stays open is retried on its own", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      reloadRows = [entry("x1", "/after-the-retry")]
+      failReload = true
+      const before = reloads()
+      reconnect()
+      await vi.waitFor(() => expect(reloads()).toBe(before + 1))
+      // No pause, no reconnect: only a retry can fill the gap
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(paths()).toEqual(["/after-the-retry"])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("a list paused during a re-fetch is not re-fetched again until resume", async () => {
+    reloadRows = [entry("y1", "/in-flight")]
+    holdReload = true
+    reconnect()
+    await vi.waitFor(() => expect(releaseReload).toBeDefined())
+    pauseButton().click()
+    // Goes stale again while paused and mid re-fetch
+    reconnect()
+    const before = reloads()
+    release()
+    await vi.waitFor(() => expect(paths()).toEqual(["/in-flight"]))
+    await flush()
+    // Paused: the list stays as it is
+    expect(reloads()).toBe(before)
+    reloadRows = [entry("y2", "/logged-while-paused"), entry("y1", "/in-flight")]
+    pauseButton().click()
+    await vi.waitFor(() => expect(paths()).toEqual(["/logged-while-paused", "/in-flight"]))
+  })
+
   it("closes the stream when the page is hidden", () => {
     const current = source()
     window.dispatchEvent(new Event("pagehide"))
