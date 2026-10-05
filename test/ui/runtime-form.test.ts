@@ -349,6 +349,35 @@ describe("the stub form: the check", () => {
     expect(mustControl("r0.status").hasAttribute("aria-invalid")).toBe(false)
   })
 
+  it("a delay problem's link reaches the range inputs while the range is showing", async () => {
+    await mount(draftToText({ responses: [{ status: 200, delay: { min: 900, max: 100 } }] }))
+    typeInto("r0.max", "50")
+    await wait(CHECK_DELAY_MS)
+    // The schema reports a bad range at the delay itself, whose fixed-ms input is hidden
+    const path = JSON.stringify(["responses", 0, "delay"])
+    answerWith(
+      0,
+      `<span data-check="invalid">✗</span><ul><li data-problem-path='${path}'><span class="in-form"><a href="#editor-form" data-goto='${path}'>response 1 · delay</a> …</span></li></ul>`
+    )
+    await flush()
+    expect(mustControl("r0.min").getAttribute("aria-invalid")).toBe("true")
+    element<HTMLAnchorElement>("[data-goto]").click()
+    expect(focused()).toBe("r0.min")
+  })
+
+  it("a number the browser cannot read is reported, not dropped from the draft", async () => {
+    await mount(draftToText(STUB))
+    const before = area().value
+    const input = mustControl<HTMLInputElement>("r0.status")
+    // What a browser does with "2e" in a number input: its value reads "", flagged as bad input
+    input.value = ""
+    Object.defineProperty(input, "validity", { value: { badInput: true } })
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(status().textContent).toContain("response 1 · status: write a number, like 200")
+    expect(area().value).toBe(before)
+    expect(submit().disabled).toBe(true)
+  })
+
   it("in the JSON view, a problem's line puts the caret on that line", async () => {
     await mount(draftToText(STUB))
     tab("json").click()

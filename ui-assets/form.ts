@@ -248,13 +248,17 @@ export const startForm = (root: HTMLElement, onEdit: (state: FormState) => void)
     for (const key of keys) if (focusKey(key)) return
   }
 
-  // The control a schema path is about: the one whose data-path is its longest prefix, else the
-  // first control of its row or card
+  // The control a schema path is about: the one whose data-path is its longest prefix, else one
+  // inside it (a range's min for `delay`, while the fixed ms input is hidden), else the first
+  // control of its row or card
   const controlFor = (path: DraftPath): HTMLElement | undefined => {
     const controls = Array.from(root.querySelectorAll<HTMLElement>("[data-path]")).filter(isVisible)
     for (let length = path.length; length > 0; length--) {
       const key = pathKey(path.slice(0, length))
-      const hit = controls.find((el) => el.dataset.path === key)
+      const hit = controls.find((el) => el.dataset.path === key) ??
+        (length >= 3
+          ? controls.find((el) => el.dataset.path?.startsWith(`${key}.`) || el.dataset.path?.startsWith(`${key}[`))
+          : undefined)
       if (hit !== undefined) return hit
     }
     const [head, index] = path
@@ -349,11 +353,16 @@ export const startForm = (root: HTMLElement, onEdit: (state: FormState) => void)
     if (key === undefined) return
     // A select changes on "change"; text changes on "input"
     if ((el instanceof HTMLSelectElement) !== (event.type === "change")) return
-    run(valueAction(parseKey(key), el.value))
+    // A number input reads "" for text that is not a number ("2e", "-"): pass the text on as not
+    // a number, so the model says so instead of leaving the value out of the draft
+    const notANumber = el instanceof HTMLInputElement && el.type === "number" && el.value === "" &&
+      el.validity.badInput
+    const value = notANumber ? "NaN" : el.value
+    run(valueAction(parseKey(key), value))
     // The reason phrase follows the status as it is typed
     if (key.endsWith(".status")) {
       const reason = el.closest("[data-row=response]")?.querySelector("[data-c=reason]")
-      if (reason !== null && reason !== undefined) reason.textContent = reasonPhrase(el.value)
+      if (reason !== null && reason !== undefined) reason.textContent = reasonPhrase(value)
     }
   }
   root.addEventListener("input", onValue)
