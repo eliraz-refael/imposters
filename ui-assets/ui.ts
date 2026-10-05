@@ -328,9 +328,9 @@ const startSse = (el: HTMLElement): void => {
   let connected = false
   let paused = false
   let reloading = false
-  // The first open re-fetches too: rows logged after the page was rendered, before the stream
-  // subscribed, would otherwise never show
-  let stale = reloadUrl !== undefined
+  // Set by every new stream (open()), so the first open re-fetches too: rows logged after the
+  // page was rendered, before the stream subscribed, would otherwise never show
+  let stale = false
   const waiting: Array<string> = []
   // A failed re-fetch with the stream still open tries again after `retryMs` (doubling to 30s);
   // a stream that drops instead re-fetches when it opens
@@ -469,6 +469,9 @@ const startSse = (el: HTMLElement): void => {
   const open = (): void => {
     if (source !== null) return
     connected = false
+    // A new stream sees only what is logged once it opens: whatever came before, since the last
+    // re-fetch, is fetched when it does
+    if (reloadUrl !== undefined) stale = true
     const opened = new EventSource(url)
     source = opened
     opened.addEventListener(eventName, onEvent)
@@ -524,10 +527,7 @@ const startSse = (el: HTMLElement): void => {
       detach()
       return
     }
-    if (event.persisted) {
-      if (reloadUrl !== undefined) stale = true
-      open()
-    }
+    if (event.persisted) open()
   }, { signal: lifetime.signal })
   open()
 }

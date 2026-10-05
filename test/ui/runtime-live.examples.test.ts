@@ -25,4 +25,9 @@ describe("ui.ts live list: found by the property test", () => {
     initial: 0,
     steps: [{ _tag: "Log", count: 2 }, { _tag: "Open" }, { _tag: "Pause" }, { _tag: "AnswerOk" }]
   })
+
+  pinned("a stream opened after a re-fetch re-fetches what it missed before it opened", {
+    initial: 0,
+    steps: [{ _tag: "GiveUp" }, { _tag: "Pause" }, { _tag: "Resume" }, { _tag: "Log", count: 2 }]
+  })
 })
