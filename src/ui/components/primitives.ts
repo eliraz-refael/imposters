@@ -28,7 +28,13 @@ export const icons = {
     16,
     `<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>`
   ),
-  moon: svgIcon(16, `<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"></path>`)
+  moon: svgIcon(16, `<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"></path>`),
+  pause: raw(
+    `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>`
+  ),
+  play: raw(
+    `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 7 5.5z"></path></svg>`
+  )
 }
 
 // ---------------------------------------------------------------- buttons
@@ -111,3 +117,26 @@ export const statTile = (opts: StatTileOpts): SafeHtml => {
     <span class="label">${opts.note}</span>
   </div>`
 }
+
+// ---------------------------------------------------------------- tabs
+
+export interface TabOpts {
+  readonly label: string
+  readonly href: string
+  readonly current: boolean
+  // A count after the label ("stubs 2"); `countId` lets an answer replace it out of band
+  readonly count?: number
+  readonly countId?: string
+}
+
+/** A page tab: a link, filled when it is the current page */
+export const tab = (opts: TabOpts): SafeHtml =>
+  html`<a class="tab" href="${opts.href}"${opts.current ? html` aria-current="page"` : html``}>${opts.label}${
+    opts.count === undefined ? html`` : tabCount(opts.count, opts.countId, false)
+  }</a>`
+
+/** A tab's count; `oob` marks it for an answer, whose swap replaces the page's by id */
+export const tabCount = (n: number, id: string | undefined, oob: boolean): SafeHtml =>
+  html`<span class="tab-count"${id === undefined ? html`` : html` id="${id}"`}${oob ? html` data-oob` : html``}>${
+    String(n)
+  }</span>`

@@ -1,4 +1,4 @@
-import { Effect, ManagedRuntime, PubSub } from "effect"
+import { Effect, Exit, Fiber, ManagedRuntime, PubSub, Scope, Stream } from "effect"
 import * as DateTime from "effect/DateTime"
 import { NonEmptyString } from "imposters/schemas/common"
 import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
@@ -149,18 +149,29 @@ describe("RequestLogger", () => {
     )
   })
 
-  it("PubSub: subscribe then log receives entry", async () => {
+  it("numbers every entry in log order, across imposters, and getRecent returns the latest with their numbers", async () => {
     await runtime.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const logger = yield* RequestLogger
-          const dequeue = yield* logger.subscribe
-          const entry = makeEntry({ id: "ps1", imposterId: "i-pubsub" })
-          yield* logger.log(entry)
-          const received = yield* PubSub.take(dequeue)
-          expect(received.id).toBe("ps1")
-        })
-      )
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        for (const [id, imposterId] of [["q1", "i-seq-a"], ["q2", "i-seq-b"], ["q3", "i-seq-a"], ["q4", "i-seq-a"]]) {
+          yield* logger.log(makeEntry({ id, imposterId }))
+        }
+        const recent = yield* logger.getRecent("i-seq-a", 2)
+        expect(recent.map((row) => row.entry.id)).toEqual(["q3", "q4"])
+        const all = yield* logger.getRecent("i-seq-a", 10)
+        const seqs = all.map((row) => row.seq)
+        expect(seqs).toEqual([...seqs].sort((a, b) => a - b))
+        expect(new Set(seqs).size).toBe(3)
+        // Numbered across imposters: q2 sits between q1 and q3
+        const [b] = yield* logger.getRecent("i-seq-b", 1)
+        expect(b !== undefined && seqs[0] !== undefined && seqs[1] !== undefined && b.seq > seqs[0] && b.seq < seqs[1])
+          .toBe(true)
+        // Clearing the log does not restart the numbering
+        yield* logger.clear("i-seq-a")
+        yield* logger.log(makeEntry({ id: "q5", imposterId: "i-seq-a" }))
+        const [after] = yield* logger.getRecent("i-seq-a", 1)
+        expect((after?.seq ?? 0) > (seqs.at(-1) ?? Infinity)).toBe(true)
+      })
     )
   })
 
@@ -215,6 +226,55 @@ describe("RequestLogger", () => {
         const entriesB = yield* logger.getEntries("i-iso-b")
         expect(entriesA.filter((e) => e.id === "iso1" || e.id === "iso3").length).toBe(2)
         expect(entriesB.filter((e) => e.id === "iso2").length).toBe(1)
+      })
+    )
+  })
+
+  // A published API (the root barrel exports RequestLogger): kept alongside follow
+  it("PubSub: subscribe then log receives entry", async () => {
+    await runtime.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const logger = yield* RequestLogger
+          const dequeue = yield* logger.subscribe
+          const entry = makeEntry({ id: "ps1", imposterId: "i-pubsub" })
+          yield* logger.log(entry)
+          const received = yield* PubSub.take(dequeue)
+          expect(received.id).toBe("ps1")
+        })
+      )
+    )
+  })
+
+  it("follow: from the moment it returns, the imposter's entries and no other's", async () => {
+    await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        yield* logger.log(makeEntry({ id: "before", imposterId: "i-follow" }))
+        const entries = yield* logger.follow("i-follow")
+        // Logged before the stream is first pulled, but after follow returned: not missed
+        yield* logger.log(makeEntry({ id: "f1", imposterId: "i-follow" }))
+        yield* logger.log(makeEntry({ id: "other", imposterId: "i-follow-other" }))
+        yield* logger.log(makeEntry({ id: "f2", imposterId: "i-follow" }))
+        const received = yield* entries.pipe(Stream.take(2), Stream.runCollect)
+        expect(Array.from(received, (row) => row.entry.id)).toEqual(["f1", "f2"])
+      }))
+    )
+  })
+
+  it("followers: counts open follows, and closing the scope releases one", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        expect(yield* logger.followers("i-count")).toBe(0)
+        const scope = yield* Scope.make()
+        const entries = yield* logger.follow("i-count").pipe(Scope.provide(scope))
+        const reader = yield* Effect.forkChild(Stream.runDrain(entries))
+        expect(yield* logger.followers("i-count")).toBe(1)
+        expect(yield* logger.followers("i-other")).toBe(0)
+        yield* Fiber.interrupt(reader)
+        yield* Scope.close(scope, Exit.void)
+        expect(yield* logger.followers("i-count")).toBe(0)
       })
     )
   })

@@ -11,12 +11,16 @@
  *   replaces the page's element with that id. A failed answer's HTML goes into the action's own
  *   `[data-error-slot]` (one inside its form), else the page's first; a new action clears them all.
  * - `data-poll="ms"` with `data-url`: re-fetch into the element while the tab is visible.
- *   `data-poll-throttle="ms"` also refreshes on each SSE arrival, at most that often.
+ *   `data-poll-throttle="ms"` also refreshes on each SSE arrival, at most that often; an arrival
+ *   during a refresh gets one more once it completes, since that answer may predate it.
  * - `data-sse="url"`: prepend each event's HTML (`data-sse-event`, default `message`), newest
  *   first, highlighted with `.fresh`; keep `data-sse-max` rows (default 100). A button with
  *   `data-sse-pause="<selector>"` pauses it; events are buffered (and counted in its
- *   `[data-sse-count]`) and flushed on resume. On reconnect, and on a page restored from the
- *   back-forward cache, the rows are re-fetched from `data-sse-reload`. The stream is closed on
+ *   `[data-sse-count]`) and flushed on resume. On the first open (rows logged after the page
+ *   was rendered), on reconnect, and on a page restored from the back-forward cache, the rows
+ *   are re-fetched from `data-sse-reload` (again once it lands, if another was asked for meanwhile);
+ *   events arriving meanwhile, or while paused, are added after it, and a
+ *   row whose id is already listed is not added twice. The stream is closed on
  *   `pagehide`, and for good once a swap takes the element off the page, since browsers allow
  *   about six connections per host.
  * - `data-copy="text"` or `data-copy-from="<selector>"`: copy to the clipboard.
@@ -223,13 +227,23 @@ const copyFrom = async (el: HTMLElement): Promise<void> => {
 
 // ---------------------------------------------------------------- polling
 
-const fetchInto = async (el: Element, url: string, mode: string): Promise<void> => {
+// Whether the element now holds the server's answer
+// A fragment's HTML, or null when the server could not be reached or answered an error
+const fetchFragment = async (url: string): Promise<string | null> => {
   try {
     const response = await fetch(url, { headers: FRAGMENT_HEADERS, cache: "no-store" })
-    if (response.ok) swap(el, await response.text(), mode)
+    return response.ok ? await response.text() : null
   } catch {
     // Offline or restarting: the next tick tries again
+    return null
   }
+}
+
+const fetchInto = async (el: Element, url: string, mode: string): Promise<boolean> => {
+  const text = await fetchFragment(url)
+  if (text === null) return false
+  swap(el, text, mode)
+  return true
 }
 
 const startPoll = (el: HTMLElement): void => {
@@ -241,6 +255,8 @@ const startPoll = (el: HTMLElement): void => {
   const stop = new AbortController()
   let last = Date.now()
   let inflight = false
+  // An arrival came in during a refresh, whose answer may predate it: refresh once more after
+  let dirty = false
   let pending: ReturnType<typeof setTimeout> | undefined
 
   const refresh = async (): Promise<void> => {
@@ -253,27 +269,40 @@ const startPoll = (el: HTMLElement): void => {
     last = Date.now()
     await fetchInto(el, url, el.dataset.swap ?? "inner")
     inflight = false
+    if (dirty) {
+      dirty = false
+      schedule()
+    }
+  }
+
+  // The next throttled refresh: at most one per `throttle` ms, however many arrivals ask
+  const schedule = (): void => {
+    if (inflight) {
+      dirty = true
+      return
+    }
+    if (pending !== undefined) return
+    const wait = Math.max(0, throttle - (Date.now() - last))
+    pending = setTimeout(() => {
+      pending = undefined
+      if (inflight) dirty = true
+      else void refresh()
+    }, wait)
   }
 
   const timer = setInterval(() => {
     if (document.visibilityState === "visible" && Date.now() - last >= every) void refresh()
   }, every)
-  stop.signal.addEventListener("abort", () => clearInterval(timer))
+  stop.signal.addEventListener("abort", () => {
+    clearInterval(timer)
+    clearTimeout(pending)
+  })
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && Date.now() - last >= every) void refresh()
   }, { signal: stop.signal })
 
-  if (throttle > 0) {
-    document.addEventListener("ui:arrival", () => {
-      if (pending !== undefined) return
-      const wait = Math.max(0, throttle - (Date.now() - last))
-      pending = setTimeout(() => {
-        pending = undefined
-        void refresh()
-      }, wait)
-    }, { signal: stop.signal })
-  }
+  if (throttle > 0) document.addEventListener("ui:arrival", schedule, { signal: stop.signal })
 }
 
 // ---------------------------------------------------------------- server-sent events
@@ -288,22 +317,62 @@ const startSse = (el: HTMLElement): void => {
   if (url === undefined || url === "") return
   const max = Number(el.dataset.sseMax) > 0 ? Number(el.dataset.sseMax) : 100
   const eventName = el.dataset.sseEvent ?? "message"
+  const reloadUrl = el.dataset.sseReload
 
+  // One rule: an event's row is shown at once unless the list is paused or being re-fetched;
+  // then it waits in `waiting` (the paused count). `stale` means the list may be missing rows
+  // (dropped from a full `waiting`, or sent while the stream was down) and is cleared by a
+  // re-fetch; with no data-sse-reload there is nothing to re-fetch, and the waiting rows are shown.
   let source: EventSource | null = null
-  let reloadOnOpen = false
+  // The stream has opened since it was created or last dropped
+  let connected = false
   let paused = false
-  let dropped = false
-  const buffer: Array<string> = []
+  let reloading = false
+  // Set by every new stream (open()), so the first open re-fetches too: rows logged after the
+  // page was rendered, before the stream subscribed, would otherwise never show
+  let stale = false
+  const waiting: Array<string> = []
+  // A failed re-fetch with the stream still open tries again after `retryMs` (doubling to 30s);
+  // a stream that drops instead re-fetches when it opens
+  let retry: ReturnType<typeof setTimeout> | undefined
+  let retryMs = 1000
 
-  const reload = (): void => {
-    const reloadUrl = el.dataset.sseReload
-    if (reloadUrl !== undefined) void fetchInto(el, reloadUrl, "inner")
+  // A row already in the list (by id) is not added again: a re-fetch and an event can both carry it
+  const isShown = (row: Element): boolean => {
+    if (row.id === "") return false
+    const existing = document.getElementById(row.id)
+    return existing !== null && el.contains(existing)
+  }
+
+  // A row's place in the server's log (`data-seq`), if it has one
+  const seqOf = (row: Element): number | undefined => {
+    const seq = Number(row.getAttribute("data-seq") ?? Number.NaN)
+    return Number.isFinite(seq) ? seq : undefined
+  }
+
+  // Puts a row with a sequence number where it belongs, newest first, whatever order rows
+  // arrive in (an event still in flight can land after a newer re-fetch answer). A row older
+  // than everything in a full list is dropped. Returns whether it was added.
+  const place = (row: Element, seq: number): boolean => {
+    const before = Array.from(el.children).find((listed) => (seqOf(listed) ?? Number.POSITIVE_INFINITY) < seq)
+    if (before === undefined && el.children.length >= max) return false
+    el.insertBefore(row, before ?? null)
+    return true
   }
 
   const insert = (text: string): void => {
     const fragment = parse(text)
-    const added = Array.from(fragment.children)
-    el.prepend(fragment)
+    for (const row of Array.from(fragment.children)) if (isShown(row)) row.remove()
+    const added: Array<Element> = []
+    // Rows without a sequence number go on top, in the order they came
+    const unnumbered: Array<Element> = []
+    for (const row of Array.from(fragment.children)) {
+      const seq = seqOf(row)
+      if (seq === undefined) unnumbered.push(row)
+      else if (place(row, seq)) added.push(row)
+    }
+    el.prepend(...unnumbered)
+    for (const row of unnumbered) added.push(row)
     for (const row of added) {
       row.classList.add("fresh")
       row.addEventListener("animationend", () => row.classList.remove("fresh"), { once: true })
@@ -317,8 +386,75 @@ const startSse = (el: HTMLElement): void => {
     scope.classList.toggle("is-paused", paused)
     for (const button of pauseButtonsFor(el)) {
       button.setAttribute("aria-pressed", String(paused))
-      for (const count of button.querySelectorAll("[data-sse-count]")) count.textContent = String(buffer.length)
+      for (const count of button.querySelectorAll("[data-sse-count]")) count.textContent = String(waiting.length)
     }
+  }
+
+  // Created or dropped, and not yet (re)opened: a re-fetch now would miss whatever is logged
+  // before it opens, and the open re-fetches anyway. A stream the browser gave up on (CLOSED)
+  // will not open again.
+  const awaitingOpen = (): boolean => source !== null && !connected && source.readyState !== 2
+
+  // Replaces the rows with the server's latest until nothing has gone stale meanwhile (a
+  // reconnect, a full queue), then settles. A pause stops it between re-fetches: resume
+  // re-fetches. A failed re-fetch leaves the list stale for a retry, the next open or resume,
+  // and shows the waiting rows meanwhile.
+  const reload = async (url: string): Promise<void> => {
+    reloading = true
+    let failed = false
+    try {
+      while (stale && !paused && !awaitingOpen()) {
+        stale = false
+        const rows = await fetchFragment(url)
+        if (rows === null) {
+          stale = true
+          failed = true
+          break
+        }
+        // Paused while it was out: the list stays as it is, and resume re-fetches
+        if (paused) {
+          stale = true
+          break
+        }
+        // Rows that waited meanwhile are added after it, each in its place by sequence number
+        swap(el, rows, "inner")
+      }
+    } finally {
+      reloading = false
+      if (failed) {
+        if (!paused) waiting.splice(0).forEach(insert)
+        retryLater()
+      } else {
+        clearTimeout(retry)
+        retry = undefined
+        retryMs = 1000
+        settle()
+      }
+    }
+  }
+
+  const retryLater = (): void => {
+    if (retry !== undefined) return
+    retry = setTimeout(() => {
+      retry = undefined
+      // Hidden (no stream) or swapped out: pageshow or nothing takes it from here
+      if (source !== null && el.isConnected) settle()
+    }, retryMs)
+    retryMs = Math.min(retryMs * 2, 30_000)
+  }
+
+  // Brings the list up to date when it may change: not while paused or mid re-fetch
+  const settle = (): void => {
+    if (paused || reloading) return
+    if (stale && reloadUrl !== undefined) {
+      if (!awaitingOpen()) {
+        void reload(reloadUrl)
+        return
+      }
+    } else {
+      stale = false
+    }
+    waiting.splice(0).forEach(insert)
   }
 
   const onEvent = (event: MessageEvent): void => {
@@ -328,11 +464,17 @@ const startSse = (el: HTMLElement): void => {
       return
     }
     if (typeof event.data !== "string") return
-    if (paused) {
-      buffer.push(event.data)
-      if (buffer.length > max) {
-        buffer.shift()
-        dropped = true
+    if (paused || reloading) {
+      // A row the list already shows would not be added, so it is not counted as waiting: a
+      // re-fetch answer can carry a row whose event was still in flight
+      if (Array.from(parse(event.data).children).every(isShown)) {
+        document.dispatchEvent(new CustomEvent("ui:arrival"))
+        return
+      }
+      waiting.push(event.data)
+      if (waiting.length > max) {
+        waiting.shift()
+        stale = true
       }
       renderPause()
     } else {
@@ -341,33 +483,61 @@ const startSse = (el: HTMLElement): void => {
     document.dispatchEvent(new CustomEvent("ui:arrival"))
   }
 
+  // A stream the browser gave up on (CLOSED: an HTTP error answer, a wrong content type) is not
+  // retried by the browser; it is reopened after `reopenMs` (doubling to 30s)
+  let reopen: ReturnType<typeof setTimeout> | undefined
+  let reopenMs = 1000
+
+  const reopenLater = (): void => {
+    if (reopen !== undefined) return
+    reopen = setTimeout(() => {
+      reopen = undefined
+      if (el.isConnected) open()
+    }, reopenMs)
+    reopenMs = Math.min(reopenMs * 2, 30_000)
+  }
+
   const open = (): void => {
     if (source !== null) return
-    source = new EventSource(url)
-    source.addEventListener(eventName, onEvent)
-    source.addEventListener("open", () => {
-      if (reloadOnOpen && !paused) reload()
-      reloadOnOpen = false
+    connected = false
+    // A new stream sees only what is logged once it opens: whatever came before, since the last
+    // re-fetch, is fetched when it does
+    if (reloadUrl !== undefined) stale = true
+    const opened = new EventSource(url)
+    source = opened
+    opened.addEventListener(eventName, onEvent)
+    opened.addEventListener("open", () => {
+      if (opened !== source) return
+      connected = true
+      reopenMs = 1000
+      settle()
     })
     // EventSource reconnects by itself; rows sent meanwhile are lost, so re-fetch on the next open
-    source.addEventListener("error", () => {
-      reloadOnOpen = true
+    opened.addEventListener("error", () => {
+      if (opened !== source) return
+      connected = false
+      if (reloadUrl !== undefined) stale = true
+      if (opened.readyState === 2) {
+        opened.close()
+        source = null
+        reopenLater()
+      }
     })
   }
 
   const close = (): void => {
     source?.close()
     source = null
+    connected = false
+    clearTimeout(retry)
+    retry = undefined
+    clearTimeout(reopen)
+    reopen = undefined
   }
 
   el.addEventListener("ui:pause-toggle", () => {
     paused = !paused
-    if (!paused) {
-      if (dropped) reload()
-      else buffer.forEach(insert)
-      buffer.length = 0
-      dropped = false
-    }
+    settle()
     renderPause()
   })
 
@@ -388,10 +558,7 @@ const startSse = (el: HTMLElement): void => {
       detach()
       return
     }
-    if (event.persisted) {
-      reloadOnOpen = true
-      open()
-    }
+    if (event.persisted) open()
   }, { signal: lifetime.signal })
   open()
 }

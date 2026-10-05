@@ -44,6 +44,7 @@ const SCREENS: ReadonlyArray<Screen> = [
   { name: "ui-dashboard", url: (t) => `${t.admin}/_ui` },
   { name: "ui-dashboard-phone", url: (t) => `${t.admin}/_ui`, width: 390 },
   { name: "imposter-dashboard", url: (t) => `${t.imposter}/_admin` },
+  { name: "imposter-dashboard-phone", url: (t) => `${t.imposter}/_admin`, width: 390 },
   { name: "imposter-stubs", url: (t) => `${t.imposter}/_admin/stubs` },
   { name: "imposter-requests", url: (t) => `${t.imposter}/_admin/requests` },
   { name: "imposter-request-detail", url: (t) => `${t.imposter}/_admin/requests/${encodeURIComponent(t.requestId)}` }
@@ -282,6 +283,7 @@ const tick = (ports: Ports, t: number): void => {
   }
   if (chance(0.35)) send(orders, { method: "POST", path: "/payments", json: { amount: 42.5 } })
   if (chance(0.15)) send(orders, { path: "/v2/orders" })
+  if (chance(0.1)) send(orders, { path: `/orders/ord_${1000 + (t % 3)}` })
   // catalog-api: every answer is delayed, /products by 150-900 ms
   repeat(wave(2, t, 3), () => send(catalog, { path: "/products" }))
   if (chance(0.6)) send(catalog, { path: `/products/${pick(SKUS, t)}` })

@@ -5,6 +5,7 @@ import { version } from "../../cli/version.js"
 import { PortNumber } from "../../schemas/common.js"
 import { DEFAULT_HOST } from "../../server/ServerFactory.js"
 import { assetRoute } from "../assets/serve.js"
+import { browserHost, crossSiteRefusal, isCrossSite } from "../crossSite.js"
 import { faviconResponse } from "../favicon.js"
 import { html, type SafeHtml } from "../html.js"
 import { formString } from "../htmx.js"
@@ -60,14 +61,6 @@ const apiErrorMessage = async (resp: Response): Promise<string> => {
 // "Port 3000 is already allocated" → "Port 3000 is already allocated."
 const sentence = (text: string): string => /[.!?]$/.test(text) ? text : `${text}.`
 
-// The host the browser reached the admin UI through, so links to an imposter's UI work from
-// another machine too (the Node server rewrites request.url to localhost)
-const browserHost = (request: Request): string => {
-  const header = request.headers.get("host")
-  if (header !== null && URL.canParse(`http://${header}`)) return new URL(`http://${header}`).hostname
-  return new URL(request.url).hostname
-}
-
 const NO_STORE = { "cache-control": "no-store" }
 
 const htmlAnswer = (body: SafeHtml, status = 200): Response =>
@@ -108,24 +101,6 @@ const decodeSegment = (segment: string): string | null => {
 }
 
 const NOT_FOUND = "That imposter no longer exists; it may have been deleted elsewhere."
-
-// A form post is a "simple" request, so a page on another site could send one to a loopback
-// admin server without a CORS preflight. Browsers mark such a request `Sec-Fetch-Site:
-// cross-site`; refuse it. (An imposter's own /_admin, on another port of the same host, is
-// same-site.) Browsers send Sec-Fetch-Site only to a trustworthy origin (https or loopback), so
-// an admin server bound to a LAN address over http gets none: there, an Origin whose host is
-// not the one the request was sent to (or an opaque "null" one) is refused too. `same-site` gets
-// the same Origin check, since it also covers a sibling subdomain (blog.corp.example posting to
-// imposters.corp.example). Tools that send neither header are unaffected.
-const isCrossSite = (request: Request): boolean => {
-  const site = request.headers.get("sec-fetch-site")
-  if (site === "cross-site") return true
-  if (site !== null && site !== "same-site") return false
-  const origin = request.headers.get("origin")
-  if (origin === null) return false
-  if (!URL.canParse(origin)) return true
-  return new URL(origin).hostname !== browserHost(request)
-}
 
 export const makeAdminUiRouter = (deps: AdminUiDeps) => {
   const bindHost = deps.host ?? DEFAULT_HOST
@@ -309,12 +284,7 @@ export const makeAdminUiRouter = (deps: AdminUiDeps) => {
       return htmlAnswer(overviewFragment(await loadOverview(browserHost(request))))
     }
 
-    if (method === "POST" && isCrossSite(request)) {
-      return new Response("Cross-site form posts are refused.", {
-        status: 403,
-        headers: { "content-type": "text/plain; charset=utf-8", ...NO_STORE }
-      })
-    }
+    if (method === "POST" && isCrossSite(request)) return crossSiteRefusal()
 
     if (method === "POST" && path === "/imposters") return answer(request, await create(request))
 

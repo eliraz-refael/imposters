@@ -1,3 +1,5 @@
+import * as DateTime from "effect/DateTime"
+
 /**
  * How the UIs print numbers and times. Pure: anything relative takes `now` as an argument, so a
  * page reads the clock once (through the admin API) and every row agrees.
@@ -50,4 +52,12 @@ export const ago = (thenMs: number, nowMs: number): string => {
 export const shortDuration = (formatted: string): string => {
   const units = formatted.split(" ").filter((part) => /^\d+[dhms]$/.test(part))
   return units.length === 0 ? "0s" : units.slice(0, 2).join(" ")
+}
+
+const pad = (n: number, width = 2): string => String(n).padStart(width, "0")
+
+/** The time of day in UTC, to the millisecond: 1759659292311 → "10:14:52.311" */
+export const clockTime = (epochMs: number): string => {
+  const at = DateTime.toPartsUtc(DateTime.makeUnsafe(epochMs))
+  return `${pad(at.hour)}:${pad(at.minute)}:${pad(at.second)}.${pad(at.millisecond, 3)}`
 }
