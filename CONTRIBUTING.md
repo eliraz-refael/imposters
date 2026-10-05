@@ -35,6 +35,19 @@ bun run test   # vitest, single run
 - Don't sleep after starting or stopping a server. `start` resolves once the port is bound and `stop` once it is released. To check a listener, use the helpers in `test/helpers/net.ts` rather than `fetch`, whose keep-alive pool can reuse a socket.
 - vitest workers run under Node.js even when started from Bun, so tests use the `node:http` server factory.
 
+## UI screenshots
+
+For a change to the web UIs (`/_ui` and an imposter's `/_admin`), attach screenshots to the pull request. One command takes them:
+
+```bash
+bun run screenshots                    # writes screenshots/<screen>-<theme>.png
+bun run screenshots --out /tmp/shots   # elsewhere
+```
+
+It needs **Google Chrome** installed: [`scripts/ui-screenshots.ts`](scripts/ui-screenshots.ts) drives it through `playwright-core`, which downloads no browser. The script starts the CLI with [`examples/ui-showcase.json`](examples/ui-showcase.json) on admin port 2599 (`--port` or `SCREENSHOTS_PORT` to change it; the imposters use 3201-3205), sends it about a minute of traffic (matched, unmatched, 5xx, slow and S3 requests), stops `payments-sandbox`, then captures every screen in its `SCREENS` list in the dark and light themes. Traffic runs until three 30-second buckets have closed, so the 15-minute sparklines have points; `--buckets 0` sends one burst and shoots at once, for quick iterations. The server is stopped when it finishes, fails or is interrupted. `screenshots/` is gitignored.
+
+To add or change a screen, edit its one line in `SCREENS`.
+
 ## Code standards
 
 The full list is in [DEVELOPMENT.md](DEVELOPMENT.md), and [CLAUDE.md](CLAUDE.md) covers the Effect 4 gotchas. In short: no `any`, no type casts, validation goes through Effect Schema, and side effects stay inside `Effect`.

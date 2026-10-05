@@ -22,3 +22,6 @@ site/dist/
 site/.astro/
 !site/src/content/docs/
 !site/src/content/docs/**
+
+# bun run screenshots writes here by default
+screenshots/
