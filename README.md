@@ -37,7 +37,7 @@ Imposters lets you spin up fake HTTP servers ("imposters") that respond to reque
 - **Delays** — Hold a response back for a fixed time, or a random time in a range, to exercise timeouts and jitter
 - **Proxy mode** — Passthrough to a real service or record responses as stubs
 - **S3 emulator** — An in-memory S3 imposter (`"protocol": "S3"`) for the AWS SDK, with stubs for fault injection
-- **Per-imposter admin UI** — HTMX-powered UI at each imposter's `/_admin` path
+- **Per-imposter admin UI** — a live view at each imposter's `/_admin` path: requests as they arrive, stub hits, and unmatched requests you can turn into a stub
 - **Admin dashboard** — Global dashboard at `/_ui` on the admin port
 - **Config file support** — Declare imposters and stubs in a JSON file for repeatable setups
 - **TypeScript client** — A typed client derived from the admin API definition (Effect's `HttpApiClient`), plus test helpers
@@ -526,7 +526,7 @@ Effect.provide(test, clientLayer).pipe(Effect.runPromise)
 - **`/_ui`** on the admin port — Global dashboard showing all imposters
 - **`/_admin`** on each imposter port — Per-imposter UI: a live view (requests streamed as they arrive, stub hits with the response each stub gives next, unmatched requests you can turn into a stub), plus stubs and captured requests
 
-Both UIs are server-rendered and use HTMX, which the page loads from `unpkg.com`. There is nothing to install, but the browser must be able to reach unpkg.com; without it the pages still render, but their forms and buttons (create, start, stop, delete, refresh) do nothing.
+Both UIs are server-rendered, in dark and light themes (the toggle is remembered in a cookie). The `/_ui` dashboard and each imposter's live view serve their own stylesheet, fonts and script, so they work offline; the live view streams requests over server-sent events. An imposter's stubs, requests and request-detail pages still use HTMX and Tailwind from `unpkg.com` and `cdn.tailwindcss.com` until they are redesigned: there the browser must reach those hosts, or the pages render unstyled and their forms and buttons do nothing.
 
 ## Development
 
