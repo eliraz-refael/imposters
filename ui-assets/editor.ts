@@ -154,6 +154,9 @@ export const startEditor = (el: HTMLElement): void => {
 
   /** Sets the model, and the text from it */
   const setDraft = (next: unknown): void => {
+    // applyEdit focuses the textarea (typing into it needs that); give the focus back, so a
+    // keyboard user can keep moving through the mode control with the arrow keys
+    const active = document.activeElement
     applyEdit(area, {
       from: 0,
       to: area.value.length,
@@ -161,6 +164,7 @@ export const startEditor = (el: HTMLElement): void => {
       selectStart: 0,
       selectEnd: 0
     })
+    if (active instanceof HTMLElement && active !== area) active.focus()
     // applyEdit announced the change as an input, which re-read the draft and queued a check
   }
 

@@ -211,9 +211,9 @@ const modeControl = (text: string): SafeHtml => {
 
 const heading = (state: EditorState): SafeHtml => {
   if (state.editing !== undefined) {
-    return html`<h2 class="title" id="editor-title">edit stub #${state.editing.position}</h2><span class="label">${
-      state.editing.id.slice(0, 8)
-    }</span>`
+    return html`<h2 class="title" id="editor-title">edit stub${
+      state.editing.position > 0 ? ` #${String(state.editing.position)}` : ""
+    }</h2><span class="label">${state.editing.id.slice(0, 8)}</span>`
   }
   return html`<h2 class="title" id="editor-title">new stub</h2>${
     state.from === undefined ? html`` : html`<span class="label">from ${state.from.method} ${state.from.path}</span>`
@@ -252,9 +252,14 @@ export const stubEditor = (state: EditorState): SafeHtml => {
 
 // ---------------------------------------------------------------- page and answers
 
-/** An action's answer with JS: the list, a fresh editor and the tab's count, the last two out of band */
-export const stubsAnswer = (data: StubsData, editor: EditorState): SafeHtml =>
-  html`${stubList(data)}${stubEditor({ ...editor, oob: true })}${tabCount(data.cards.length, STUB_COUNT_ID, true)}`
+/**
+ * An action's answer with JS: the list, a fresh editor (when given) and the tab's count, the last
+ * two out of band
+ */
+export const stubsAnswer = (data: StubsData, editor?: EditorState): SafeHtml =>
+  html`${stubList(data)}${editor === undefined ? html`` : stubEditor({ ...editor, oob: true })}${
+    tabCount(data.cards.length, STUB_COUNT_ID, true)
+  }`
 
 export interface StubsPageOpts {
   readonly theme: Theme | null

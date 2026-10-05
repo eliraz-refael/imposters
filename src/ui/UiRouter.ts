@@ -251,12 +251,14 @@ export const makeUiRouter = (deps: UiDeps) => {
       return pageResponse(editorStatus(status))
     })
 
-  // A successful change: the refreshed list with JS (and a fresh editor), else back to the page
-  const changed = (request: Request): Effect.Effect<Response> =>
+  // A successful change: the refreshed list with JS (and, after an add or a save, a fresh
+  // editor), else back to the page. A delete keeps the editor: it may hold unsaved work.
+  const changed = (request: Request, freshEditor: boolean): Effect.Effect<Response> =>
     isFragmentRequest(request)
       ? Effect.gen(function*() {
         const data = yield* loadStubs
-        return pageResponse(stubsAnswer(data, yield* newStubEditor(false)))
+        const editor = freshEditor ? yield* newStubEditor(false) : undefined
+        return pageResponse(stubsAnswer(data, editor))
       })
       : Effect.succeed(seeOther(STUBS_URL))
 
@@ -313,7 +315,7 @@ export const makeUiRouter = (deps: UiDeps) => {
         StubChange.Add({ stub, index: posted.insert === "first" ? 0 : undefined })
       ).pipe(Effect.result)
       if (added._tag === "Failure") return yield* refused(request, { status: 404, message: IMPOSTER_GONE }, editor)
-      return yield* changed(request)
+      return yield* changed(request, true)
     })
 
   const saveStub = (request: Request, stubId: string): Effect.Effect<Response> =>
@@ -338,14 +340,14 @@ export const makeUiRouter = (deps: UiDeps) => {
           : "This stub no longer exists (deleted elsewhere?): copy your JSON and add it as a new stub."
         return yield* refused(request, { status: 404, message }, editor)
       }
-      return yield* changed(request)
+      return yield* changed(request, true)
     })
 
   // Deleting a stub that is already gone leaves it gone: the list is refreshed either way
   const deleteStub = (request: Request, stubId: string): Effect.Effect<Response> =>
     deps.applyStubChange(StubChange.Remove({ stubId })).pipe(
       Effect.ignore,
-      Effect.andThen(changed(request))
+      Effect.andThen(changed(request, false))
     )
 
   const listRequests = (params: URLSearchParams): Effect.Effect<Response, UiError> =>

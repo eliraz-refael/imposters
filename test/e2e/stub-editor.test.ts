@@ -180,6 +180,8 @@ describe("E2E: the stubs page", () => {
       const body = await again.text()
       expect(body).toContain("no stubs yet")
       expect(body).toContain(`id="tab-stubs-count" data-oob>0<`)
+      // The editor is left as it is: it may hold unsaved work
+      expect(body).not.toContain(`id="stub-editor"`)
     })
   }, 10000)
 

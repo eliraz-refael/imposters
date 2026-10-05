@@ -115,6 +115,15 @@ describe("ui.ts stub editor: the mode control", () => {
     await wait(CHECK_DELAY_MS)
     expect(sent()).toEqual([area().value])
   })
+
+  it("leaves the focus on the control, so the arrow keys keep moving through it", async () => {
+    await mount(TEXTS.VALID)
+    radio("repeat").focus()
+    radio("repeat").click()
+    await flush()
+    expect(area().value).toContain(`"responseMode": "repeat"`)
+    expect(document.activeElement).toBe(radio("repeat"))
+  })
 })
 
 describe("ui.ts stub editor: focus", () => {
