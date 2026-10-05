@@ -233,6 +233,32 @@ export * as checkStub from "./ui/editor/checkStub.js"
  */
 export * as draftText from "./ui/editor/draftText.js"
 
+/**
+ * The stub editor's form view, as pure functions over the same draft the JSON view edits:
+ * `readForm` turns a draft into the form's state (or says what in it the form cannot show),
+ * `writeForm` turns the state back into a draft (or says what the form holds that a draft
+ * cannot), and `applyFormEdit` is every edit the form offers. Free of imports beyond
+ * draftText.ts, because both sides use it: the server renders the form's rows from it, and the
+ * browser runtime (ui-assets/form.ts) edits with it.
+ *
+ * The form never changes a draft it did not edit: for any draft readForm accepts,
+ * writeForm(readForm(draft)) is the same draft, keys left out stay left out (a status of 200 by
+ * default, caseSensitive, responseMode). A draft holding anything the form has no control for (a
+ * body condition on JSON, two header names in one condition, a key the stub does not have) is
+ * not shown at all: the form is unavailable for it and says why, and the JSON view edits it.
+ */
+export * as formModel from "./ui/editor/formModel.js"
+
+/**
+ * What each control of the stub form shows, for a row or card at an index: its key (data-k, by
+ * which the runtime routes an edit and restores the focus), its label, the schema path a problem
+ * marks it by (data-path), its value and whether it is hidden, pressed or disabled. Pure and
+ * shared: src/ui/pages/stubForm.ts renders the rows from it, and ui-assets/form.ts applies it to
+ * a clone of a row's <template>, so both draw the same controls. Each control is found in its
+ * row by `data-c="<name>"`.
+ */
+export * as formView from "./ui/editor/formView.js"
+
 export * as favicon from "./ui/favicon.js"
 
 export * as html from "./ui/html.js"
@@ -251,11 +277,20 @@ export * as live from "./ui/pages/live.js"
 export * as requests from "./ui/pages/requests.js"
 
 /**
+ * The stub editor's form view, as the server renders it: a row per condition, a card per
+ * response, the response mode, and a <template> per row type that ui.js clones for a row it
+ * adds. Each control's attributes come from src/ui/editor/formView.ts, which the runtime applies
+ * to a clone the same way, so a row looks the same whoever drew it. The form is hidden until the
+ * editor's script shows it: without JS the page posts the JSON, as before.
+ */
+export * as stubForm from "./ui/pages/stubForm.js"
+
+/**
  * An imposter's stubs page (`/_admin/stubs`): a card per stub in matching order, with edit and
- * delete, and the editor that adds and edits them (JSON, checked and previewed as you type).
- * Every form works without JS: a POST answered with a 303 back here, or this page again with
- * the problems. ui.js swaps fragments instead (data-action), and runs the editor
- * (data-stub-editor).
+ * delete, and the editor that adds and edits them (a form and the JSON, checked and previewed as
+ * you type). Every form works without JS: a POST answered with a 303 back here, or this page
+ * again with the problems; the editor then shows the JSON alone. ui.js swaps fragments instead
+ * (data-action), and editor.js runs the editor (data-stub-editor).
  */
 export * as stubs from "./ui/pages/stubs.js"
 
