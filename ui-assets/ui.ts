@@ -439,19 +439,42 @@ const startSse = (el: HTMLElement): void => {
     document.dispatchEvent(new CustomEvent("ui:arrival"))
   }
 
+  // A stream the browser gave up on (CLOSED: an HTTP error answer, a wrong content type) is not
+  // retried by the browser; it is reopened after `reopenMs` (doubling to 30s)
+  let reopen: ReturnType<typeof setTimeout> | undefined
+  let reopenMs = 1000
+
+  const reopenLater = (): void => {
+    if (reopen !== undefined) return
+    reopen = setTimeout(() => {
+      reopen = undefined
+      if (el.isConnected) open()
+    }, reopenMs)
+    reopenMs = Math.min(reopenMs * 2, 30_000)
+  }
+
   const open = (): void => {
     if (source !== null) return
     connected = false
-    source = new EventSource(url)
-    source.addEventListener(eventName, onEvent)
-    source.addEventListener("open", () => {
+    const opened = new EventSource(url)
+    source = opened
+    opened.addEventListener(eventName, onEvent)
+    opened.addEventListener("open", () => {
+      if (opened !== source) return
       connected = true
+      reopenMs = 1000
       settle()
     })
     // EventSource reconnects by itself; rows sent meanwhile are lost, so re-fetch on the next open
-    source.addEventListener("error", () => {
+    opened.addEventListener("error", () => {
+      if (opened !== source) return
       connected = false
       if (reloadUrl !== undefined) stale = true
+      if (opened.readyState === 2) {
+        opened.close()
+        source = null
+        reopenLater()
+      }
     })
   }
 
@@ -461,6 +484,8 @@ const startSse = (el: HTMLElement): void => {
     connected = false
     clearTimeout(retry)
     retry = undefined
+    clearTimeout(reopen)
+    reopen = undefined
   }
 
   el.addEventListener("ui:pause-toggle", () => {
