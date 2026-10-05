@@ -220,7 +220,11 @@ const heading = (state: EditorState): SafeHtml => {
   }`
 }
 
-/** The editor: one form holding the whole stub as JSON, posted to add or save it */
+/**
+ * The editor: one form holding the whole stub as JSON, posted to add or save it. The textarea's
+ * text starts on the line after its tag: the HTML parser drops one newline there, so a text that
+ * starts with a blank line keeps it, and the problems' line numbers still match.
+ */
 export const stubEditor = (state: EditorState): SafeHtml => {
   const editing = state.editing
   const action = editing === undefined ? STUBS_URL : stubUrl(editing.id)
@@ -234,7 +238,8 @@ export const stubEditor = (state: EditorState): SafeHtml => {
     </div>
     <div class="editor-body">
       <div class="editor-label"><label class="label" for="stub-json">stub · JSON</label><span class="label editor-hint">Tab indents · Esc, then Tab, leaves</span></div>
-      <textarea id="stub-json" name="stub" class="code editor-text" spellcheck="false" autocomplete="off" autocapitalize="off" rows="18" data-editor-text>${state.text}</textarea>
+      <textarea id="stub-json" name="stub" class="code editor-text" spellcheck="false" autocomplete="off" autocapitalize="off" rows="18" data-editor-text>
+${state.text}</textarea>
       <div class="editor-status" data-editor-status data-state="${
     statusState(state.status)
   }" role="status" aria-live="polite">${state.status === undefined ? html`` : editorStatus(state.status)}</div>

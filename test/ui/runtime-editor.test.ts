@@ -30,6 +30,12 @@ const wait = async (ms: number): Promise<void> => {
 
 const radio = (mode: string): HTMLInputElement => element<HTMLInputElement>(`[data-editor-mode] input[value="${mode}"]`)
 
+// The editor's text, set directly: happy-dom keeps the newline written after <textarea>, which a
+// browser's parser drops, so a mounted editor starts with one
+const fill = (text: string): void => {
+  area().value = text
+}
+
 const key = (name: string, shift = false): void => {
   area().dispatchEvent(new KeyboardEvent("keydown", { key: name, shiftKey: shift, bubbles: true, cancelable: true }))
 }
@@ -136,6 +142,7 @@ describe("ui.ts stub editor: focus", () => {
 describe("ui.ts stub editor: typing helpers", () => {
   it("closes a brace and steps over its closer", async () => {
     await mount("")
+    fill("")
     area().setSelectionRange(0, 0)
     key("{")
     expect(area().value).toBe("{}")
@@ -147,6 +154,7 @@ describe("ui.ts stub editor: typing helpers", () => {
 
   it("Enter between braces opens an indented line, and the edit is checked", async () => {
     await mount("{}")
+    fill("{}")
     area().setSelectionRange(1, 1)
     key("Enter")
     expect(area().value).toBe("{\n  \n}")
@@ -156,6 +164,7 @@ describe("ui.ts stub editor: typing helpers", () => {
 
   it("Tab indents, and after Esc it is left to the browser (to move the focus on)", async () => {
     await mount("a")
+    fill("a")
     area().setSelectionRange(0, 0)
     key("Tab")
     expect(area().value).toBe("  a")

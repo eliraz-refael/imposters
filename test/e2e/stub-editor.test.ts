@@ -74,8 +74,9 @@ const post = (port: number, path: string, fields: Record<string, string>, opts?:
 
 const stubJson = (stub: unknown): string => JSON.stringify(stub, null, 2)
 
+// The textarea's text as a browser reads it: the newline straight after the tag is not part of it
 const textareaOf = (page: string): string =>
-  (/<textarea id="stub-json"[^>]*>([\s\S]*?)<\/textarea>/.exec(page)?.[1] ?? "")
+  (/<textarea id="stub-json"[^>]*>\n([\s\S]*?)<\/textarea>/.exec(page)?.[1] ?? "")
     .replaceAll("&quot;", "\"").replaceAll("&#39;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
     .replaceAll("&amp;", "&")
 
@@ -224,6 +225,9 @@ describe("E2E: the stubs page", () => {
       const page = await withoutJs.text()
       expect(page).toContain("<!DOCTYPE html>")
       expect(textareaOf(page)).toBe(text)
+      // A text that starts with a blank line keeps it, so its line numbers hold
+      const blankFirst = await post(8707, "/_admin/stubs", { stub: `\n${text}` })
+      expect(textareaOf(await blankFirst.text())).toBe(`\n${text}`)
       expect(page).toContain(`data-state="invalid"`)
       expect(page).toContain("✗ not a valid stub yet")
       expect(page).toMatch(/value="first" checked/)

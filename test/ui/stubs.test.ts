@@ -220,6 +220,19 @@ const hostile = stub({
 const body = (page: string): string => /<body>([\s\S]*)<\/body>/.exec(page)?.[1] ?? ""
 
 describe("the templates", () => {
+  // The HTML spec drops one newline straight after <textarea>, so the template writes one there:
+  // a posted text that starts with a blank line comes back whole, and every line number holds
+  it("gives back the exact text in the textarea, a leading blank line included", () => {
+    const text = "\n{\n  \"responses\": [{ \"status\": \"ok\" }]\n}"
+    const html = stubEditor({ text, insert: "last" }).value
+    const raw = /<textarea id="stub-json"[^>]*>([\s\S]*?)<\/textarea>/.exec(html)?.[1] ?? ""
+    expect(raw.startsWith("\n")).toBe(true)
+    // What a browser's parser makes of it: one leading newline dropped, then the entities read
+    const parsed = raw.replace(/^\n/, "").replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
+      .replaceAll("&#39;", "'").replaceAll("&amp;", "&")
+    expect(parsed).toBe(text)
+  })
+
   it("escape hostile stub values in the cards", () => {
     const page = stubsPage(data({ stubs: [hostile] }), { theme: null, editor: newEditor }).value
     expect(page).not.toContain("<script>alert(1)")
@@ -241,7 +254,8 @@ describe("the templates", () => {
     document.body.innerHTML = body(page)
     expect(document.querySelectorAll("script")).toHaveLength(0)
     const area = document.querySelector("textarea")
-    expect(area?.value).toBe(text)
+    // happy-dom keeps the newline written after <textarea>, which a browser's parser drops
+    expect(area?.value).toBe(`\n${text}`)
     const parsed = parseDraftText(area?.value ?? "")
     expect(parsed.ok && parsed.draft).toEqual(draftFromStub(hostile))
   })
