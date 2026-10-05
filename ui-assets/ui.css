@@ -862,6 +862,13 @@ a.imp-name:hover {
 [aria-pressed="true"] > .when-paused {
   display: inline;
 }
+/* An icon beside the word, spaced as a button's own children are */
+.btn:not([aria-pressed="true"]) > .when-live,
+.btn[aria-pressed="true"] > .when-paused {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 @keyframes im-arrive {
   from {
     background: var(--im-accent-tint);
@@ -1053,4 +1060,235 @@ a.imp-name:hover {
   .new-form .input {
     width: 100%;
   }
+}
+
+/* An imposter's pages (/_admin): the header's name and tab counts */
+.crumb-name {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--im-font-mono);
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 700;
+  font-stretch: var(--im-stretch-heading);
+  letter-spacing: -0.02em;
+  color: var(--im-heading);
+  overflow-wrap: anywhere;
+}
+.tab-count {
+  color: var(--im-muted);
+  font-weight: 400;
+}
+.tab[aria-current="page"] .tab-count {
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* The live page: stat cards, then the request stream beside the stub and unmatched panels */
+.stat-line {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stat-value {
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.stat-value.c-warn {
+  color: var(--ui-warn);
+}
+.stat-value-sm {
+  font-size: 20px;
+  line-height: 1.3;
+}
+.stats-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1180px) {
+  .stats-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.live-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .live-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.live-side {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.bar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.bar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.panel-note {
+  margin: 0;
+}
+
+/* The request stream */
+.req-rows > .req:last-child {
+  border-bottom: 0;
+}
+.rows-empty {
+  display: none;
+  margin: 0;
+  padding: 28px 18px;
+  text-align: center;
+}
+.req-rows:empty + .rows-empty {
+  display: block;
+}
+.req-method,
+.req-status {
+  font-weight: 600;
+}
+.req-path {
+  color: var(--im-heading);
+}
+.req .num {
+  font-size: inherit;
+}
+.m-get {
+  color: var(--im-accent);
+}
+.m-post {
+  color: var(--ui-info);
+}
+.m-put {
+  color: var(--ui-caution);
+}
+.m-delete {
+  color: var(--ui-error);
+}
+
+/* Stub hits: a meter per stub, each response's share of every hit */
+.hits {
+  list-style: none;
+  margin: 0;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.hit-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.hit-name,
+.item-line {
+  font-family: var(--im-font-mono);
+  font-stretch: var(--im-stretch-code);
+  font-size: 12.5px;
+  color: var(--im-heading);
+}
+.hit-count {
+  font-size: 12.5px;
+}
+.meter > .meter-caution {
+  background: var(--ui-caution);
+}
+
+/* Lists of items: what no stub matched */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.list > .item:last-child {
+  border-bottom: 0;
+}
+.item > .stack {
+  gap: 4px;
+}
+.item > .btn {
+  min-height: 32px;
+  flex-shrink: 0;
+}
+
+/* The live page on a phone: two lines a request, the stats two by two with the rate and the
+   latencies full width */
+@media (max-width: 720px) {
+  .stats-4 > :first-child,
+  .stats-4 > .stat-wide {
+    grid-column: 1 / -1;
+  }
+  .stats-4 > .stat-wide {
+    order: 1;
+  }
+  .req-head {
+    display: none;
+  }
+  /* A phone shows the latest ten, so the stub panels stay within reach */
+  .req-rows > .req:nth-child(n + 11) {
+    display: none;
+  }
+  .req-rows > .req:nth-child(10) {
+    border-bottom: 0;
+  }
+  .req-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "method path status"
+      "time stub ms";
+    gap: 4px 12px;
+    padding: 10px 16px;
+  }
+  .req-row > .req-time {
+    grid-area: time;
+  }
+  .req-row > .req-method {
+    grid-area: method;
+  }
+  .req-row > .req-path {
+    grid-area: path;
+  }
+  .req-row > .req-status {
+    grid-area: status;
+  }
+  .req-row > .req-stub {
+    grid-area: stub;
+  }
+  .req-row > .req-ms {
+    grid-area: ms;
+  }
+  .live-requests > .bar,
+  .live-side .bar {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+  .hits {
+    padding: 16px;
+  }
+  .item {
+    padding: 12px 16px;
+  }
+}
+.nowrap {
+  white-space: nowrap;
 }

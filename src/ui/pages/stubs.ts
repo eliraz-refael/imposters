@@ -3,23 +3,42 @@ import type { Stub } from "../../schemas/StubSchema.js"
 import { html, raw } from "../html.js"
 import { layout } from "../layout.js"
 import { stubListPartial } from "../partials.js"
+import type { DraftRequest } from "../stubDraft.js"
 
 export interface StubsPageData {
   readonly config: ImposterConfig
   readonly stubs: ReadonlyArray<Stub>
+  // "Stub it" from the live page: the add form starts with this stub
+  readonly draft?: DraftRequest
 }
 
-const addStubForm = () =>
-  html`<div class="bg-white rounded-lg shadow p-4 mb-6">
+const json = (value: unknown): string => JSON.stringify(value, null, 2)
+
+const draftNote = (draft: DraftRequest | undefined) =>
+  draft === undefined
+    ? html``
+    : html`<p class="mb-3 text-sm text-indigo-700 bg-indigo-50 rounded p-2">A draft for ${draft.method} ${draft.path}: review it, then Add Stub.</p>`
+
+const addStubForm = (draft: DraftRequest | undefined) =>
+  html`<div class="bg-white rounded-lg shadow p-4 mb-6" id="add-stub">
     <h2 class="text-lg font-semibold mb-3">Add Stub</h2>
+    ${draftNote(draft)}
     <form hx-post="/_admin/stubs" hx-target="#stub-list" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful) this.reset()">
       <div class="mb-3">
         <label class="block text-sm font-medium text-gray-700 mb-1">Predicates (JSON array)</label>
-        <textarea name="predicates" rows="3" class="w-full border rounded p-2 font-mono text-sm" placeholder="[]">[]</textarea>
+        <textarea name="predicates" rows="${
+    draft === undefined ? 3 : 12
+  }" class="w-full border rounded p-2 font-mono text-sm" placeholder="[]">${
+    draft === undefined ? "[]" : json(draft.stub.predicates)
+  }</textarea>
       </div>
       <div class="mb-3">
         <label class="block text-sm font-medium text-gray-700 mb-1">Responses (JSON array, at least 1)</label>
-        <textarea name="responses" rows="4" class="w-full border rounded p-2 font-mono text-sm" placeholder='[{"status": 200, "body": {}}]'></textarea>
+        <textarea name="responses" rows="${
+    draft === undefined ? 4 : 10
+  }" class="w-full border rounded p-2 font-mono text-sm" placeholder='[{"status": 200, "body": {}}]'>${
+    draft === undefined ? "" : json(draft.stub.responses)
+  }</textarea>
       </div>
       <div class="mb-3">
         <label class="block text-sm font-medium text-gray-700 mb-1">Response Mode</label>
@@ -35,7 +54,7 @@ const addStubForm = () =>
 
 export const stubsPage = (data: StubsPageData) => {
   const content = html`
-    ${addStubForm()}
+    ${addStubForm(data.draft)}
     <div id="stub-list">
       ${raw(stubListPartial(data.stubs).value)}
     </div>`

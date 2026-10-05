@@ -30,6 +30,7 @@ import { MetricsService } from "../services/MetricsService.js"
 import { ProxyService } from "../services/ProxyService.js"
 import { RequestLogger } from "../services/RequestLogger.js"
 import { makeUiRouter } from "../ui/UiRouter.js"
+import { AdminPort } from "./AdminPort.js"
 import { FiberManager } from "./FiberManager.js"
 import { captureResponse } from "./ResponseCapture.js"
 import { ServerFactory } from "./ServerFactory.js"
@@ -93,6 +94,7 @@ export const ImposterServerLive = Layer.effect(
     const metricsService = yield* MetricsService
     const proxyService = yield* ProxyService
     const extensions = yield* Extensions
+    const adminPort = yield* AdminPort
     const stateMapRef = yield* Ref.make<HashMap.HashMap<string, ImposterState>>(HashMap.empty())
     // Serialises every write of a running imposter's stubsRef with the repository write it mirrors.
     // Without it two concurrent changes can reload out of order (each reads the repository, then
@@ -121,6 +123,9 @@ export const ImposterServerLive = Layer.effect(
         const stubsRef = yield* Ref.make<ReadonlyArray<Stub>>(record.stubs)
         const proxyConfigRef = yield* Ref.make<ProxyConfigDomain | undefined>(config.proxy)
         const responseState = yield* makeResponseState()
+        // Completed as this run's server is released, so a stream a page holds open (server-sent
+        // events) ends with the run, whatever the server does with its open connections
+        const shutdown = yield* Deferred.make<void>()
 
         // Capture the current services for running effects inside the fetch handler
         const services = yield* Effect.context<never>()
@@ -135,6 +140,10 @@ export const ImposterServerLive = Layer.effect(
           applyStubChange: (change) => applyStubChange(id, change),
           requestLogger,
           metrics: metricsService,
+          nextResponseIndex: (stub) =>
+            responseState.peekNextIndex(id, stub.id, stub.responses.length, stub.responseMode),
+          shutdown: Deferred.await(shutdown),
+          ...(adminPort !== undefined ? { adminPort } : {}),
           runPromise,
           // handler is declared below; it is only called once a request arrives
           fetchSelf: (request) => handler(request)
@@ -302,7 +311,10 @@ export const ImposterServerLive = Layer.effect(
 
         // The release is the server's stop Effect, so interrupting this fiber
         // completes only after the port has been released.
-        const fiberEffect = Effect.acquireRelease(acquireServer, (server) => server.stop(true)).pipe(
+        const fiberEffect = Effect.acquireRelease(
+          acquireServer,
+          (server) => Deferred.succeed(shutdown, undefined).pipe(Effect.andThen(server.stop(true)))
+        ).pipe(
           Effect.andThen(Effect.never),
           Effect.scoped
         )

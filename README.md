@@ -524,7 +524,7 @@ Effect.provide(test, clientLayer).pipe(Effect.runPromise)
 ## Admin UI
 
 - **`/_ui`** on the admin port — Global dashboard showing all imposters
-- **`/_admin`** on each imposter port — Per-imposter UI with stubs, captured requests, and stats
+- **`/_admin`** on each imposter port — Per-imposter UI: a live view (requests streamed as they arrive, stub hits with the response each stub gives next, unmatched requests you can turn into a stub), plus stubs and captured requests
 
 Both UIs are server-rendered and use HTMX, which the page loads from `unpkg.com`. There is nothing to install, but the browser must be able to reach unpkg.com; without it the pages still render, but their forms and buttons (create, start, stop, delete, refresh) do nothing.
 

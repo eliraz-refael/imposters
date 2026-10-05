@@ -1,4 +1,4 @@
-import { Effect, ManagedRuntime, PubSub } from "effect"
+import { Effect, Exit, Fiber, ManagedRuntime, PubSub, Scope, Stream } from "effect"
 import * as DateTime from "effect/DateTime"
 import { NonEmptyString } from "imposters/schemas/common"
 import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
@@ -215,6 +215,39 @@ describe("RequestLogger", () => {
         const entriesB = yield* logger.getEntries("i-iso-b")
         expect(entriesA.filter((e) => e.id === "iso1" || e.id === "iso3").length).toBe(2)
         expect(entriesB.filter((e) => e.id === "iso2").length).toBe(1)
+      })
+    )
+  })
+
+  it("follow: from the moment it returns, the imposter's entries and no other's", async () => {
+    await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        yield* logger.log(makeEntry({ id: "before", imposterId: "i-follow" }))
+        const entries = yield* logger.follow("i-follow")
+        // Logged before the stream is first pulled, but after follow returned: not missed
+        yield* logger.log(makeEntry({ id: "f1", imposterId: "i-follow" }))
+        yield* logger.log(makeEntry({ id: "other", imposterId: "i-follow-other" }))
+        yield* logger.log(makeEntry({ id: "f2", imposterId: "i-follow" }))
+        const received = yield* entries.pipe(Stream.take(2), Stream.runCollect)
+        expect(Array.from(received, (e) => e.id)).toEqual(["f1", "f2"])
+      }))
+    )
+  })
+
+  it("followers: counts open follows, and closing the scope releases one", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        expect(yield* logger.followers("i-count")).toBe(0)
+        const scope = yield* Scope.make()
+        const entries = yield* logger.follow("i-count").pipe(Scope.provide(scope))
+        const reader = yield* Effect.forkChild(Stream.runDrain(entries))
+        expect(yield* logger.followers("i-count")).toBe(1)
+        expect(yield* logger.followers("i-other")).toBe(0)
+        yield* Fiber.interrupt(reader)
+        yield* Scope.close(scope, Exit.void)
+        expect(yield* logger.followers("i-count")).toBe(0)
       })
     )
   })

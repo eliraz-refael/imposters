@@ -7,7 +7,7 @@ export interface LayoutOpts {
   readonly title: string
   readonly imposterName: string
   readonly port: number
-  readonly activeTab: "dashboard" | "stubs" | "requests"
+  readonly activeTab: "live" | "stubs" | "requests"
 }
 
 const navTab = (label: string, href: string, active: boolean): SafeHtml =>
@@ -36,7 +36,7 @@ export const layout = (opts: LayoutOpts, content: SafeHtml): SafeHtml =>
         <span class="ml-2 text-indigo-200 text-sm">port ${String(opts.port)}</span>
       </div>
       <div class="flex gap-1">
-        ${navTab("Dashboard", "/_admin", opts.activeTab === "dashboard")}
+        ${navTab("Live", "/_admin", opts.activeTab === "live")}
         ${navTab("Stubs", "/_admin/stubs", opts.activeTab === "stubs")}
         ${navTab("Requests", "/_admin/requests", opts.activeTab === "requests")}
       </div>

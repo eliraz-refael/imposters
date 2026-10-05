@@ -1,5 +1,16 @@
 import * as Duration from "effect/Duration"
-import { ago, count, decimal, millis, ms, NONE, percent, plural, shortDuration } from "imposters/ui/components/format"
+import {
+  ago,
+  clockTime,
+  count,
+  decimal,
+  millis,
+  ms,
+  NONE,
+  percent,
+  plural,
+  shortDuration
+} from "imposters/ui/components/format"
 import { describe, expect, it } from "vitest"
 
 describe("format", () => {
@@ -58,5 +69,10 @@ describe("format", () => {
     expect(shortDuration(Duration.format(Duration.millis(90_061_000)))).toBe("1d 1h")
     expect(shortDuration(Duration.format(Duration.millis(0)))).toBe("0s")
     expect(shortDuration(Duration.format(Duration.millis(250)))).toBe("0s")
+  })
+
+  it("clockTime: the time of day in UTC, to the millisecond, zero-padded", () => {
+    expect(clockTime(Date.UTC(2026, 9, 5, 10, 14, 52, 311))).toBe("10:14:52.311")
+    expect(clockTime(Date.UTC(2026, 0, 1, 3, 4, 5, 6))).toBe("03:04:05.006")
   })
 })

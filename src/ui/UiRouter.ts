@@ -1,8 +1,12 @@
 import * as Clock from "effect/Clock"
 import * as Data from "effect/Data"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
+import * as Sse from "effect/unstable/encoding/Sse"
 import type { ImposterConfig, ImposterNotFoundError } from "../domain/imposter.js"
 import type {
   ImposterRepositoryShape,
@@ -10,20 +14,32 @@ import type {
   StubNotFoundError
 } from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
+import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
 import { StubChange } from "../server/StubChange.js"
 import type { MetricsServiceShape } from "../services/MetricsService.js"
 import type { RequestLoggerShape } from "../services/RequestLogger.js"
 import { assetRoute } from "./assets/serve.js"
-import { crossSiteRefusal, isCrossSite } from "./crossSite.js"
+import { browserHost, crossSiteRefusal, isCrossSite } from "./crossSite.js"
 import { faviconResponse } from "./favicon.js"
-import { html } from "./html.js"
+import { html, type SafeHtml } from "./html.js"
 import { errorBox, errorResponse, formString, htmlResponse } from "./htmx.js"
-import { dashboardPage } from "./pages/dashboard.js"
+import { buildLiveData, type LiveData } from "./LiveData.js"
+import {
+  liveFragment,
+  livePage,
+  RECENT_ROWS,
+  REQUEST_EVENT,
+  requestRow,
+  requestRows,
+  type RowContext
+} from "./pages/live.js"
 import { requestDetailPage, requestNotFoundPage } from "./pages/request-detail.js"
 import { requestsPage, testResultPartial } from "./pages/requests.js"
 import { stubsPage } from "./pages/stubs.js"
 import { requestTablePartial, stubListPartial } from "./partials.js"
+import { draftFromQuery } from "./stubDraft.js"
+import { themeFromCookie } from "./theme.js"
 
 export interface UiDeps {
   readonly id: string
@@ -38,12 +54,36 @@ export interface UiDeps {
   readonly requestLogger: RequestLoggerShape
   // Counts since the imposter started; the request log keeps only the latest entries
   readonly metrics: MetricsServiceShape
+  // The index of the response the stub gives next in this run; None in random mode
+  readonly nextResponseIndex: (stub: Stub) => Effect.Effect<Option.Option<number>>
+  // Completes when this run's server is released: every event stream ends with it
+  readonly shutdown: Effect.Effect<void>
+  // The admin server's port, for the link back to the admin UI
+  readonly adminPort?: number
   readonly runPromise: <A>(effect: Effect.Effect<A>) => Promise<A>
   // The imposter's own handler, so a test request does not depend on the address it binds
   readonly fetchSelf: (request: Request) => Promise<Response>
 }
 
 const ADMIN_PREFIX = "/_admin"
+
+// The browser reconnects this long after a dropped stream; a comment line every HEARTBEAT keeps
+// proxies and idle timeouts from closing a quiet one
+const RECONNECT = Duration.seconds(2)
+const HEARTBEAT = Duration.seconds(15)
+
+const NO_STORE = { "cache-control": "no-store" }
+
+// The redesigned pages and their fragments are never cached: they are live
+const pageResponse = (body: SafeHtml, status = 200): Response =>
+  new Response(body.value, { status, headers: { "content-type": "text/html; charset=utf-8", ...NO_STORE } })
+
+const EVENT_STREAM_HEADERS = {
+  "content-type": "text/event-stream; charset=utf-8",
+  ...NO_STORE,
+  // nginx and the like buffer a response unless told not to, which would hold every event back
+  "x-accel-buffering": "no"
+}
 
 // A failed UI action: the message the user sees and the status it is sent with
 class UiError extends Data.TaggedError("UiError")<{ readonly message: string; readonly status: number }> {}
@@ -238,6 +278,71 @@ export const makeUiRouter = (deps: UiDeps) => {
       return htmlResponse(requestDetailPage({ config, entry, matchedStub }))
     })
 
+  const rowContext: Effect.Effect<RowContext> = Ref.get(deps.stubsRef).pipe(
+    Effect.map((stubs) => ({ stubs, protocol: deps.config.protocol }))
+  )
+
+  const loadLive: Effect.Effect<LiveData> = Effect.gen(function*() {
+    const config = yield* currentConfig
+    const stubs = yield* Ref.get(deps.stubsRef)
+    const snapshot = yield* deps.metrics.getStats(deps.id)
+    const unmatched = yield* deps.metrics.getUnmatched(deps.id)
+    const nextIndex = new Map<string, number>()
+    for (const stub of stubs) {
+      const next = yield* deps.nextResponseIndex(stub)
+      if (Option.isSome(next)) nextIndex.set(stub.id, next.value)
+    }
+    const nowMs = yield* Clock.currentTimeMillis
+    return buildLiveData({ config, stubs, snapshot, unmatched, nextIndex, nowMs })
+  })
+
+  // Newest first
+  const recentRows: Effect.Effect<ReadonlyArray<RequestLogEntry>> = deps.requestLogger
+    .getEntries(deps.id, { limit: RECENT_ROWS })
+    .pipe(Effect.map((entries) => entries.slice().reverse()))
+
+  const livePageResponse = (request: Request): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const data = yield* loadLive
+      const recent = yield* recentRows
+      const adminUiUrl = deps.adminPort === undefined
+        ? undefined
+        : `http://${browserHost(request)}:${String(deps.adminPort)}/_ui`
+      return pageResponse(livePage(data, {
+        theme: themeFromCookie(request.headers.get("cookie")),
+        recent,
+        ...(adminUiUrl !== undefined ? { adminUiUrl } : {})
+      }))
+    })
+
+  // Server-sent events: one `request` event per logged request, carrying its row's HTML. It
+  // subscribes before the first line goes out, so a request sent once the stream has opened is
+  // never missed. It ends when the client goes away (the server cancels the body) or when this
+  // run stops (`shutdown`), whichever comes first.
+  const events = (): Response => {
+    const opening = Sse.encoder.write(new Sse.Retry({ duration: RECONNECT, lastEventId: undefined }))
+    const stream = Stream.unwrap(Effect.gen(function*() {
+      const entries = yield* deps.requestLogger.follow(deps.id)
+      const rows = entries.pipe(
+        Stream.mapEffect((entry) =>
+          rowContext.pipe(
+            Effect.map((ctx) =>
+              Sse.encoder.write({
+                _tag: "Event",
+                event: REQUEST_EVENT,
+                id: entry.id,
+                data: requestRow(entry, ctx).value
+              })
+            )
+          )
+        )
+      )
+      const heartbeats = Stream.tick(HEARTBEAT).pipe(Stream.map(() => ": heartbeat\n\n"))
+      return Stream.concat(Stream.succeed(opening), Stream.merge(rows, heartbeats))
+    })).pipe(Stream.interruptWhen(deps.shutdown), Stream.encodeText)
+    return new Response(Stream.toReadableStream(stream), { headers: EVENT_STREAM_HEADERS })
+  }
+
   const route = (request: Request, url: URL): Effect.Effect<Response, UiError> => {
     const path = url.pathname.slice(ADMIN_PREFIX.length) || "/"
     const method = request.method.toUpperCase()
@@ -250,28 +355,26 @@ export const makeUiRouter = (deps: UiDeps) => {
     // Every change goes through a form post or an htmx request; a page on another site must not send one
     if (method !== "GET" && method !== "HEAD" && isCrossSite(request)) return Effect.succeed(crossSiteRefusal())
 
-    if (method === "GET" && path === "/") {
-      return Effect.gen(function*() {
-        const config = yield* currentConfig
-        const stubs = yield* Ref.get(deps.stubsRef)
-        const { totalRequests: requestCount } = yield* deps.metrics.getStats(deps.id)
-        const recentRequests = yield* deps.requestLogger.getEntries(deps.id, { limit: 10 })
-        return htmlResponse(
-          dashboardPage({
-            config,
-            stubCount: stubs.length,
-            requestCount,
-            recentRequests: recentRequests.slice().reverse()
-          })
-        )
-      })
+    if (method === "GET" && path === "/") return livePageResponse(request)
+
+    if (method === "GET" && path === "/events") return Effect.sync(events)
+
+    if (method === "GET" && path === "/fragments/live") {
+      return loadLive.pipe(Effect.map((data) => pageResponse(liveFragment(data))))
+    }
+
+    if (method === "GET" && path === "/fragments/requests") {
+      return Effect.all([recentRows, rowContext]).pipe(
+        Effect.map(([entries, ctx]) => pageResponse(requestRows(entries, ctx)))
+      )
     }
 
     if (method === "GET" && path === "/stubs") {
       return Effect.gen(function*() {
         const config = yield* currentConfig
         const stubs = yield* Ref.get(deps.stubsRef)
-        return htmlResponse(stubsPage({ config, stubs }))
+        const draft = draftFromQuery(url.searchParams)
+        return htmlResponse(stubsPage({ config, stubs, ...(draft !== null ? { draft } : {}) }))
       })
     }
 

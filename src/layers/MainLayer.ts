@@ -1,6 +1,7 @@
 import * as Layer from "effect/Layer"
 import { Extensions, type ImposterExtension } from "../extensions/Extension.js"
 import { ImposterRepositoryLive } from "../repositories/ImposterRepository.js"
+import { AdminPort } from "../server/AdminPort.js"
 import { FiberManagerLive } from "../server/FiberManager.js"
 import { ImposterServerLive } from "../server/ImposterServer.js"
 import { DEFAULT_HOST, makeNodeServerFactory } from "../server/ServerFactory.js"
@@ -19,7 +20,12 @@ const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
 
 // Every core service, with `extensions` registered. The imposter runtime and the API
 // handlers both read the one `Extensions` built here, so they agree on the protocols.
-export const makeMainLayer = (extensions: ReadonlyArray<ImposterExtension>, host: string = DEFAULT_HOST) => {
+// `adminPort` is where the admin UI is served, for the imposters' pages to link back to.
+export const makeMainLayer = (
+  extensions: ReadonlyArray<ImposterExtension>,
+  host: string = DEFAULT_HOST,
+  adminPort?: number
+) => {
   const ExtensionsLive = Extensions.layer(extensions)
 
   // ImposterServerLive depends on FiberManager + ImposterRepository + ServerFactory + RequestLogger + Metrics
@@ -33,7 +39,8 @@ export const makeMainLayer = (extensions: ReadonlyArray<ImposterExtension>, host
         RequestLoggerLive,
         MetricsServiceLive,
         ProxyServiceWithDeps,
-        ExtensionsLive
+        ExtensionsLive,
+        Layer.succeed(AdminPort, adminPort)
       )
     )
   )

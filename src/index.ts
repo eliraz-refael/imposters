@@ -89,6 +89,8 @@ export * as StubSchema from "./schemas/StubSchema.js"
 
 export * as common from "./schemas/common.js"
 
+export * as AdminPort from "./server/AdminPort.js"
+
 export * as AdminServer from "./server/AdminServer.js"
 
 export * as FiberManager from "./server/FiberManager.js"
@@ -138,6 +140,12 @@ export * as Uuid from "./services/Uuid.js"
 
 export * as UuidLive from "./services/UuidLive.js"
 
+/**
+ * What an imposter's live page (`/_admin`) shows, built from its metrics by pure functions, so
+ * the page template only formats.
+ */
+export * as LiveData from "./ui/LiveData.js"
+
 export * as UiRouter from "./ui/UiRouter.js"
 
 export * as AdminUiRouter from "./ui/admin/AdminUiRouter.js"
@@ -166,6 +174,12 @@ export * as format from "./ui/components/format.js"
 export * as header from "./ui/components/header.js"
 
 /**
+ * The header of an imposter's own pages (`/_admin` on its port): the mark back to the admin UI,
+ * the imposter's name, port and state, and the page tabs.
+ */
+export * as imposterHeader from "./ui/components/imposterHeader.js"
+
+/**
  * The UIs' small building blocks, on the classes in ui-assets/ui.css. Every interpolation goes
  * through `html`, so names and paths from user config are escaped wherever these render.
  */
@@ -182,6 +196,12 @@ export * as shell from "./ui/components/shell.js"
  */
 export * as sparkline from "./ui/components/sparkline.js"
 
+/**
+ * The cross-site guard both web UIs (`/_ui` and every imposter's `/_admin`) put in front of the
+ * requests that change state.
+ */
+export * as crossSite from "./ui/crossSite.js"
+
 export * as favicon from "./ui/favicon.js"
 
 export * as html from "./ui/html.js"
@@ -190,10 +210,21 @@ export * as htmx from "./ui/htmx.js"
 
 export * as layout from "./ui/layout.js"
 
-export * as dashboard from "./ui/pages/dashboard.js"
+/**
+ * An imposter's live page (`/_admin`): its numbers, the requests as they arrive (server-sent
+ * events), each stub's hits with the response it gives next, and what no stub matched. The
+ * numbers and panels are polled; the request list is streamed.
+ */
+export * as live from "./ui/pages/live.js"
 
 export * as requests from "./ui/pages/requests.js"
 
 export * as stubs from "./ui/pages/stubs.js"
+
+/**
+ * "Stub it": a draft stub for a request no stub matched, which the stubs page offers in its add
+ * form. Pure, and in the encoded (JSON) shape, since that is what the form shows and posts.
+ */
+export * as stubDraft from "./ui/stubDraft.js"
 
 export * as theme from "./ui/theme.js"

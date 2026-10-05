@@ -2,6 +2,7 @@ import * as Layer from "effect/Layer"
 import { HttpRouter } from "effect/unstable/http"
 import { ApiLayer } from "imposters/layers/ApiLayer"
 import { MainLayer } from "imposters/layers/MainLayer"
+import { makeWebHandler } from "imposters/server/AdminServer"
 import { favicon } from "imposters/ui/assets/generated"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -56,7 +57,7 @@ const addStub = async (imposterId: string, stub: Record<string, unknown>) => {
 }
 
 describe("E2E: Imposter UI", () => {
-  it("GET /_admin returns HTML dashboard with imposter info", async () => {
+  it("GET /_admin returns the live page with the imposter's info", async () => {
     const imp = await createImposter(9601)
     await addStub(imp.id, {
       predicates: [],
@@ -69,11 +70,17 @@ describe("E2E: Imposter UI", () => {
       expect(resp.status).toBe(200)
       expect(resp.headers.get("content-type")).toContain("text/html")
 
+      expect(resp.headers.get("cache-control")).toBe("no-store")
+
       const html = await resp.text()
       expect(html).toContain("<!DOCTYPE html>")
-      expect(html).toContain("Dashboard")
-      expect(html).toContain("port 9601")
-      expect(html).toContain("Stubs")
+      expect(html).toContain("live requests")
+      expect(html).toContain(":9601")
+      expect(html).toContain("stub hits")
+      expect(html).toContain("#1 catch-all")
+      // Self-hosted: no CDN
+      expect(html).not.toContain("cdn.tailwindcss.com")
+      expect(html).not.toContain("unpkg.com")
     } finally {
       await stopImposter(imp.id)
     }
@@ -482,4 +489,88 @@ describe("E2E: Imposter UI fixes", () => {
       expect(page).not.toMatch(/>100</)
     })
   }, 20000)
+
+  it("the live page follows the theme cookie, and its tabs lead to the pages that still work", async () => {
+    await withRunningImposter(9637, async () => {
+      const page = (cookie?: string) =>
+        fetch("http://localhost:9637/_admin", cookie === undefined ? {} : { headers: { cookie } }).then((r) => r.text())
+      expect(await page("imposters-theme=light")).toContain(`<html lang="en" data-theme="light">`)
+      expect(await page("other=1; imposters-theme=dark")).toContain(`<html lang="en" data-theme="dark">`)
+      const plain = await page()
+      expect(plain).toContain(`<html lang="en">`)
+      expect(plain).toContain(`<link rel="stylesheet" href="/_admin/assets/ui.`)
+      for (const href of ["/_admin/stubs", "/_admin/requests"]) {
+        expect(plain).toContain(`href="${href}"`)
+        const resp = await fetch(`http://localhost:9637${href}`)
+        expect(resp.status).toBe(200)
+        // Still the old layout, whose tab leads back here
+        expect(await resp.text()).toContain(`href="/_admin"`)
+      }
+    })
+  }, 10000)
+
+  it("stub it: an unmatched request links to a prefilled stub form, and once stubbed it leaves the list", async () => {
+    await withRunningImposter(9638, async () => {
+      await fetch("http://localhost:9638/payments/pm_81?x=1")
+      const live = await (await fetch("http://localhost:9638/_admin")).text()
+      expect(live).toContain("no stub matched · 1")
+      const link = /href="(\/_admin\/stubs\?draft=[^"]+)"/.exec(live)?.[1]?.replaceAll("&amp;", "&")
+      expect(link).toBe("/_admin/stubs?draft=GET&path=%2Fpayments%2Fpm_81")
+
+      const stubsPage = await (await fetch(`http://localhost:9638${link ?? ""}`)).text()
+      expect(stubsPage).toContain("A draft for GET /payments/pm_81")
+      const field = (name: string) =>
+        new RegExp(`<textarea name="${name}"[^>]*>([^<]*)</textarea>`).exec(stubsPage)?.[1]
+          ?.replaceAll("&quot;", "\"").replaceAll("&amp;", "&") ?? ""
+      expect(JSON.parse(field("predicates"))).toEqual([
+        { field: "method", operator: "equals", value: "GET" },
+        { field: "path", operator: "equals", value: "/payments/pm_81" }
+      ])
+
+      const added = await fetch("http://localhost:9638/_admin/stubs", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "same-origin" },
+        body: new URLSearchParams({ predicates: field("predicates"), responses: field("responses") }).toString()
+      })
+      expect(added.status).toBe(200)
+      expect((await fetch("http://localhost:9638/payments/pm_81")).status).toBe(200)
+
+      const fragment = await (await fetch("http://localhost:9638/_admin/fragments/live")).text()
+      expect(fragment).toContain("nothing unmatched")
+      expect(fragment).toContain("#1 GET /payments/pm_81")
+      expect(fragment).toContain(`id="tab-stubs-count" data-oob>1<`)
+    })
+  }, 10000)
+
+  it("the recent-rows fragment lists the latest requests, newest first", async () => {
+    await withRunningImposter(9639, async () => {
+      for (const path of ["/one", "/two", "/three"]) await (await fetch(`http://localhost:9639${path}`)).arrayBuffer()
+      const resp = await fetch("http://localhost:9639/_admin/fragments/requests")
+      expect(resp.headers.get("cache-control")).toBe("no-store")
+      const rows = await resp.text()
+      const order = Array.from(rows.matchAll(/class="req-path ellipsis"[^>]*>([^<]*)</g), (m) => m[1])
+      expect(order).toEqual(["/three", "/two", "/one"])
+    })
+  }, 10000)
+
+  it("links its mark to the admin UI on the host the page was reached through", async () => {
+    const { dispose: disposeLinked, handler } = makeWebHandler([], undefined, 2599)
+    const call = (path: string, body?: unknown) =>
+      handler(
+        new Request(`http://localhost${path}`, {
+          method: body === undefined ? "GET" : path.endsWith("/imposters") ? "POST" : "PATCH",
+          headers: { "content-type": "application/json" },
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {})
+        })
+      )
+    try {
+      const imp = await (await call("/imposters", { port: 9640 })).json()
+      await call(`/imposters/${imp.id}`, { status: "running" })
+      const page = await (await fetch("http://127.0.0.1:9640/_admin")).text()
+      expect(page).toContain(`href="http://127.0.0.1:2599/_ui" aria-label="All imposters"`)
+      await call(`/imposters/${imp.id}`, { status: "stopped" })
+    } finally {
+      await disposeLinked()
+    }
+  }, 10000)
 })
