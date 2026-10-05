@@ -442,4 +442,34 @@ describe("E2E: Imposter UI fixes", () => {
       expect(page).not.toContain("<script>alert(1)</script>")
     })
   }, 10000)
+
+  it("refuses a form post a browser marks cross-site, and adds no stub", async () => {
+    await withRunningImposter(9635, async (id) => {
+      const stubForm = new URLSearchParams({ predicates: "[]", responses: "[{\"status\": 201}]" }).toString()
+      const refused = await fetch("http://localhost:9635/_admin/stubs", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "cross-site" },
+        body: stubForm
+      })
+      expect(refused.status).toBe(403)
+      // Without Sec-Fetch-Site (a LAN address over http), an Origin naming another host is refused too
+      const foreignOrigin = await fetch("http://localhost:9635/_admin/stubs", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://evil.example" },
+        body: stubForm
+      })
+      expect(foreignOrigin.status).toBe(403)
+      const stubs: Array<unknown> = await (await admin(`/imposters/${id}/stubs`)).json()
+      expect(stubs).toEqual([])
+
+      // The UI's own posts are same-origin
+      const own = await fetch("http://localhost:9635/_admin/stubs", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "same-origin" },
+        body: stubForm
+      })
+      expect(own.status).toBe(200)
+      expect(await (await admin(`/imposters/${id}/stubs`)).json()).toHaveLength(1)
+    })
+  }, 10000)
 })

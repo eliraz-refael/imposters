@@ -14,6 +14,7 @@ import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/S
 import { StubChange } from "../server/StubChange.js"
 import type { RequestLoggerShape } from "../services/RequestLogger.js"
 import { assetRoute } from "./assets/serve.js"
+import { crossSiteRefusal, isCrossSite } from "./crossSite.js"
 import { faviconResponse } from "./favicon.js"
 import { html } from "./html.js"
 import { errorBox, errorResponse, formString, htmlResponse } from "./htmx.js"
@@ -242,6 +243,9 @@ export const makeUiRouter = (deps: UiDeps) => {
     if (asset !== null) return Effect.succeed(asset)
 
     if (method === "GET" && path === "/favicon.svg") return Effect.succeed(faviconResponse())
+
+    // Every change goes through a form post or an htmx request; a page on another site must not send one
+    if (method !== "GET" && method !== "HEAD" && isCrossSite(request)) return Effect.succeed(crossSiteRefusal())
 
     if (method === "GET" && path === "/") {
       return Effect.gen(function*() {
