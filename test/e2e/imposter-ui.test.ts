@@ -472,4 +472,14 @@ describe("E2E: Imposter UI fixes", () => {
       expect(await (await admin(`/imposters/${id}/stubs`)).json()).toHaveLength(1)
     })
   }, 10000)
+
+  it("the dashboard counts every request since start, not the request log's last 100", async () => {
+    await withRunningImposter(9636, async (id) => {
+      await addStub(id, { predicates: [], responses: [{ status: 200 }] })
+      for (let i = 0; i < 105; i++) await (await fetch(`http://localhost:9636/r${i}`)).arrayBuffer()
+      const page = await (await fetch("http://localhost:9636/_admin")).text()
+      expect(page).toMatch(/>105</)
+      expect(page).not.toMatch(/>100</)
+    })
+  }, 20000)
 })

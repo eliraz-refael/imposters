@@ -12,6 +12,7 @@ import type {
 import { NonEmptyString } from "../schemas/common.js"
 import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
 import { StubChange } from "../server/StubChange.js"
+import type { MetricsServiceShape } from "../services/MetricsService.js"
 import type { RequestLoggerShape } from "../services/RequestLogger.js"
 import { assetRoute } from "./assets/serve.js"
 import { crossSiteRefusal, isCrossSite } from "./crossSite.js"
@@ -35,6 +36,8 @@ export interface UiDeps {
     change: StubChange
   ) => Effect.Effect<Stub, ImposterNotFoundError | StubNotFoundError | StubIndexOutOfRangeError>
   readonly requestLogger: RequestLoggerShape
+  // Counts since the imposter started; the request log keeps only the latest entries
+  readonly metrics: MetricsServiceShape
   readonly runPromise: <A>(effect: Effect.Effect<A>) => Promise<A>
   // The imposter's own handler, so a test request does not depend on the address it binds
   readonly fetchSelf: (request: Request) => Promise<Response>
@@ -251,7 +254,7 @@ export const makeUiRouter = (deps: UiDeps) => {
       return Effect.gen(function*() {
         const config = yield* currentConfig
         const stubs = yield* Ref.get(deps.stubsRef)
-        const requestCount = yield* deps.requestLogger.getCount(deps.id)
+        const { totalRequests: requestCount } = yield* deps.metrics.getStats(deps.id)
         const recentRequests = yield* deps.requestLogger.getEntries(deps.id, { limit: 10 })
         return htmlResponse(
           dashboardPage({

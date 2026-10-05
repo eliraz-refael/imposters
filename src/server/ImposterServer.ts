@@ -134,6 +134,7 @@ export const ImposterServerLive = Layer.effect(
           repo,
           applyStubChange: (change) => applyStubChange(id, change),
           requestLogger,
+          metrics: metricsService,
           runPromise,
           // handler is declared below; it is only called once a request arrives
           fetchSelf: (request) => handler(request)
