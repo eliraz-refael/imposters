@@ -99,78 +99,10 @@ describe("E2E: Imposter UI", () => {
       expect(resp.status).toBe(200)
       const html = await resp.text()
       expect(html).toContain("<!DOCTYPE html>")
-      expect(html).toContain("Add Stub")
-      // Should contain the stub's predicate summary
-      expect(html).toContain("path")
-      expect(html).toContain("equals")
-    } finally {
-      await stopImposter(imp.id)
-    }
-  }, 10000)
-
-  it("POST /_admin/stubs adds a stub via form data", async () => {
-    const imp = await createImposter(9603)
-    await startImposter(imp.id)
-
-    try {
-      // Add a stub via the UI form
-      const formData = new URLSearchParams()
-      formData.set("predicates", "[]")
-      formData.set("responses", "[{\"status\": 201, \"body\": {\"added\": true}}]")
-      formData.set("responseMode", "sequential")
-
-      const postResp = await fetch("http://localhost:9603/_admin/stubs", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: formData.toString()
-      })
-      expect(postResp.status).toBe(200)
-      const postHtml = await postResp.text()
-      // Response should contain the new stub card
-      expect(postHtml).toContain("sequential")
-      expect(postHtml).toContain("catch-all")
-
-      // Verify the stub actually works
-      const stubResp = await fetch("http://localhost:9603/anything")
-      expect(stubResp.status).toBe(201)
-      const body = await stubResp.json()
-      expect(body).toEqual({ added: true })
-    } finally {
-      await stopImposter(imp.id)
-    }
-  }, 10000)
-
-  it("DELETE /_admin/stubs/:id removes a stub", async () => {
-    const imp = await createImposter(9604)
-    // Add via admin API so we get the stub ID
-    const stubResp = await admin(`/imposters/${imp.id}/stubs`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        predicates: [{ field: "path", operator: "equals", value: "/to-delete" }],
-        responses: [{ status: 200 }]
-      })
-    })
-    const stub = await stubResp.json()
-    await startImposter(imp.id)
-
-    try {
-      // Verify stub matches
-      const before = await fetch("http://localhost:9604/to-delete")
-      expect(before.status).toBe(200)
-
-      // Delete via UI
-      const delResp = await fetch(`http://localhost:9604/_admin/stubs/${stub.id}`, {
-        method: "DELETE"
-      })
-      expect(delResp.status).toBe(200)
-      const delHtml = await delResp.text()
-      // Should no longer contain the stub
-      expect(delHtml).toContain("No stubs configured")
-
-      // Verify stub no longer matches (404)
-      const after = await fetch("http://localhost:9604/to-delete")
-      expect(after.status).toBe(404)
+      expect(html).toContain("add stub")
+      // The stub's predicate, as a chip
+      expect(html).toContain(`<span class="tok-field">path</span>&nbsp;<span class="tok-op">equals</span>`)
+      expect(html).toContain("&quot;/api&quot;")
     } finally {
       await stopImposter(imp.id)
     }
@@ -201,7 +133,8 @@ describe("E2E: Imposter UI", () => {
   }, 10000)
 })
 
-// Regression tests for the UI audit. Ports 9621-9639 belong to this block.
+// Regression tests for the UI audit. Ports 9621-9639 belong to this block (stub writes are in
+// test/e2e/stub-editor.test.ts).
 const form = (fields: Record<string, string>): RequestInit => ({
   method: "POST",
   headers: { "content-type": "application/x-www-form-urlencoded", "hx-request": "true" },
@@ -277,83 +210,6 @@ describe("E2E: Imposter UI fixes", () => {
     })
   }, 10000)
 
-  it("rejects an invalid stub with a visible 400 and leaves the imposter healthy", async () => {
-    await withRunningImposter(9625, async (id) => {
-      const cases: Array<[Record<string, string>, string]> = [
-        [{ predicates: "not json", responses: "[{\"status\":200}]" }, "predicates"],
-        [{ predicates: "{\"a\":1}", responses: "[{\"status\":200}]" }, "predicates"],
-        [{ predicates: "[]", responses: "[{\"status\":99}]" }, "status"],
-        [{ predicates: "[]", responses: "[{\"status\":200}]", responseMode: "bogus" }, "responseMode"],
-        [{ predicates: "[{\"field\":\"nope\",\"operator\":\"equals\",\"value\":1}]", responses: "[{}]" }, "field"],
-        [{ predicates: "[]", responses: "[]" }, "non-empty"],
-        [{ predicates: "[]", responses: "" }, "required"]
-      ]
-      for (const [fields, mentions] of cases) {
-        const resp = await fetch("http://localhost:9625/_admin/stubs", form(fields))
-        expect(resp.status).toBe(400)
-        expect(resp.headers.get("hx-retarget")).toBe("#ui-error")
-        expect(await resp.text()).toContain(mentions)
-      }
-
-      // Nothing was stored, so the pages and the API still work
-      expect((await fetch("http://localhost:9625/_admin/stubs")).status).toBe(200)
-      const stubs = await admin(`/imposters/${id}/stubs`)
-      expect(stubs.status).toBe(200)
-      expect(await stubs.json()).toEqual([])
-    })
-  }, 10000)
-
-  it("a UI stub gets the API's defaults (status 200, case-sensitive predicates)", async () => {
-    await withRunningImposter(9626, async (id) => {
-      const resp = await fetch(
-        "http://localhost:9626/_admin/stubs",
-        form({
-          predicates: "[{\"field\":\"path\",\"operator\":\"equals\",\"value\":\"/Case\"}]",
-          responses: "[{\"body\":\"ok\"}]",
-          responseMode: ""
-        })
-      )
-      expect(resp.status).toBe(200)
-
-      const hit = await fetch("http://localhost:9626/Case")
-      expect(hit.status).toBe(200)
-      expect(await hit.text()).toBe("ok")
-      expect((await fetch("http://localhost:9626/case")).status).toBe(404)
-
-      const stubs: Array<Record<string, unknown>> = await (await admin(`/imposters/${id}/stubs`)).json()
-      expect(stubs[0]).toMatchObject({ responseMode: "sequential", responses: [{ status: 200, body: "ok" }] })
-    })
-  }, 10000)
-
-  it("hot reload: a UI-added stub answers at once, and deleting it stops the match", async () => {
-    await withRunningImposter(9627, async (id) => {
-      await fetch(
-        "http://localhost:9627/_admin/stubs",
-        form({
-          predicates: "[{\"field\":\"path\",\"operator\":\"equals\",\"value\":\"/hot\"}]",
-          responses: "[{\"status\":201}]"
-        })
-      )
-      expect((await fetch("http://localhost:9627/hot")).status).toBe(201)
-
-      const stubs: Array<{ id: string }> = await (await admin(`/imposters/${id}/stubs`)).json()
-      const del = await fetch(`http://localhost:9627/_admin/stubs/${stubs[0]?.id ?? ""}`, { method: "DELETE" })
-      expect(del.status).toBe(200)
-      expect((await fetch("http://localhost:9627/hot")).status).toBe(404)
-    })
-  }, 10000)
-
-  it("deleting a stub that is already gone is a visible 404 that refreshes the list", async () => {
-    await withRunningImposter(9628, async () => {
-      const resp = await fetch("http://localhost:9628/_admin/stubs/missing", { method: "DELETE" })
-      expect(resp.status).toBe(404)
-      expect(resp.headers.get("hx-retarget")).toBe("#ui-error")
-      const body = await resp.text()
-      expect(body).toContain("Stub missing no longer exists")
-      expect(body).toContain("id=\"stub-list\" hx-swap-oob=\"innerHTML\"")
-    })
-  }, 10000)
-
   it("pages show the imposter's current name, not the one it started with", async () => {
     await withRunningImposter(9629, async (id) => {
       await admin(`/imposters/${id}`, {
@@ -386,31 +242,6 @@ describe("E2E: Imposter UI fixes", () => {
       expect(body).toContain("Invalid test request")
       expect(body).not.toContain("<img")
       expect(body).toContain("&lt;img")
-    })
-  }, 10000)
-
-  it("PUT /_admin/stubs/:id validates like add, and updates only the fields given", async () => {
-    await withRunningImposter(9634, async (id) => {
-      await addStub(id, {
-        predicates: [{ field: "path", operator: "equals", value: "/put" }],
-        responses: [{ status: 200 }]
-      })
-      const stubs: Array<{ id: string }> = await (await admin(`/imposters/${id}/stubs`)).json()
-      const url = `http://localhost:9634/_admin/stubs/${stubs[0]?.id ?? ""}`
-
-      const bad = await fetch(url, { ...form({ responses: "[{\"status\":1}]" }), method: "PUT" })
-      expect(bad.status).toBe(400)
-      expect((await fetch("http://localhost:9634/put")).status).toBe(200)
-
-      const ok = await fetch(url, { ...form({ responses: "[{\"status\":202}]" }), method: "PUT" })
-      expect(ok.status).toBe(200)
-      expect((await fetch("http://localhost:9634/put")).status).toBe(202)
-
-      const missing = await fetch("http://localhost:9634/_admin/stubs/nope", {
-        ...form({ responseMode: "repeat" }),
-        method: "PUT"
-      })
-      expect(missing.status).toBe(404)
     })
   }, 10000)
 
@@ -450,36 +281,6 @@ describe("E2E: Imposter UI fixes", () => {
     })
   }, 10000)
 
-  it("refuses a form post a browser marks cross-site, and adds no stub", async () => {
-    await withRunningImposter(9635, async (id) => {
-      const stubForm = new URLSearchParams({ predicates: "[]", responses: "[{\"status\": 201}]" }).toString()
-      const refused = await fetch("http://localhost:9635/_admin/stubs", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "cross-site" },
-        body: stubForm
-      })
-      expect(refused.status).toBe(403)
-      // Without Sec-Fetch-Site (a LAN address over http), an Origin naming another host is refused too
-      const foreignOrigin = await fetch("http://localhost:9635/_admin/stubs", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", origin: "http://evil.example" },
-        body: stubForm
-      })
-      expect(foreignOrigin.status).toBe(403)
-      const stubs: Array<unknown> = await (await admin(`/imposters/${id}/stubs`)).json()
-      expect(stubs).toEqual([])
-
-      // The UI's own posts are same-origin
-      const own = await fetch("http://localhost:9635/_admin/stubs", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "same-origin" },
-        body: stubForm
-      })
-      expect(own.status).toBe(200)
-      expect(await (await admin(`/imposters/${id}/stubs`)).json()).toHaveLength(1)
-    })
-  }, 10000)
-
   it("the dashboard counts every request since start, not the request log's last 100", async () => {
     await withRunningImposter(9636, async (id) => {
       await addStub(id, { predicates: [], responses: [{ status: 200 }] })
@@ -503,7 +304,7 @@ describe("E2E: Imposter UI fixes", () => {
         expect(plain).toContain(`href="${href}"`)
         const resp = await fetch(`http://localhost:9637${href}`)
         expect(resp.status).toBe(200)
-        // Still the old layout, whose tab leads back here
+        // Every page's tabs lead back here
         expect(await resp.text()).toContain(`href="/_admin"`)
       }
     })
@@ -518,21 +319,26 @@ describe("E2E: Imposter UI fixes", () => {
       expect(link).toBe("/_admin/stubs?draft=GET&path=%2Fpayments%2Fpm_81")
 
       const stubsPage = await (await fetch(`http://localhost:9638${link ?? ""}`)).text()
-      expect(stubsPage).toContain("A draft for GET /payments/pm_81")
-      const field = (name: string) =>
-        new RegExp(`<textarea name="${name}"[^>]*>([^<]*)</textarea>`).exec(stubsPage)?.[1]
-          ?.replaceAll("&quot;", "\"").replaceAll("&amp;", "&") ?? ""
-      expect(JSON.parse(field("predicates"))).toEqual([
+      expect(stubsPage).toContain("from GET /payments/pm_81")
+      // Opened for the draft: ui.js brings the editor into view and focuses it
+      expect(stubsPage).toMatch(/id="stub-editor"[^>]* data-focus/)
+      // A stub for one request goes first, before the broader ones
+      expect(stubsPage).toMatch(/value="first" checked/)
+      const text = (/<textarea id="stub-json"[^>]*>([^<]*)<\/textarea>/.exec(stubsPage)?.[1] ?? "")
+        .replaceAll("&quot;", "\"").replaceAll("&amp;", "&")
+      const draft: { predicates: unknown } = JSON.parse(text)
+      expect(draft.predicates).toEqual([
         { field: "method", operator: "equals", value: "GET" },
         { field: "path", operator: "equals", value: "/payments/pm_81" }
       ])
 
       const added = await fetch("http://localhost:9638/_admin/stubs", {
         method: "POST",
+        redirect: "manual",
         headers: { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": "same-origin" },
-        body: new URLSearchParams({ predicates: field("predicates"), responses: field("responses") }).toString()
+        body: new URLSearchParams({ stub: text, position: "first" }).toString()
       })
-      expect(added.status).toBe(200)
+      expect(added.status).toBe(303)
       expect((await fetch("http://localhost:9638/payments/pm_81")).status).toBe(200)
 
       const fragment = await (await fetch("http://localhost:9638/_admin/fragments/live")).text()

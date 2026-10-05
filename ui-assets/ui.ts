@@ -24,10 +24,14 @@
  *   `pagehide`, and for good once a swap takes the element off the page, since browsers allow
  *   about six connections per host.
  * - `data-copy="text"` or `data-copy-from="<selector>"`: copy to the clipboard.
+ * - `data-stub-editor`: the stubs page's editor (editor.ts): typing helpers, the response-mode
+ *   control in step with the JSON, and a debounced check and preview while typing.
  * - `data-theme-toggle`: switch between dark and light, remembered in the `imposters-theme`
  *   cookie. Cookies ignore the port, so the choice holds for the admin UI and every imposter;
  *   it is scoped to /_ui and /_admin, so it is never sent with stub traffic.
  */
+
+import { startEditor } from "./editor"
 
 type Theme = "dark" | "light"
 
@@ -577,6 +581,7 @@ const init = (scope: Element): void => {
   }
   each("[data-poll]", startPoll)
   each("[data-sse]", startSse)
+  each("[data-stub-editor]", startEditor)
 }
 
 document.addEventListener("click", (event) => {

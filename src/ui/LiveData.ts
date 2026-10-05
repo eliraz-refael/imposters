@@ -28,6 +28,8 @@ export interface StubHits {
   readonly byResponse: ReadonlyArray<number>
   // The response it gives next; undefined in random mode, where that cannot be known
   readonly nextIndex: number | undefined
+  // When it last answered (epoch ms); undefined before its first hit
+  readonly lastHitAt: number | undefined
 }
 
 /** A `METHOD path` no stub answered */
@@ -94,7 +96,8 @@ export const buildLiveData = (input: {
       position: i + 1,
       hits: counters?.hits ?? 0,
       byResponse: padByResponse(counters?.byResponse ?? [], stub.responses.length).slice(0, stub.responses.length),
-      nextIndex: input.nextIndex.get(stub.id)
+      nextIndex: input.nextIndex.get(stub.id),
+      lastHitAt: counters?.lastHitAt
     }
   })
   const unmatched = input.unmatched

@@ -1292,3 +1292,320 @@ a.imp-name:hover {
 .nowrap {
   white-space: nowrap;
 }
+
+/* The stubs page: the cards in matching order beside the editor; one above the other below 990px */
+.stubs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr));
+  gap: 24px;
+  align-items: start;
+}
+.stubs-col,
+.stub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.page-head {
+  gap: 6px;
+}
+.page-title {
+  margin: 0;
+  font-family: var(--im-font-mono);
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 700;
+  font-stretch: var(--im-stretch-heading);
+  letter-spacing: -0.03em;
+  color: var(--im-heading);
+}
+.stub-bar {
+  padding: 12px 18px;
+  flex-wrap: wrap;
+}
+.stub-num {
+  font-family: var(--im-font-mono);
+  font-stretch: var(--im-stretch-code);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--im-accent);
+}
+.stub-bar .bar-actions {
+  align-items: center;
+}
+.stub-hits {
+  margin-right: 8px;
+}
+.stub-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.stub-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.stub-key {
+  flex: 0 0 64px;
+}
+.stub-key-top {
+  align-self: flex-start;
+  padding-top: 2px;
+}
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* A chip wraps like text when its value is long: the field and operator never split */
+.chips .tok {
+  display: inline-block;
+  max-width: 100%;
+}
+.tok-field {
+  color: var(--im-text-2);
+  white-space: nowrap;
+}
+.tok-op {
+  color: var(--im-muted);
+  white-space: nowrap;
+}
+.tok-value {
+  color: var(--im-accent);
+  overflow-wrap: anywhere;
+}
+.answers {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.answers-many {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+}
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.answer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.status-num {
+  font-family: var(--im-font-mono);
+  font-stretch: var(--im-stretch-code);
+  font-size: 12px;
+  font-weight: 700;
+}
+.pill-next {
+  padding: 1px 7px;
+  font-size: 10px;
+  color: var(--im-on-accent);
+  background: var(--im-accent-fill);
+  border-color: var(--im-accent-fill);
+}
+.answer > .code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.stub-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-style: dashed;
+  background: transparent;
+}
+.stub-foot .label {
+  overflow-wrap: anywhere;
+}
+
+/* The editor: one JSON textarea, its status, and the actions */
+.editor {
+  min-width: 0;
+}
+@media (min-width: 990px) {
+  .editor {
+    position: sticky;
+    top: 16px;
+  }
+}
+.editor-bar {
+  flex-wrap: wrap;
+}
+.editor-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.editor-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.editor-text {
+  display: block;
+  width: 100%;
+  min-height: 330px;
+  resize: vertical;
+  tab-size: 2;
+  color: var(--im-heading);
+}
+.editor-text:focus {
+  border-color: var(--ui-accent-border);
+  outline: none;
+}
+.editor-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--im-raised-3);
+  border: 1px solid var(--im-border);
+  transition: opacity 0.15s;
+}
+.editor-status[data-state="idle"]:empty {
+  display: none;
+}
+/* A check is on its way: the last answer stays, dimmed, until it lands */
+.editor-status[data-state="pending"] {
+  opacity: 0.55;
+}
+.status-head {
+  font-family: var(--im-font-mono);
+  font-stretch: var(--im-stretch-code);
+  font-size: 12.5px;
+}
+.status-sample,
+.status-warn,
+.status-problems {
+  font-family: var(--im-font-mono);
+  font-stretch: var(--im-stretch-code);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.status-sample {
+  color: var(--im-muted);
+}
+.status-warn {
+  color: var(--ui-warn);
+}
+.status-problems {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--im-text);
+}
+.alert .status-problems {
+  margin-top: 8px;
+  color: inherit;
+}
+.editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.editor-actions {
+  margin-left: auto;
+}
+
+/* A segmented control: radio buttons drawn as one row of buttons */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.seg > legend {
+  float: left;
+  margin-right: 4px;
+}
+.seg-opt {
+  position: relative;
+  display: inline-flex;
+}
+.seg-opt > input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.seg-opt > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--im-button-border);
+  background: var(--im-button);
+  color: var(--im-text);
+  font-family: var(--im-font-mono);
+  font-stretch: var(--im-stretch-code);
+  font-size: 12px;
+}
+.seg-opt:hover > span {
+  border-color: var(--im-accent);
+}
+.seg-opt > input:checked + span {
+  border-color: var(--im-accent);
+  color: var(--im-accent);
+}
+.seg-opt > input:focus-visible + span {
+  outline: 2px solid var(--im-accent);
+  outline-offset: 2px;
+}
+.seg-opt > input:disabled + span {
+  opacity: 0.5;
+}
+
+@media (max-width: 720px) {
+  .stub-bar,
+  .stub-body,
+  .stub-foot,
+  .editor-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .stub-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .stub-key,
+  .stub-key-top {
+    flex-basis: auto;
+    padding-top: 0;
+  }
+  .answers {
+    width: 100%;
+  }
+  .editor-text {
+    min-height: 260px;
+  }
+}

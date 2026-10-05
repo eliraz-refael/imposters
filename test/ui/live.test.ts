@@ -89,7 +89,8 @@ const hits = (s: Stub, byResponse: ReadonlyArray<number>, nextIndex?: number): S
   position: 1,
   hits: byResponse.reduce((a, b) => a + b, 0),
   byResponse,
-  nextIndex
+  nextIndex,
+  lastHitAt: undefined
 })
 
 describe("draftStubFrom", () => {
@@ -223,7 +224,9 @@ describe("buildLiveData", () => {
       nowMs: NOW
     })
     expect(data.unmatched.map((row) => row.path)).toEqual(["/health"])
-    expect(data.stubHits).toEqual([{ stub: stubs[0], position: 1, hits: 2, byResponse: [2], nextIndex: 0 }])
+    expect(data.stubHits).toEqual([
+      { stub: stubs[0], position: 1, hits: 2, byResponse: [2], nextIndex: 0, lastHitAt: NOW }
+    ])
   })
 })
 

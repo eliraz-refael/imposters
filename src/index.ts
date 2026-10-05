@@ -83,6 +83,14 @@ export * as ExplainSchema from "./schemas/ExplainSchema.js"
 
 export * as ImposterSchema from "./schemas/ImposterSchema.js"
 
+/**
+ * Schema errors in plain English. The schema's own wording (`Expected number | undefined at
+ * ["responses"][0]["status"]`) is accurate but reads as a puzzle; these say what the field is
+ * and give an example. Pure. The stub editor uses `stubIssueMessages`; the admin API's 400
+ * bodies could use it too.
+ */
+export * as IssueMessages from "./schemas/IssueMessages.js"
+
 export * as RequestLogSchema from "./schemas/RequestLogSchema.js"
 
 export * as StubSchema from "./schemas/StubSchema.js"
@@ -146,6 +154,13 @@ export * as UuidLive from "./services/UuidLive.js"
  */
 export * as LiveData from "./ui/LiveData.js"
 
+/**
+ * What the stubs page (`/_admin/stubs`) shows, built from the live page's data by pure
+ * functions, so the template only formats: a card per stub in matching order, and what answers
+ * a request none of them matches.
+ */
+export * as StubsData from "./ui/StubsData.js"
+
 export * as UiRouter from "./ui/UiRouter.js"
 
 export * as AdminUiRouter from "./ui/admin/AdminUiRouter.js"
@@ -202,6 +217,22 @@ export * as sparkline from "./ui/components/sparkline.js"
  */
 export * as crossSite from "./ui/crossSite.js"
 
+/**
+ * The stub editor's text, checked on the server: the JSON (with its syntax error's line and
+ * column), then the stub schema (with plain-English messages, each placed in the text). The
+ * preview and every write from the editor go through here.
+ */
+export * as checkStub from "./ui/editor/checkStub.js"
+
+/**
+ * The stub editor's text view: JSON text to a stub draft and back, with plain-English syntax
+ * errors that name the line and column. Pure and free of imports, because both sides use it:
+ * the server (checking a posted stub) and the browser runtime (ui-assets/editor.ts bundles it, so
+ * a syntax error shows without a round trip). A form view edits the same draft, through the same
+ * two functions.
+ */
+export * as draftText from "./ui/editor/draftText.js"
+
 export * as favicon from "./ui/favicon.js"
 
 export * as html from "./ui/html.js"
@@ -219,11 +250,19 @@ export * as live from "./ui/pages/live.js"
 
 export * as requests from "./ui/pages/requests.js"
 
+/**
+ * An imposter's stubs page (`/_admin/stubs`): a card per stub in matching order, with edit and
+ * delete, and the editor that adds and edits them (JSON, checked and previewed as you type).
+ * Every form works without JS: a POST answered with a 303 back here, or this page again with
+ * the problems. ui.js swaps fragments instead (data-action), and runs the editor
+ * (data-stub-editor).
+ */
 export * as stubs from "./ui/pages/stubs.js"
 
 /**
- * "Stub it": a draft stub for a request no stub matched, which the stubs page offers in its add
- * form. Pure, and in the encoded (JSON) shape, since that is what the form shows and posts.
+ * Stub drafts: what the stubs page's editor starts from. "Stub it" drafts a stub for a request no
+ * stub matched; a new stub starts from a starter; an edit starts from the stub. Pure, and in the
+ * encoded (JSON) shape, since that is what the editor shows and posts.
  */
 export * as stubDraft from "./ui/stubDraft.js"
 

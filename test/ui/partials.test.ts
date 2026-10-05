@@ -76,14 +76,13 @@ describe("stub card", () => {
     expect(card).not.toContain("[object Object]")
   })
 
-  it("has a Delete button by default and none with deletable: false", () => {
-    expect(stubCardPartial(stub).value).toContain("hx-delete=\"/_admin/stubs/stub-1\"")
-    expect(stubCardPartial(stub, { deletable: false }).value).not.toContain("hx-delete")
+  it("has no actions: stubs are changed on the stubs page", () => {
+    expect(stubCardPartial(stub).value).not.toContain("hx-delete")
   })
 })
 
 describe("request detail page", () => {
-  it("shows the matched stub without a Delete button (the page has no #stub-list to refresh)", () => {
+  it("shows the matched stub without a Delete button", () => {
     const page =
       requestDetailPage({ config: config("HTTP"), entry: entry({ matchedStubId: "stub-1" }), matchedStub: stub })
         .value

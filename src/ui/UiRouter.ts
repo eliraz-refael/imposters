@@ -4,24 +4,29 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
-import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as Sse from "effect/unstable/encoding/Sse"
 import type { ImposterConfig, ImposterNotFoundError } from "../domain/imposter.js"
+import { contextFromCaptured } from "../matching/Explain.js"
+import { previewStub } from "../matching/Preview.js"
+import { findMatchingStub } from "../matching/RequestMatcher.js"
 import type {
   ImposterRepositoryShape,
   StubIndexOutOfRangeError,
   StubNotFoundError
 } from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
-import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
+import type { PreviewResponse } from "../schemas/ExplainSchema.js"
+import type { CreateStubRequest, Stub } from "../schemas/StubSchema.js"
 import { StubChange } from "../server/StubChange.js"
 import type { MetricsServiceShape } from "../services/MetricsService.js"
 import type { LoggedEntry, RequestLoggerShape } from "../services/RequestLogger.js"
 import { assetRoute } from "./assets/serve.js"
 import { browserHost, crossSiteRefusal, isCrossSite } from "./crossSite.js"
+import { checkStubText, problemLines, type StubCheck } from "./editor/checkStub.js"
+import { draftToText } from "./editor/draftText.js"
 import { faviconResponse } from "./favicon.js"
-import { html, type SafeHtml } from "./html.js"
+import { concat, html, type SafeHtml } from "./html.js"
 import { errorBox, errorResponse, formString, htmlResponse } from "./htmx.js"
 import { buildLiveData, type LiveData } from "./LiveData.js"
 import {
@@ -35,9 +40,19 @@ import {
 } from "./pages/live.js"
 import { requestDetailPage, requestNotFoundPage } from "./pages/request-detail.js"
 import { requestsPage, testResultPartial } from "./pages/requests.js"
-import { stubsPage } from "./pages/stubs.js"
-import { requestTablePartial, stubListPartial } from "./partials.js"
-import { draftFromQuery } from "./stubDraft.js"
+import {
+  type EditorState,
+  type EditorStatus,
+  editorStatus,
+  type InsertAt,
+  stubEditor,
+  STUBS_URL,
+  stubsAnswer,
+  stubsPage
+} from "./pages/stubs.js"
+import { requestTablePartial } from "./partials.js"
+import { draftFromQuery, draftFromStub, starterDraft } from "./stubDraft.js"
+import { buildStubsData, type StubsData } from "./StubsData.js"
 import { themeFromCookie } from "./theme.js"
 
 export interface UiDeps {
@@ -87,46 +102,43 @@ const EVENT_STREAM_HEADERS = {
 // A failed UI action: the message the user sees and the status it is sent with
 class UiError extends Data.TaggedError("UiError")<{ readonly message: string; readonly status: number }> {}
 
-// The add/edit stub form: JSON text fields, decoded exactly as the admin API decodes a stub
-const PredicatesJson = Schema.fromJsonString(Schema.Array(Predicate))
-const ResponsesJson = Schema.fromJsonString(Schema.NonEmptyArray(ResponseConfig))
-const StubForm = Schema.Struct({ predicates: PredicatesJson, responses: ResponsesJson, responseMode: ResponseMode })
-const StubPatchForm = Schema.Struct({
-  predicates: Schema.optional(PredicatesJson),
-  responses: Schema.optional(ResponsesJson),
-  responseMode: Schema.optional(ResponseMode)
-})
-
-const decodeForm = <A>(decode: (input: unknown) => Effect.Effect<A, Schema.SchemaError>, input: unknown) =>
-  decode(input).pipe(
-    Effect.mapError((err) =>
-      new UiError({ message: `Invalid stub: ${err.message.replaceAll("\n", " ")}`, status: 400 })
-    )
-  )
-
 const readForm = (request: Request): Effect.Effect<FormData, UiError> =>
   Effect.tryPromise({
     try: () => request.formData(),
     catch: () => new UiError({ message: "Expected a form submission.", status: 400 })
   })
 
-// The form's text fields with blank ones left out, so a blank field means "not given"
-const nonBlankFields = (form: FormData, names: ReadonlyArray<string>): Record<string, string> => {
-  const fields: Record<string, string> = {}
-  for (const name of names) {
-    const value = formString(form, name)?.trim()
-    if (value !== undefined && value !== "") fields[name] = value
+// ui.js sends this with every data-action request: answer with a fragment, not a page
+const FRAGMENT_HEADER = "x-imposters-fragment"
+
+const isFragmentRequest = (request: Request): boolean => request.headers.get(FRAGMENT_HEADER) === "1"
+
+// After a form post without JS: back to the page, as a GET
+const seeOther = (location: string): Response => new Response(null, { status: 303, headers: { location, ...NO_STORE } })
+
+const STUB_PATH = /^\/stubs\/([^/]+)$/
+const STUB_DELETE_PATH = /^\/stubs\/([^/]+)\/delete$/
+
+const decodeSegment = (segment: string | undefined): string | null => {
+  if (segment === undefined) return null
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return null
   }
-  return fields
 }
 
-const parseStubIdFromPath = (path: string): string | null => {
-  const match = /^\/stubs\/([^/]+)$/.exec(path)
-  return match?.[1] ?? null
+// A failed editor action: the message, what to show the user (the problems, as HTML), and its status
+interface EditorFailure {
+  readonly status: number
+  readonly message: string
+  readonly check?: StubCheck
 }
 
-const stubListOob = (stubs: ReadonlyArray<Stub>) =>
-  html`<div id="stub-list" hx-swap-oob="innerHTML">${stubListPartial(stubs)}</div>`
+const insertAt = (value: string | undefined): InsertAt => value === "first" ? "first" : "last"
+
+const sentenceList = (lines: ReadonlyArray<string>): SafeHtml =>
+  html`<ul class="status-problems">${concat(lines.map((line) => html`<li>${line}</li>`))}</ul>`
 
 export const makeUiRouter = (deps: UiDeps) => {
   const currentConfig: Effect.Effect<ImposterConfig> = deps.repo.get(deps.id).pipe(
@@ -134,63 +146,207 @@ export const makeUiRouter = (deps: UiDeps) => {
     Effect.catch(() => Effect.succeed(deps.config))
   )
 
-  // The stubs to render after a change. Read only: applyStubChange has already hot-reloaded the
-  // server under its lock, and writing the Ref here would bypass that lock
-  const reloadStubs: Effect.Effect<ReadonlyArray<Stub>> = deps.repo.getStubs(deps.id).pipe(
-    Effect.catch(() => Ref.get(deps.stubsRef))
-  )
+  // ---------------------------------------------------------------- stubs page
 
-  const imposterGone = () => new UiError({ message: "This imposter no longer exists.", status: 404 })
+  const adminUiUrlFor = (request: Request): string | undefined =>
+    deps.adminPort === undefined ? undefined : `http://${browserHost(request)}:${String(deps.adminPort)}/_ui`
 
-  const addStub = (request: Request): Effect.Effect<Response, UiError> =>
+  const loadStubs: Effect.Effect<StubsData> = Effect.suspend(() => loadLive).pipe(Effect.map(buildStubsData))
+
+  // What a stub would answer of the traffic no stub answers now. When editing, the stub under
+  // edit is left out: the question is what it would catch as it is written now.
+  const previewFor = (stub: CreateStubRequest, editing: string | undefined): Effect.Effect<PreviewResponse> =>
     Effect.gen(function*() {
-      const form = yield* readForm(request)
-      const fields = nonBlankFields(form, ["predicates", "responses", "responseMode"])
-      if (fields.responses === undefined) {
-        return yield* new UiError({ message: "Responses field is required.", status: 400 })
+      const others = (yield* Ref.get(deps.stubsRef)).filter((s) => s.id !== editing)
+      const groups = (yield* deps.metrics.getUnmatched(deps.id)).filter((group) =>
+        findMatchingStub(contextFromCaptured(group.sample.request), others) === undefined
+      )
+      return yield* previewStub(stub, groups)
+    })
+
+  const statusOf = (check: StubCheck, editing: string | undefined): Effect.Effect<EditorStatus> =>
+    check._tag === "Valid"
+      ? previewFor(check.stub, editing).pipe(Effect.map((preview) => ({ check, preview })))
+      : Effect.succeed({ check })
+
+  const statusFor = (text: string, editing: string | undefined): Effect.Effect<EditorStatus> =>
+    checkStubText(text).pipe(Effect.flatMap((check) => statusOf(check, editing)))
+
+  const newStubEditor = (focus: boolean): Effect.Effect<EditorState> => {
+    const text = draftToText(starterDraft())
+    return statusFor(text, undefined).pipe(Effect.map((status) => ({ text, insert: "last", status, focus })))
+  }
+
+  // The editor a URL asks for: `?edit=<id>`, `?draft=<method>&path=<path>` ("stub it"), or a new
+  // stub. An edit of a stub that is gone is null.
+  const editorFor = (params: URLSearchParams, focus: boolean): Effect.Effect<EditorState | null> =>
+    Effect.gen(function*() {
+      const editId = params.get("edit")
+      if (editId !== null) {
+        const stubs = yield* Ref.get(deps.stubsRef)
+        const position = stubs.findIndex((stub) => stub.id === editId)
+        const stub = stubs[position]
+        if (stub === undefined) return null
+        const text = draftToText(draftFromStub(stub))
+        const status = yield* statusFor(text, stub.id)
+        return { editing: { id: stub.id, position: position + 1 }, text, insert: "last", status, focus }
       }
-      // The schema's own wording for this one ("Missing key at [0]") reads as a puzzle
-      if (fields.responses.replaceAll(/\s/g, "") === "[]") {
-        return yield* new UiError({ message: "Responses must be a non-empty array.", status: 400 })
+      const draft = draftFromQuery(params)
+      if (draft !== null) {
+        const text = draftToText(draft.stub)
+        const status = yield* statusFor(text, undefined)
+        // A stub for one request goes before the broader ones
+        return { text, insert: "first", from: { method: draft.method, path: draft.path }, status, focus }
       }
-      const decoded = yield* decodeForm(Schema.decodeUnknownEffect(StubForm), {
-        predicates: "[]",
-        responseMode: "sequential",
-        ...fields
+      return yield* newStubEditor(focus)
+    })
+
+  const stubsPageResponse = (
+    request: Request,
+    editor: EditorState,
+    opts?: { readonly error?: string; readonly status?: number }
+  ): Effect.Effect<Response> =>
+    loadStubs.pipe(Effect.map((data) => {
+      const adminUiUrl = adminUiUrlFor(request)
+      return pageResponse(
+        stubsPage(data, {
+          theme: themeFromCookie(request.headers.get("cookie")),
+          editor,
+          ...(opts?.error !== undefined ? { error: opts.error } : {}),
+          ...(adminUiUrl !== undefined ? { adminUiUrl } : {})
+        }),
+        opts?.status
+      )
+    }))
+
+  const showStubsPage = (request: Request, url: URL): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      // An edit or a draft is what the page was opened for: ui.js moves the focus to the editor,
+      // which on a phone (where it comes after the cards) also scrolls to it
+      const opened = url.searchParams.has("edit") || url.searchParams.has("draft")
+      const editor = yield* editorFor(url.searchParams, opened)
+      if (editor !== null) return yield* stubsPageResponse(request, editor)
+      const fresh = yield* newStubEditor(false)
+      return yield* stubsPageResponse(request, fresh, {
+        error: "That stub no longer exists; it may have been deleted elsewhere.",
+        status: 404
       })
-      const stub: Stub = { id: NonEmptyString.make(crypto.randomUUID().slice(0, 8)), ...decoded }
-      yield* deps.applyStubChange(StubChange.Add({ stub })).pipe(Effect.mapError(imposterGone))
-      return htmlResponse(stubListPartial(yield* reloadStubs))
     })
 
-  const updateStub = (request: Request, stubId: string): Effect.Effect<Response, UiError> =>
+  const editorFragment = (url: URL): Effect.Effect<Response> =>
+    editorFor(url.searchParams, true).pipe(Effect.map((editor) =>
+      editor === null
+        ? pageResponse(html`That stub no longer exists; it may have been deleted elsewhere.`, 404)
+        : pageResponse(stubEditor(editor))
+    ))
+
+  const previewFragment = (request: Request): Effect.Effect<Response> =>
     Effect.gen(function*() {
-      const form = yield* readForm(request)
-      const patch = yield* decodeForm(
-        Schema.decodeUnknownEffect(StubPatchForm),
-        nonBlankFields(form, ["predicates", "responses", "responseMode"])
-      )
-      yield* deps.applyStubChange(StubChange.Update({ stubId, patch })).pipe(
-        Effect.catchTags({
-          StubNotFoundError: () => Effect.fail(new UiError({ message: "Stub not found.", status: 404 })),
-          ImposterNotFoundError: () => Effect.fail(imposterGone()),
-          // Only an insert has a position, so an edit cannot fail with one
-          StubIndexOutOfRangeError: (e) => Effect.die(e)
-        })
-      )
-      return htmlResponse(stubListPartial(yield* reloadStubs))
+      const form = yield* readForm(request).pipe(Effect.option)
+      if (Option.isNone(form)) return pageResponse(html`Expected a form submission.`, 400)
+      const editing = formString(form.value, "editing") || undefined
+      const status = yield* statusFor(formString(form.value, "stub") ?? "", editing)
+      return pageResponse(editorStatus(status))
     })
 
-  const deleteStub = (stubId: string): Effect.Effect<Response> =>
-    deps.applyStubChange(StubChange.Remove({ stubId })).pipe(
-      Effect.andThen(reloadStubs),
-      Effect.map((stubs) => htmlResponse(stubListPartial(stubs))),
-      // Already gone (deleted elsewhere): say so, and refresh the list the user is looking at
-      Effect.catch(() =>
-        reloadStubs.pipe(
-          Effect.map((stubs) => errorResponse(`Stub ${stubId} no longer exists.`, 404, stubListOob(stubs)))
-        )
+  // A successful change: the refreshed list with JS (and, after an add or a save, a fresh
+  // editor), else back to the page. A delete keeps the editor: it may hold unsaved work, and its
+  // heading loses the deleted stub's number when that is the stub it edits.
+  const changed = (request: Request, freshEditor: boolean, deleted?: string): Effect.Effect<Response> =>
+    isFragmentRequest(request)
+      ? Effect.gen(function*() {
+        const data = yield* loadStubs
+        const editor = freshEditor ? yield* newStubEditor(false) : undefined
+        return pageResponse(stubsAnswer(data, editor, deleted))
+      })
+      : Effect.succeed(seeOther(STUBS_URL))
+
+  // A refused add or save: the problems for the form's error slot with JS, else the page again
+  // with the editor as it was posted
+  const refused = (request: Request, failure: EditorFailure, editor: EditorState): Effect.Effect<Response> => {
+    if (isFragmentRequest(request)) {
+      const lines = failure.check === undefined ? [] : problemLines(failure.check)
+      return Effect.succeed(
+        pageResponse(html`${failure.message}${lines.length === 0 ? html`` : sentenceList(lines)}`, failure.status)
       )
+    }
+    return Effect.gen(function*() {
+      const status = failure.check === undefined ? editor.status : yield* statusOf(failure.check, editor.editing?.id)
+      return yield* stubsPageResponse(
+        request,
+        { ...editor, ...(status !== undefined ? { status } : {}), error: failure.message },
+        { status: failure.status }
+      )
+    })
+  }
+
+  const postedStub = (request: Request): Effect.Effect<{ readonly text: string; readonly insert: InsertAt } | null> =>
+    readForm(request).pipe(
+      Effect.map((form) => ({
+        text: formString(form, "stub") ?? "",
+        insert: insertAt(formString(form, "position"))
+      })),
+      Effect.catch(() => Effect.succeed(null))
+    )
+
+  const notAForm = (request: Request): Effect.Effect<Response> =>
+    isFragmentRequest(request)
+      ? Effect.succeed(pageResponse(html`Expected a form submission.`, 400))
+      : Effect.succeed(seeOther(STUBS_URL))
+
+  const IMPOSTER_GONE = "This imposter no longer exists."
+
+  const addStub = (request: Request): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const posted = yield* postedStub(request)
+      if (posted === null) return yield* notAForm(request)
+      const editor: EditorState = { text: posted.text, insert: posted.insert }
+      const check = yield* checkStubText(posted.text)
+      if (check._tag !== "Valid") {
+        return yield* refused(request, {
+          status: 400,
+          message: "The stub was not added: fix the problems above.",
+          check
+        }, editor)
+      }
+      const stub: Stub = { id: NonEmptyString.make(crypto.randomUUID().slice(0, 8)), ...check.stub }
+      const added = yield* deps.applyStubChange(
+        StubChange.Add({ stub, index: posted.insert === "first" ? 0 : undefined })
+      ).pipe(Effect.result)
+      if (added._tag === "Failure") return yield* refused(request, { status: 404, message: IMPOSTER_GONE }, editor)
+      return yield* changed(request, true)
+    })
+
+  const saveStub = (request: Request, stubId: string): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const posted = yield* postedStub(request)
+      if (posted === null) return yield* notAForm(request)
+      const stubs = yield* Ref.get(deps.stubsRef)
+      const position = stubs.findIndex((stub) => stub.id === stubId) + 1
+      const editor: EditorState = { editing: { id: stubId, position }, text: posted.text, insert: "last" }
+      const check = yield* checkStubText(posted.text)
+      if (check._tag !== "Valid") {
+        return yield* refused(request, {
+          status: 400,
+          message: "The stub was not saved: fix the problems above.",
+          check
+        }, editor)
+      }
+      const saved = yield* deps.applyStubChange(StubChange.Update({ stubId, patch: check.stub })).pipe(Effect.result)
+      if (saved._tag === "Failure") {
+        const message = saved.failure._tag === "ImposterNotFoundError"
+          ? IMPOSTER_GONE
+          : "This stub no longer exists (deleted elsewhere?): copy your JSON and add it as a new stub."
+        return yield* refused(request, { status: 404, message }, editor)
+      }
+      return yield* changed(request, true)
+    })
+
+  // Deleting a stub that is already gone leaves it gone: the list is refreshed either way
+  const deleteStub = (request: Request, stubId: string): Effect.Effect<Response> =>
+    deps.applyStubChange(StubChange.Remove({ stubId })).pipe(
+      Effect.ignore,
+      Effect.andThen(changed(request, false, stubId))
     )
 
   const listRequests = (params: URLSearchParams): Effect.Effect<Response, UiError> =>
@@ -304,9 +460,7 @@ export const makeUiRouter = (deps: UiDeps) => {
     Effect.gen(function*() {
       const data = yield* loadLive
       const recent = yield* recentRows
-      const adminUiUrl = deps.adminPort === undefined
-        ? undefined
-        : `http://${browserHost(request)}:${String(deps.adminPort)}/_ui`
+      const adminUiUrl = adminUiUrlFor(request)
       return pageResponse(livePage(data, {
         theme: themeFromCookie(request.headers.get("cookie")),
         recent,
@@ -368,20 +522,19 @@ export const makeUiRouter = (deps: UiDeps) => {
       )
     }
 
-    if (method === "GET" && path === "/stubs") {
-      return Effect.gen(function*() {
-        const config = yield* currentConfig
-        const stubs = yield* Ref.get(deps.stubsRef)
-        const draft = draftFromQuery(url.searchParams)
-        return htmlResponse(stubsPage({ config, stubs, ...(draft !== null ? { draft } : {}) }))
-      })
-    }
+    if (method === "GET" && path === "/stubs") return showStubsPage(request, url)
+
+    if (method === "GET" && path === "/fragments/stub-editor") return editorFragment(url)
+
+    if (method === "POST" && path === "/stubs/preview") return previewFragment(request)
 
     if (method === "POST" && path === "/stubs") return addStub(request)
 
-    const stubId = parseStubIdFromPath(path)
-    if (method === "DELETE" && stubId !== null) return deleteStub(stubId)
-    if (method === "PUT" && stubId !== null) return updateStub(request, stubId)
+    const deleteId = decodeSegment(STUB_DELETE_PATH.exec(path)?.[1])
+    if (method === "POST" && deleteId !== null) return deleteStub(request, deleteId)
+
+    const stubId = decodeSegment(STUB_PATH.exec(path)?.[1])
+    if (method === "POST" && stubId !== null) return saveStub(request, stubId)
 
     if (method === "GET" && path === "/requests") {
       return Effect.gen(function*() {

@@ -123,7 +123,7 @@ export const requestDetailPage = (data: RequestDetailData): SafeHtml => {
     matchedStub !== null
       ? html`<div>
           <h3 class="text-lg font-semibold mb-3">Matched Stub</h3>
-          ${stubCardPartial(matchedStub, { deletable: false })}
+          ${stubCardPartial(matchedStub)}
         </div>`
       : html``
   }`

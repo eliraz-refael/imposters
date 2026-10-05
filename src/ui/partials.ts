@@ -3,7 +3,6 @@ import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import type { Delay, ResponseConfig, Stub } from "../schemas/StubSchema.js"
 import { html } from "./html.js"
 import type { SafeHtml } from "./html.js"
-import { errorBox } from "./htmx.js"
 
 const predicateSummary = (stub: Stub): string => {
   if (stub.predicates.length === 0) return "catch-all (no predicates)"
@@ -52,29 +51,17 @@ const responseDetail = (r: ResponseConfig, index: number, total: number): SafeHt
   </div>`
 }
 
-// `deletable: false` drops the Delete button, for a page with no #stub-list for it to refresh
-export const stubCardPartial = (stub: Stub, opts?: { readonly deletable?: boolean }): SafeHtml => {
+// The request detail page's matched stub (it has no actions: stubs are changed on the stubs page)
+export const stubCardPartial = (stub: Stub): SafeHtml => {
   const responsesHtml = stub.responses
     .map((r, i) => responseDetail(r, i, stub.responses.length))
     .reduce((acc, r) => html`${acc}${r}`, html``)
-
-  const deleteButton = opts?.deletable === false
-    ? html``
-    : html`<button
-          hx-delete="/_admin/stubs/${stub.id}"
-          hx-target="#stub-list"
-          hx-swap="innerHTML"
-          hx-confirm="Delete this stub?"
-          class="text-red-500 hover:text-red-700 text-sm">Delete</button>`
 
   return html`<div class="bg-white rounded-lg shadow p-4 mb-3" id="stub-${stub.id}">
     <div class="flex items-center justify-between mb-2">
       <div>
         <span class="font-mono text-sm text-indigo-600 font-semibold">${stub.id}</span>
         <span class="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">${stub.responseMode}</span>
-      </div>
-      <div class="flex gap-2">
-        ${deleteButton}
       </div>
     </div>
     <div class="text-sm text-gray-600 mb-2">
@@ -85,21 +72,6 @@ export const stubCardPartial = (stub: Stub, opts?: { readonly deletable?: boolea
     </div>
   </div>`
 }
-
-export const stubListPartial = (stubs: ReadonlyArray<Stub>): SafeHtml => {
-  if (stubs.length === 0) {
-    return emptyStubMessage()
-  }
-  return stubs.reduce(
-    (acc, stub) => html`${acc}${stubCardPartial(stub)}`,
-    html``
-  )
-}
-
-export const emptyStubMessage = (): SafeHtml =>
-  html`<p class="text-gray-400 text-center py-8">No stubs configured. Add one above.</p>`
-
-export const errorPartial = (message: string): SafeHtml => errorBox(message)
 
 export const methodBadge = (method: string): SafeHtml => {
   const colors: Record<string, string> = {

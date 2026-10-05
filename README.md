@@ -526,7 +526,7 @@ Effect.provide(test, clientLayer).pipe(Effect.runPromise)
 - **`/_ui`** on the admin port — Global dashboard showing all imposters
 - **`/_admin`** on each imposter port — Per-imposter UI: a live view (requests streamed as they arrive, stub hits with the response each stub gives next, unmatched requests you can turn into a stub), plus stubs and captured requests
 
-Both UIs are server-rendered, in dark and light themes (the toggle is remembered in a cookie). The `/_ui` dashboard and each imposter's live view serve their own stylesheet, fonts and script, so they work offline; the live view streams requests over server-sent events. An imposter's stubs, requests and request-detail pages still use HTMX and Tailwind from `unpkg.com` and `cdn.tailwindcss.com` until they are redesigned: there the browser must reach those hosts, or the pages render unstyled and their forms and buttons do nothing.
+Both UIs are server-rendered, in dark and light themes (the toggle is remembered in a cookie). The `/_ui` dashboard and each imposter's live view and stubs page serve their own stylesheet, fonts and script, so they work offline; the live view streams requests over server-sent events, and the stubs page checks and previews a stub as you type, with plain-English errors. An imposter's requests and request-detail pages still use HTMX and Tailwind from `unpkg.com` and `cdn.tailwindcss.com` until they are redesigned: there the browser must reach those hosts, or the pages render unstyled and their forms and buttons do nothing.
 
 ## Development
 

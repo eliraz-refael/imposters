@@ -39,6 +39,9 @@ interface Screen {
   readonly width?: number
 }
 
+// orders-api has no stub for GET /v2/orders, and the traffic sends it
+const DRAFT = new URLSearchParams({ draft: "GET", path: "/v2/orders" }).toString()
+
 // One line per screen; each is captured once per theme
 const SCREENS: ReadonlyArray<Screen> = [
   { name: "ui-dashboard", url: (t) => `${t.admin}/_ui` },
@@ -46,6 +49,9 @@ const SCREENS: ReadonlyArray<Screen> = [
   { name: "imposter-dashboard", url: (t) => `${t.imposter}/_admin` },
   { name: "imposter-dashboard-phone", url: (t) => `${t.imposter}/_admin`, width: 390 },
   { name: "imposter-stubs", url: (t) => `${t.imposter}/_admin/stubs` },
+  // "Stub it" on a route no stub answers: the editor opens on a draft, checked and previewed
+  { name: "imposter-stubs-draft", url: (t) => `${t.imposter}/_admin/stubs?${DRAFT}` },
+  { name: "imposter-stubs-draft-phone", url: (t) => `${t.imposter}/_admin/stubs?${DRAFT}`, width: 390 },
   { name: "imposter-requests", url: (t) => `${t.imposter}/_admin/requests` },
   { name: "imposter-request-detail", url: (t) => `${t.imposter}/_admin/requests/${encodeURIComponent(t.requestId)}` }
 ]
