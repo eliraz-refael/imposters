@@ -194,8 +194,8 @@ describe("E2E: /_ui traffic numbers", () => {
       expect(row).toContain("dot-on")
       expect(row).toContain("running · last req")
       // 4 requests, 1 of them a 5xx (25%: hot), 1 unmatched
-      expect(row).toContain("<span class=\"num c-warn\" role=\"cell\">25.0%</span>")
-      expect(row).toContain("<span class=\"num\" role=\"cell\">1</span>")
+      expect(row).toContain("<span class=\"num c-warn\" role=\"cell\" data-label=\"5xx\">25.0%</span>")
+      expect(row).toContain("<span class=\"num\" role=\"cell\" data-label=\"unmatched\">1</span>")
       expect(row).toContain("spark spark-warn")
       expect(row).toContain("href=\"http://localhost:9902/_admin\"")
       expect(html).toContain("mostly <a href=\"http://localhost:9902/_admin\">numbers</a>")
@@ -216,7 +216,7 @@ describe("E2E: /_ui traffic numbers", () => {
       expect(row).toContain("aria-disabled=\"true\"")
       expect(row).toContain("spark spark-off")
       expect(row).toContain("data-confirm=\"Delete parked and its 1 stub?\"")
-      expect(row.match(/role="cell">—<\/span>/g)).toHaveLength(4)
+      expect(row.match(/role="cell" data-label="[^"]+">—<\/span>/g)).toHaveLength(4)
     } finally {
       await remove(imp.id)
     }

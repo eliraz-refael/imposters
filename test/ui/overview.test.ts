@@ -235,6 +235,25 @@ describe("overview page", () => {
     expect(page).toContain("imposters v1.2.3 · binds 127.0.0.1")
   })
 
+  it("labels each value cell with its column name, for the stacked cards on a narrow screen", () => {
+    const page = overviewPage(overview([row({ p95: 12 }), row({ id: "imp-2", running: false })]), {
+      theme: null,
+      form: emptyCreateForm
+    }).value
+    const labels = ["stubs", "traffic · 15 min", "req/min", "5xx", "p95", "unmatched"]
+    for (const label of labels) {
+      // In the header row, and on both rows
+      expect(page).toContain(`>${label}</span>`)
+      expect(page.split(`data-label="${label}"`)).toHaveLength(3)
+    }
+    expect(page).toContain("<span class=\"num\" role=\"cell\" data-label=\"p95\">12 ms</span>")
+    // A stopped row keeps its dashes under the labels
+    expect(page).toContain("<span class=\"num\" role=\"cell\" data-label=\"req/min\">—</span>")
+    // The cards lay out by these hooks
+    expect(page.split("class=\"cell-protocol\"")).toHaveLength(3)
+    expect(page.split("class=\"cell-spark\"")).toHaveLength(3)
+  })
+
   it("a row without a clock still renders", () => {
     const data = { ...overview([row({ lastRequestAtMs: 999_000 })]), health: Option.none() }
     const page = overviewPage(data, { theme: null, form: emptyCreateForm }).value

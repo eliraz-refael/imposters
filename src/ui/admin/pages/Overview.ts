@@ -99,16 +99,27 @@ const strip = (data: Overview): SafeHtml => {
 
 // ---------------------------------------------------------------- table
 
+// Column names; the cells repeat them as `data-label`, which the stacked cards on a narrow
+// screen print above each value (ui.css), since those cards have no header row
+const COLUMN = {
+  stubs: "stubs",
+  traffic: "traffic · 15 min",
+  rate: "req/min",
+  serverErrors: "5xx",
+  p95: "p95",
+  unmatched: "unmatched"
+} as const
+
 const COLUMNS: ReadonlyArray<readonly [string, boolean]> = [
   ["name", false],
   ["protocol", false],
   ["port", false],
-  ["stubs", true],
-  ["traffic · 15 min", false],
-  ["req/min", true],
-  ["5xx", true],
-  ["p95", true],
-  ["unmatched", true]
+  [COLUMN.stubs, true],
+  [COLUMN.traffic, false],
+  [COLUMN.rate, true],
+  [COLUMN.serverErrors, true],
+  [COLUMN.p95, true],
+  [COLUMN.unmatched, true]
 ]
 
 const headRow: SafeHtml = html`<div class="row row-imposters row-head label" role="row">${
@@ -142,10 +153,10 @@ const imposterRow = (row: ImposterRow, nowMs: Option.Option<number>): SafeHtml =
     <span class="${row.running ? "dot-on" : "dot-off"}" aria-hidden="true"></span>
     <div class="stack">${name}<span class="label ellipsis">${statusLine(row, nowMs)}</span></div>
   </div>
-  <span role="cell">${protocolPill(row.protocol)}</span>
+  <span class="cell-protocol" role="cell">${protocolPill(row.protocol)}</span>
   <span class="port" role="cell">:${row.port}</span>
-  <span class="num" role="cell">${count(row.stubs)}</span>
-  <span role="cell">${
+  <span class="num cell-stubs" role="cell" data-label="${COLUMN.stubs}">${count(row.stubs)}</span>
+  <span class="cell-spark" role="cell" data-label="${COLUMN.traffic}">${
     sparkline({
       values: row.running ? row.timeline : [],
       width: 150,
@@ -153,12 +164,14 @@ const imposterRow = (row: ImposterRow, nowMs: Option.Option<number>): SafeHtml =
       tone: !row.running ? "off" : hot ? "warn" : "on"
     })
   }</span>
-  <span class="num" role="cell">${off(rate(row.last15.requests))}</span>
-  <span class="num${hot ? " c-warn" : ""}" role="cell">${
+  <span class="num" role="cell" data-label="${COLUMN.rate}">${off(rate(row.last15.requests))}</span>
+  <span class="num${hot ? " c-warn" : ""}" role="cell" data-label="${COLUMN.serverErrors}">${
     off(percent(row.last15.serverErrors, row.last15.requests))
   }</span>
-  <span class="num" role="cell">${off(row.p95 === undefined ? NONE : ms(row.p95))}</span>
-  <span class="num" role="cell">${countsUnmatched(row) ? off(count(row.last15.unmatched)) : NONE}</span>
+  <span class="num" role="cell" data-label="${COLUMN.p95}">${off(row.p95 === undefined ? NONE : ms(row.p95))}</span>
+  <span class="num" role="cell" data-label="${COLUMN.unmatched}">${
+    countsUnmatched(row) ? off(count(row.last15.unmatched)) : NONE
+  }</span>
   <div class="actions" role="cell">
     ${
     postButton({
