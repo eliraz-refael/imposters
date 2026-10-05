@@ -1,6 +1,7 @@
 import * as DateTime from "effect/DateTime"
 import type { RequestLogEntry } from "../../schemas/RequestLogSchema.js"
 import type { Stub } from "../../schemas/StubSchema.js"
+import type { LoggedEntry } from "../../services/RequestLogger.js"
 import { HOT_SERVER_ERROR_RATE } from "../admin/OverviewData.js"
 import { ago, clockTime, count, decimal, millis, ms, NONE } from "../components/format.js"
 import { imposterHeader, STUB_COUNT_ID } from "../components/imposterHeader.js"
@@ -85,13 +86,16 @@ const queryString = (query: Readonly<Record<string, string>>): string => {
   return params === "" ? "" : `?${params}`
 }
 
-/** One request, linking to its detail page; also what each SSE event carries */
-export const requestRow = (entry: RequestLogEntry, ctx: RowContext): SafeHtml => {
+/**
+ * One request, linking to its detail page; also what each SSE event carries. `seq` (the log's
+ * sequence number) lets ui.js keep the list in log order whatever order the rows arrive in.
+ */
+export const requestRow = (entry: RequestLogEntry, ctx: RowContext, seq?: number): SafeHtml => {
   const method = entry.request.method.toUpperCase()
   const fullPath = `${entry.request.path}${queryString(entry.request.query)}`
-  return html`<a class="req req-row" id="req-${entry.id}" href="/_admin/requests/${
-    encodeURIComponent(entry.id)
-  }"><span class="req-time c-muted">${
+  return html`<a class="req req-row" id="req-${entry.id}"${
+    seq === undefined ? html`` : html` data-seq="${seq}"`
+  } href="/_admin/requests/${encodeURIComponent(entry.id)}"><span class="req-time c-muted">${
     clockTime(DateTime.toEpochMillis(entry.timestamp))
   }</span><span class="req-method ${
     METHOD_CLASS[method] ?? "c-text-2"
@@ -103,8 +107,8 @@ export const requestRow = (entry: RequestLogEntry, ctx: RowContext): SafeHtml =>
 }
 
 /** Newest first; nothing at all when there are none, so the list is `:empty` */
-export const requestRows = (entries: ReadonlyArray<RequestLogEntry>, ctx: RowContext): SafeHtml =>
-  concat(entries.map((entry) => requestRow(entry, ctx)))
+export const requestRows = (rows: ReadonlyArray<LoggedEntry>, ctx: RowContext): SafeHtml =>
+  concat(rows.map((row) => requestRow(row.entry, ctx, row.seq)))
 
 // ---------------------------------------------------------------- stats
 
@@ -244,7 +248,7 @@ export const liveFragment = (data: LiveData): SafeHtml =>
 export interface LivePageOpts {
   readonly theme: Theme | null
   // Newest first
-  readonly recent: ReadonlyArray<RequestLogEntry>
+  readonly recent: ReadonlyArray<LoggedEntry>
   readonly adminUiUrl?: string
 }
 

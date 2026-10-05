@@ -27,8 +27,12 @@ export const Step = Schema.Union([
   Schema.TaggedStruct("Drop", {}),
   // The browser gives up on the stream (CLOSED), as on an HTTP error answer
   Schema.TaggedStruct("GiveUp", {}),
-  // The server logs requests: each is sent on an open stream
+  // The server logs requests: each is sent on an open stream, and arrives at once
   Schema.TaggedStruct("Log", { count: Schema.Literals([1, 2, 25]) }),
+  // The server logs requests whose events are still in flight on an open stream: they arrive,
+  // in log order, at a later Deliver, or never if the stream drops first
+  Schema.TaggedStruct("LogInFlight", { count: Schema.Literals([1, 2, 25]) }),
+  Schema.TaggedStruct("Deliver", { all: Schema.Boolean }),
   Schema.TaggedStruct("Pause", {}),
   Schema.TaggedStruct("Resume", {}),
   // The oldest re-fetch in flight is answered: the newest rows as of when it was sent (the server
@@ -58,6 +62,8 @@ const CLOSED = 2
 
 class FakeEventSource extends EventTarget {
   readyState = CONNECTING
+  // Events sent and not yet arrived, oldest first; lost when the connection drops
+  readonly inFlight: Array<number> = []
   // Closed by the page (close()), not by the browser giving up
   closedByPage = false
   constructor(readonly url: string) {
@@ -121,15 +127,19 @@ interface World {
   hidden: boolean
 }
 
-let world: World = { log: [], sources: [], inFlight: [], hidden: false }
+const freshWorld = (log: Array<number>): World => ({ log, sources: [], inFlight: [], hidden: false })
+
+let world: World = freshWorld([])
 
 const newest = (log: ReadonlyArray<number>): ReadonlyArray<number> => log.slice(-RECENT_ROWS).reverse()
-const rowsHtml = (ids: ReadonlyArray<number>): string => requestRows(ids.map(entry), ctx).value
+// In the fake log an id is its own sequence number
+const logged = (id: number) => ({ entry: entry(id), seq: id })
+const rowsHtml = (ids: ReadonlyArray<number>): string => requestRows(ids.map(logged), ctx).value
 
 const fakeFetch = (input: RequestInfo | URL): Promise<Response> => {
   const url = String(input)
   if (url.endsWith("/page")) {
-    const page = livePage(liveData, { theme: null, recent: newest(world.log).map(entry) }).value
+    const page = livePage(liveData, { theme: null, recent: newest(world.log).map(logged) }).value
     return Promise.resolve(new Response(/<body>([\s\S]*)<\/body>/.exec(page)?.[1] ?? ""))
   }
   if (url.endsWith("/_admin/fragments/requests")) {
@@ -172,6 +182,15 @@ const persistedPageshow = (persisted: boolean): Event => {
   return event
 }
 
+// An event arrives
+const arrive = (source: FakeEventSource, id: number): void => {
+  source.dispatchEvent(new MessageEvent("request", { data: requestRow(entry(id), ctx, id).value }))
+}
+
+const lose = (source: FakeEventSource): void => {
+  source.inFlight.length = 0
+}
+
 const answerOldest = (ok: boolean, late: boolean): void => {
   const next = world.inFlight.shift()
   if (next === undefined) return
@@ -190,24 +209,33 @@ const apply = async (step: Step): Promise<void> => {
       break
     case "Drop":
       if (source !== undefined && source.readyState === OPEN) {
+        lose(source)
         source.readyState = CONNECTING
         source.dispatchEvent(new Event("error"))
       }
       break
     case "GiveUp":
       if (source !== undefined && source.readyState !== CLOSED) {
+        lose(source)
         source.readyState = CLOSED
         source.dispatchEvent(new Event("error"))
       }
       break
     case "Log":
+    case "LogInFlight":
       for (let i = 0; i < step.count; i++) {
         const id = world.log.length + 1
         world.log.push(id)
         const open = stream()
-        if (open !== undefined && open.readyState === OPEN) {
-          open.dispatchEvent(new MessageEvent("request", { data: requestRow(entry(id), ctx).value }))
-        }
+        if (open === undefined || open.readyState !== OPEN) continue
+        // In flight behind earlier events, or arrives at once (and so only with nothing ahead of it)
+        if (step._tag === "LogInFlight" || open.inFlight.length > 0) open.inFlight.push(id)
+        else arrive(open, id)
+      }
+      break
+    case "Deliver":
+      if (source !== undefined && source.readyState === OPEN) {
+        for (const id of source.inFlight.splice(0, step.all ? source.inFlight.length : 1)) arrive(source, id)
       }
       break
     case "Pause":
@@ -228,6 +256,7 @@ const apply = async (step: Step): Promise<void> => {
     case "PageHide":
       if (!world.hidden) {
         world.hidden = true
+        if (source !== undefined) lose(source)
         window.dispatchEvent(new Event("pagehide"))
       }
       break
@@ -267,13 +296,14 @@ const quiesce = async (): Promise<void> => {
     if (world.hidden) await apply({ _tag: "PageShow", persisted: true })
     if (isPaused()) await apply({ _tag: "Resume" })
     await apply({ _tag: "Open" })
+    await apply({ _tag: "Deliver", all: true })
     while (world.inFlight.length > 0) await apply({ _tag: "AnswerOk", late: false })
     await apply({ _tag: "Advance", ms: 30000 })
   }
 }
 
 export const runCase = async ({ initial, steps }: Case): Promise<void> => {
-  world = { log: Array.from({ length: initial }, (_, i) => i + 1), sources: [], inFlight: [], hidden: false }
+  world = freshWorld(Array.from({ length: initial }, (_, i) => i + 1))
   vi.clearAllTimers()
   // A fresh list: swapped in by a data-action, which starts its stream and closes the last case's
   document.body.innerHTML = `<div id="host"></div><button id="load" data-action="GET /page" data-target="#host">`

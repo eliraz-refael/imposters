@@ -332,9 +332,6 @@ const startSse = (el: HTMLElement): void => {
   // page was rendered, before the stream subscribed, would otherwise never show
   let stale = false
   const waiting: Array<string> = []
-  // How many of the first waiting rows were queued before the re-fetch in flight was sent: its
-  // answer covers them (they are in it, or older than all of it), so they are dropped when it lands
-  let covered = 0
   // A failed re-fetch with the stream still open tries again after `retryMs` (doubling to 30s);
   // a stream that drops instead re-fetches when it opens
   let retry: ReturnType<typeof setTimeout> | undefined
@@ -347,11 +344,35 @@ const startSse = (el: HTMLElement): void => {
     return existing !== null && el.contains(existing)
   }
 
+  // A row's place in the server's log (`data-seq`), if it has one
+  const seqOf = (row: Element): number | undefined => {
+    const seq = Number(row.getAttribute("data-seq") ?? Number.NaN)
+    return Number.isFinite(seq) ? seq : undefined
+  }
+
+  // Puts a row with a sequence number where it belongs, newest first, whatever order rows
+  // arrive in (an event still in flight can land after a newer re-fetch answer). A row older
+  // than everything in a full list is dropped. Returns whether it was added.
+  const place = (row: Element, seq: number): boolean => {
+    const before = Array.from(el.children).find((listed) => (seqOf(listed) ?? Number.POSITIVE_INFINITY) < seq)
+    if (before === undefined && el.children.length >= max) return false
+    el.insertBefore(row, before ?? null)
+    return true
+  }
+
   const insert = (text: string): void => {
     const fragment = parse(text)
     for (const row of Array.from(fragment.children)) if (isShown(row)) row.remove()
-    const added = Array.from(fragment.children)
-    el.prepend(fragment)
+    const added: Array<Element> = []
+    // Rows without a sequence number go on top, in the order they came
+    const unnumbered: Array<Element> = []
+    for (const row of Array.from(fragment.children)) {
+      const seq = seqOf(row)
+      if (seq === undefined) unnumbered.push(row)
+      else if (place(row, seq)) added.push(row)
+    }
+    el.prepend(...unnumbered)
+    for (const row of unnumbered) added.push(row)
     for (const row of added) {
       row.classList.add("fresh")
       row.addEventListener("animationend", () => row.classList.remove("fresh"), { once: true })
@@ -384,7 +405,6 @@ const startSse = (el: HTMLElement): void => {
     try {
       while (stale && !paused && !awaitingOpen()) {
         stale = false
-        covered = waiting.length
         const rows = await fetchFragment(url)
         if (rows === null) {
           stale = true
@@ -396,16 +416,11 @@ const startSse = (el: HTMLElement): void => {
           stale = true
           break
         }
+        // Rows that waited meanwhile are added after it, each in its place by sequence number
         swap(el, rows, "inner")
-        waiting.splice(0, covered)
-        // The stream went down while it was out: the rows it sent before that may be older than
-        // the whole answer (the server read its log later), so they would land on top of newer
-        // rows. They were logged before the next open, whose re-fetch covers them.
-        if (!connected) waiting.splice(0)
       }
     } finally {
       reloading = false
-      covered = 0
       if (failed) {
         if (!paused) waiting.splice(0).forEach(insert)
         retryLater()
@@ -453,7 +468,6 @@ const startSse = (el: HTMLElement): void => {
       waiting.push(event.data)
       if (waiting.length > max) {
         waiting.shift()
-        if (covered > 0) covered--
         stale = true
       }
       renderPause()

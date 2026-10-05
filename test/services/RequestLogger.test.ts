@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber, ManagedRuntime, PubSub, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, ManagedRuntime, Scope, Stream } from "effect"
 import * as DateTime from "effect/DateTime"
 import { NonEmptyString } from "imposters/schemas/common"
 import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
@@ -149,18 +149,29 @@ describe("RequestLogger", () => {
     )
   })
 
-  it("PubSub: subscribe then log receives entry", async () => {
+  it("numbers every entry in log order, across imposters, and getRecent returns the latest with their numbers", async () => {
     await runtime.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const logger = yield* RequestLogger
-          const dequeue = yield* logger.subscribe
-          const entry = makeEntry({ id: "ps1", imposterId: "i-pubsub" })
-          yield* logger.log(entry)
-          const received = yield* PubSub.take(dequeue)
-          expect(received.id).toBe("ps1")
-        })
-      )
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        for (const [id, imposterId] of [["q1", "i-seq-a"], ["q2", "i-seq-b"], ["q3", "i-seq-a"], ["q4", "i-seq-a"]]) {
+          yield* logger.log(makeEntry({ id, imposterId }))
+        }
+        const recent = yield* logger.getRecent("i-seq-a", 2)
+        expect(recent.map((row) => row.entry.id)).toEqual(["q3", "q4"])
+        const all = yield* logger.getRecent("i-seq-a", 10)
+        const seqs = all.map((row) => row.seq)
+        expect(seqs).toEqual([...seqs].sort((a, b) => a - b))
+        expect(new Set(seqs).size).toBe(3)
+        // Numbered across imposters: q2 sits between q1 and q3
+        const [b] = yield* logger.getRecent("i-seq-b", 1)
+        expect(b !== undefined && seqs[0] !== undefined && seqs[1] !== undefined && b.seq > seqs[0] && b.seq < seqs[1])
+          .toBe(true)
+        // Clearing the log does not restart the numbering
+        yield* logger.clear("i-seq-a")
+        yield* logger.log(makeEntry({ id: "q5", imposterId: "i-seq-a" }))
+        const [after] = yield* logger.getRecent("i-seq-a", 1)
+        expect((after?.seq ?? 0) > (seqs.at(-1) ?? Infinity)).toBe(true)
+      })
     )
   })
 
@@ -230,7 +241,7 @@ describe("RequestLogger", () => {
         yield* logger.log(makeEntry({ id: "other", imposterId: "i-follow-other" }))
         yield* logger.log(makeEntry({ id: "f2", imposterId: "i-follow" }))
         const received = yield* entries.pipe(Stream.take(2), Stream.runCollect)
-        expect(Array.from(received, (e) => e.id)).toEqual(["f1", "f2"])
+        expect(Array.from(received, (row) => row.entry.id)).toEqual(["f1", "f2"])
       }))
     )
   })

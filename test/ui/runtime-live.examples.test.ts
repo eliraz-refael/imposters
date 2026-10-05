@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { type Case, runCase, useLiveListHarness } from "imposters/test/helpers/liveList"
+import { type Case, runCase, type Step, useLiveListHarness } from "imposters/test/helpers/liveList"
 import { describe } from "vitest"
 
 // Counterexamples test/ui/runtime-live.prop.test.ts found in the live list, shrunk, kept as
@@ -62,6 +62,18 @@ describe("ui.ts live list: found by the property test", () => {
       { _tag: "Log", count: 25 },
       { _tag: "AnswerOk", late: true },
       { _tag: "AnswerFail" }
+    ]
+  })
+
+  pinned("a row still in flight when a newer re-fetch answer lands goes below it, not on top", {
+    initial: 0,
+    steps: [
+      { _tag: "Drop" },
+      { _tag: "Open" },
+      { _tag: "LogInFlight", count: 25 },
+      ...Array.from({ length: 10 }, (): Step => ({ _tag: "LogInFlight", count: 2 })),
+      { _tag: "Deliver", all: false },
+      { _tag: "AnswerOk", late: true }
     ]
   })
 })

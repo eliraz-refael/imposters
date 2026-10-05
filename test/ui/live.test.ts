@@ -265,6 +265,11 @@ describe("requestRow", () => {
     expect(row).toContain("&lt;img src=x onerror=alert(1)&gt;")
   })
 
+  it("carries the log's sequence number when it has one, for ui.js to order by", () => {
+    expect(requestRow(entry({}), { stubs: [], protocol: "HTTP" }, 42).value).toContain(`id="req-req-1" data-seq="42"`)
+    expect(requestRow(entry({}), { stubs: [], protocol: "HTTP" }).value).not.toContain("data-seq")
+  })
+
   it("marks a slow answer", () => {
     expect(requestRow(entry({ duration: 2004 }), { stubs: [], protocol: "HTTP" }).value).toContain(
       `class="req-ms num c-warn">2,004 ms<`
@@ -302,7 +307,7 @@ describe("livePage", () => {
       stubHits: [{ ...hits(hostileStub, [1], 0), position: 1 }],
       unmatched: [{ method: "GET", path: `/${HOSTILE}`, count: 2, lastSeenAt: NOW - 3000 }]
     })
-    const page = livePage(data, { theme: null, recent: [entry({ path: `/${HOSTILE}` })] }).value
+    const page = livePage(data, { theme: null, recent: [{ entry: entry({ path: `/${HOSTILE}` }), seq: 1 }] }).value
     expect(page).not.toContain("<img")
     expect(page).toContain("/_admin/stubs?draft=GET&amp;path=%2F%3Cimg")
   })

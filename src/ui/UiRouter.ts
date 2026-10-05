@@ -14,11 +14,10 @@ import type {
   StubNotFoundError
 } from "../repositories/ImposterRepository.js"
 import { NonEmptyString } from "../schemas/common.js"
-import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import { Predicate, ResponseConfig, ResponseMode, type Stub } from "../schemas/StubSchema.js"
 import { StubChange } from "../server/StubChange.js"
 import type { MetricsServiceShape } from "../services/MetricsService.js"
-import type { RequestLoggerShape } from "../services/RequestLogger.js"
+import type { LoggedEntry, RequestLoggerShape } from "../services/RequestLogger.js"
 import { assetRoute } from "./assets/serve.js"
 import { browserHost, crossSiteRefusal, isCrossSite } from "./crossSite.js"
 import { faviconResponse } from "./favicon.js"
@@ -297,9 +296,9 @@ export const makeUiRouter = (deps: UiDeps) => {
   })
 
   // Newest first
-  const recentRows: Effect.Effect<ReadonlyArray<RequestLogEntry>> = deps.requestLogger
-    .getEntries(deps.id, { limit: RECENT_ROWS })
-    .pipe(Effect.map((entries) => entries.slice().reverse()))
+  const recentRows: Effect.Effect<ReadonlyArray<LoggedEntry>> = deps.requestLogger
+    .getRecent(deps.id, RECENT_ROWS)
+    .pipe(Effect.map((rows) => rows.slice().reverse()))
 
   const livePageResponse = (request: Request): Effect.Effect<Response> =>
     Effect.gen(function*() {
@@ -324,14 +323,14 @@ export const makeUiRouter = (deps: UiDeps) => {
     const stream = Stream.unwrap(Effect.gen(function*() {
       const entries = yield* deps.requestLogger.follow(deps.id)
       const rows = entries.pipe(
-        Stream.mapEffect((entry) =>
+        Stream.mapEffect(({ entry, seq }) =>
           rowContext.pipe(
             Effect.map((ctx) =>
               Sse.encoder.write({
                 _tag: "Event",
                 event: REQUEST_EVENT,
                 id: entry.id,
-                data: requestRow(entry, ctx).value
+                data: requestRow(entry, ctx, seq).value
               })
             )
           )

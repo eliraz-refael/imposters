@@ -125,7 +125,9 @@ describe("E2E: live request events", () => {
       expect((await httpGet(9021, "/hello")).body).toBe("hi")
       const text = await events.waitFor((t) => t.includes("/hello</span>"))
       expect(text).toContain("event: request")
-      expect(text).toMatch(/data: <a class="req req-row" id="req-([0-9a-f-]{36})" href="\/_admin\/requests\/\1">/)
+      expect(text).toMatch(
+        /data: <a class="req req-row" id="req-([0-9a-f-]{36})" data-seq="\d+" href="\/_admin\/requests\/\1">/
+      )
       expect(text).toContain("#1 /hello")
 
       // UI traffic is not logged, so the stream's own request never shows up in it

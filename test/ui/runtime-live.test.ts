@@ -5,7 +5,7 @@ import { NonEmptyString } from "imposters/schemas/common"
 import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
 import { emptyTimeline, timelineAt } from "imposters/services/MetricsAggregates"
 import { buildLiveData, type LiveData } from "imposters/ui/LiveData"
-import { liveFragment, livePage, requestRow, requestRows } from "imposters/ui/pages/live"
+import { liveFragment, livePage, requestRow } from "imposters/ui/pages/live"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 // The live page's markup driven by the browser runtime (ui-assets/ui.ts) in happy-dom: the
@@ -117,7 +117,8 @@ beforeAll(async () => {
     fetched.push(url)
     if (url.endsWith("/_admin/fragments/requests")) {
       // The rows as the server had them when it was asked
-      const body = requestRows(reloadRows, ctx).value
+      // Without sequence numbers, so rows land as they arrive (the property test covers ordering)
+      const body = reloadRows.map((e) => requestRow(e, ctx).value).join("")
       if (failReload) {
         failReload = false
         return Promise.resolve(new Response("down", { status: 500 }))
@@ -130,7 +131,7 @@ beforeAll(async () => {
     }
     return Promise.resolve(new Response(liveFragment(data(liveTotal)).value))
   })
-  const page = livePage(data(1), { theme: null, recent: [entry("r0", "/first")] }).value
+  const page = livePage(data(1), { theme: null, recent: [{ entry: entry("r0", "/first"), seq: 1 }] }).value
   // Beside the page: a list with no data-sse-reload, so nothing to re-fetch from
   const plain = `<section class="panel"><button id="plain-pause" data-sse-pause="#plain-rows"></button>` +
     `<div id="plain-rows" data-sse="/plain" data-sse-event="request" data-sse-max="2"></div></section>`
