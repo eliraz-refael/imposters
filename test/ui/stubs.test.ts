@@ -304,9 +304,17 @@ describe("the templates", () => {
     expect(add).toContain(">add stub</button>")
     const edit = stubEditor({ editing: { id: "a b", position: 2 }, text: "{}", insert: "last", focus: true }).value
     expect(edit).toContain(`action="/_admin/stubs/a%20b"`)
-    expect(edit).toContain("edit stub #2")
+    expect(edit).toContain(`edit stub<span id="stub-position-a b"> #2</span>`)
     expect(edit).not.toContain(`name="position"`)
     expect(edit).toContain(" data-focus")
+  })
+
+  it("a delete's answer keeps the editor, and renumbers the heading of the stub it edits", () => {
+    const second = stub({ id: "s2" })
+    const answer = stubsAnswer(data({ stubs: [orders, second] })).value
+    expect(answer).not.toContain(`id="stub-editor"`)
+    expect(answer).toContain(`<span id="stub-position-s2" data-oob> #2</span>`)
+    expect(answer).toContain(`id="tab-stubs-count" data-oob>2<`)
   })
 
   it("an action's answer: the list, then the editor and the tab count out of band", () => {

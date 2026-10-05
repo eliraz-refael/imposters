@@ -144,7 +144,7 @@ describe("E2E: the stubs page", () => {
 
       // The edit page and the editor fragment start from the stub
       const page = await (await fetch(url(8703, `/_admin/stubs?edit=${second?.id ?? ""}`))).text()
-      expect(page).toContain("edit stub #2")
+      expect(page).toContain(`edit stub<span id="stub-position-${second?.id ?? ""}"> #2</span>`)
       expect(JSON.parse(textareaOf(page))).toEqual({
         predicates: pathIs("/b2"),
         responses: [{ status: 202 }],
@@ -170,9 +170,23 @@ describe("E2E: the stubs page", () => {
       const page404 = await post(8704, "/_admin/stubs/gone", { stub: stubJson({ responses: [{}] }) })
       expect(page404.status).toBe(404)
       const html = await page404.text()
-      expect(html).toContain(`<h2 class="title" id="editor-title">edit stub</h2>`)
-      expect(html).not.toContain("edit stub #0")
+      expect(html).toContain(`<h2 class="title" id="editor-title">edit stub<span id="stub-position-gone"></span></h2>`)
+      expect(html).not.toContain("#0")
       expect(await stubsOf(id)).toEqual([])
+    })
+  }, 10000)
+
+  it("with JS, a delete above the stub being edited renumbers the editor's heading", async () => {
+    await withImposter(8710, [
+      { predicates: pathIs("/a"), responses: [{ status: 200 }] },
+      { predicates: pathIs("/b"), responses: [{ status: 200 }] }
+    ], async (id) => {
+      const [first, second] = await stubsOf(id)
+      const editor = await (await fetch(url(8710, `/_admin/fragments/stub-editor?edit=${second?.id ?? ""}`))).text()
+      expect(editor).toContain(`<span id="stub-position-${second?.id ?? ""}"> #2</span>`)
+      const deleted = await post(8710, `/_admin/stubs/${first?.id ?? ""}/delete`, {}, { fragment: true })
+      // The answer replaces that heading's number by id (ui.js swaps data-oob elements)
+      expect(await deleted.text()).toContain(`<span id="stub-position-${second?.id ?? ""}" data-oob> #1</span>`)
     })
   }, 10000)
 

@@ -209,10 +209,18 @@ const modeControl = (text: string): SafeHtml => {
   }</fieldset>`
 }
 
+// The edited stub's place, " #2" (none for a stub no longer listed). A delete's answer carries
+// one for every stub, out of band: the page has only the edited stub's, which a delete above it
+// renumbers, and the others are dropped.
+const positionMark = (id: string, position: number, oob: boolean): SafeHtml =>
+  html`<span id="stub-position-${id}"${oob ? html` data-oob` : html``}>${
+    position > 0 ? ` #${String(position)}` : ""
+  }</span>`
+
 const heading = (state: EditorState): SafeHtml => {
   if (state.editing !== undefined) {
     return html`<h2 class="title" id="editor-title">edit stub${
-      state.editing.position > 0 ? ` #${String(state.editing.position)}` : ""
+      positionMark(state.editing.id, state.editing.position, false)
     }</h2><span class="label">${state.editing.id.slice(0, 8)}</span>`
   }
   return html`<h2 class="title" id="editor-title">new stub</h2>${
@@ -258,13 +266,15 @@ ${state.text}</textarea>
 // ---------------------------------------------------------------- page and answers
 
 /**
- * An action's answer with JS: the list, a fresh editor (when given) and the tab's count, the last
- * two out of band
+ * An action's answer with JS: the list, a fresh editor (when given; else each stub's place, for
+ * the heading of the one being edited) and the tab's count, the last two out of band
  */
 export const stubsAnswer = (data: StubsData, editor?: EditorState): SafeHtml =>
-  html`${stubList(data)}${editor === undefined ? html`` : stubEditor({ ...editor, oob: true })}${
-    tabCount(data.cards.length, STUB_COUNT_ID, true)
-  }`
+  html`${stubList(data)}${
+    editor === undefined
+      ? concat(data.cards.map((card) => positionMark(card.id, card.position, true)))
+      : stubEditor({ ...editor, oob: true })
+  }${tabCount(data.cards.length, STUB_COUNT_ID, true)}`
 
 export interface StubsPageOpts {
   readonly theme: Theme | null
