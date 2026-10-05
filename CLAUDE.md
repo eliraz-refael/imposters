@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 961 tests across 87 files.
+All three gates pass: `bun check`, `bun lint`, and 1004 tests across 91 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -167,15 +167,15 @@ src/
     UiRouter.ts            # per-imposter /_admin — plain URL matcher, returns Response | null; GET /_admin/events is the SSE stream
     LiveData.ts            # pure data for the live view; stubDraft.ts ("stub it" drafts); crossSite.ts (the shared POST guard)
     StubsData.ts           # the stubs page's view-model: cards, next marker, delay labels, the fallback line
-    editor/                # draftText.ts (text ⇄ stub draft, line/column errors; no imports, ui-assets bundles it), checkStub.ts (server-side check)
+    editor/                # draftText.ts (text ⇄ stub draft, line/column errors), formModel.ts (draft ⇄ form state, edits; pure), formView.ts (each form control's attributes, shared by server and runtime): the three import only each other, editor.js bundles them; checkStub.ts (server-side check)
     html.ts                # tagged-template engine with auto-escaping
     layout.ts, partials.ts
     assets/                # generated.ts (committed, from ui-assets/ by `bun gen-ui-assets`), serve.ts (hashed, immutable, ETag)
     components/            # shell (data-theme, hashed asset links), header, imposterHeader (tabs), primitives (postButton…), sparkline (pure points()), format
     theme.ts               # themeFromCookie (imposters-theme)
-    pages/                 # live and stubs (redesigned), requests, request-detail (old layout until PR 9)
+    pages/                 # live and stubs (redesigned; stubForm.ts is the editor's form view and row templates), requests, request-detail (old layout until PR 9)
     admin/                 # global /_ui dashboard: AdminUiRouter (forms: 303 without JS, fragments with), OverviewData (decodes the API), pages/Overview.ts
-ui-assets/                 # UI sources: tokens.css, fonts.css, ui.css, ui.ts (browser runtime, own tsconfig, rootDir "." so it can bundle src/ui/editor/draftText.ts), editor.ts (the stub editor), textEdit.ts (pure typing helpers)
+ui-assets/                 # UI sources: tokens.css, fonts.css, ui.css, ui.ts (runtime on every page; dispatches ui:init), editor-main.ts (editor.js, stubs page only) with editor.ts, form.ts, applyEdit.ts, textEdit.ts; own tsconfig, rootDir "." so it can bundle src/ui/editor/{draftText,formModel,formView}.ts
 scripts/ui-assets.ts       # the asset generator (gen-ui-assets.ts is its CLI)
 test/                      # mirrors src/, plus test/e2e/ and test/helpers/
 examples/                  # config files, e.g. s3.json (an S3 imposter on 7070), ui-showcase.json (the screenshots script's data)
@@ -252,7 +252,9 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - **UI tokens:** every `--im-*` value must match `site/src/styles/theme.css` (a test checks it); UI-only tokens are `--ui-*`. The `imposters-theme` cookie is set on both `/_ui` and `/_admin`.
 - **Randomness goes through Effect's `Random`** (delay ranges, random response mode), never `Math.random`. In tests, fix it with `Effect.provideService(Random.Random, { nextDoubleUnsafe: () => d, nextIntUnsafe: () => 0 })` or `Random.withSeed(seed)`. `Random.nextIntBetween(min, max)` includes both ends unless `{ halfOpen: true }`.
 - **SSE streams subscribe before their first chunk** (`RequestLogger.follow` returns a scoped Stream), and every stream does `Stream.interruptWhen(shutdown)` on the run's Deferred, so it ends on stop even on a server that never cancels a body.
-- **Property tests:** use `@effect/vitest`'s `it.prop` (sync) or `it.effect.prop` (returns an Effect; wrap async driving in `Effect.promise`). Inputs are Schemas or `effect/unstable/arbitrary/Arbitrary`s, so describe them as a Schema (e.g. a tagged union of steps). Options go in the 4th argument: `{ timeout, arbitrary: { runs, size, seed } }`; `size` bounds collection lengths. With `vi.useFakeTimers`, fake only `setTimeout`/`clearTimeout`/`setInterval`/`clearInterval`/`Date`: Effect's scheduler uses `setImmediate`, and faking it hangs the property. Pin each shrunk counterexample as a plain test. Reach for this for any state machine (see `test/ui/runtime-live.prop.test.ts`, and `test/ui/runtime-editor.prop.test.ts` with `test/helpers/stubEditor.ts`).
+- **Property tests:** use `@effect/vitest`'s `it.prop` (sync) or `it.effect.prop` (returns an Effect; wrap async driving in `Effect.promise`). Inputs are Schemas or `effect/unstable/arbitrary/Arbitrary`s, so describe them as a Schema (e.g. a tagged union of steps). Options go in the 4th argument: `{ timeout, arbitrary: { runs, size, seed } }`; `size` bounds collection lengths. With `vi.useFakeTimers`, fake only `setTimeout`/`clearTimeout`/`setInterval`/`clearInterval`/`Date`: Effect's scheduler uses `setImmediate`, and faking it hangs the property. Pin each shrunk counterexample as a plain test. Reach for this for any state machine (see `test/ui/runtime-live.prop.test.ts`, `test/ui/runtime-editor.prop.test.ts` with `test/helpers/stubEditor.ts`, and `test/ui/{formModel,runtime-form}.prop.test.ts` with `test/helpers/formDrafts.ts`). Compare drafts with `shape()` from formDrafts, not `toStrictEqual`: it reads an own `"constructor"` key as the object's class, so two such objects never match.
+- **The modules editor.js bundles** (`src/ui/editor/{draftText,formModel,formView}.ts`) import nothing but each other: no Effect. formModel restates the schema's literals; `formModel.test.ts` checks they match.
+- **happy-dom quirks:** a select's value does not follow a `selected` attribute set after parsing (browsers do), so form.ts sets both; compare selects by `option[selected]`. It does not drop the newline after `<textarea>` either, and it flags valid number text like `1e3` as `badInput`.
 - `runPromise` wraps failures in `FiberFailure` — assert with `String(err).toContain(msg)`, not identity.
 - tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.
 
