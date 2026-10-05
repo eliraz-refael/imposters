@@ -267,12 +267,17 @@ ${state.text}</textarea>
 
 /**
  * An action's answer with JS: the list, a fresh editor (when given; else each stub's place, for
- * the heading of the one being edited) and the tab's count, the last two out of band
+ * the heading of the one being edited, and an empty place for a stub just deleted) and the tab's
+ * count, the last two out of band
  */
-export const stubsAnswer = (data: StubsData, editor?: EditorState): SafeHtml =>
+export const stubsAnswer = (data: StubsData, editor?: EditorState, deleted?: string): SafeHtml =>
   html`${stubList(data)}${
     editor === undefined
-      ? concat(data.cards.map((card) => positionMark(card.id, card.position, true)))
+      ? html`${concat(data.cards.map((card) => positionMark(card.id, card.position, true)))}${
+        deleted === undefined || data.cards.some((card) => card.id === deleted)
+          ? html``
+          : positionMark(deleted, 0, true)
+      }`
       : stubEditor({ ...editor, oob: true })
   }${tabCount(data.cards.length, STUB_COUNT_ID, true)}`
 

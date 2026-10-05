@@ -26,7 +26,7 @@ import { browserHost, crossSiteRefusal, isCrossSite } from "./crossSite.js"
 import { checkStubText, problemLines, type StubCheck } from "./editor/checkStub.js"
 import { draftToText } from "./editor/draftText.js"
 import { faviconResponse } from "./favicon.js"
-import { html, type SafeHtml } from "./html.js"
+import { concat, html, type SafeHtml } from "./html.js"
 import { errorBox, errorResponse, formString, htmlResponse } from "./htmx.js"
 import { buildLiveData, type LiveData } from "./LiveData.js"
 import {
@@ -138,9 +138,7 @@ interface EditorFailure {
 const insertAt = (value: string | undefined): InsertAt => value === "first" ? "first" : "last"
 
 const sentenceList = (lines: ReadonlyArray<string>): SafeHtml =>
-  html`<ul class="status-problems">${
-    lines.map((line) => html`<li>${line}</li>`).reduce((a, b) => html`${a}${b}`, html``)
-  }</ul>`
+  html`<ul class="status-problems">${concat(lines.map((line) => html`<li>${line}</li>`))}</ul>`
 
 export const makeUiRouter = (deps: UiDeps) => {
   const currentConfig: Effect.Effect<ImposterConfig> = deps.repo.get(deps.id).pipe(
@@ -252,13 +250,14 @@ export const makeUiRouter = (deps: UiDeps) => {
     })
 
   // A successful change: the refreshed list with JS (and, after an add or a save, a fresh
-  // editor), else back to the page. A delete keeps the editor: it may hold unsaved work.
-  const changed = (request: Request, freshEditor: boolean): Effect.Effect<Response> =>
+  // editor), else back to the page. A delete keeps the editor: it may hold unsaved work, and its
+  // heading loses the deleted stub's number when that is the stub it edits.
+  const changed = (request: Request, freshEditor: boolean, deleted?: string): Effect.Effect<Response> =>
     isFragmentRequest(request)
       ? Effect.gen(function*() {
         const data = yield* loadStubs
         const editor = freshEditor ? yield* newStubEditor(false) : undefined
-        return pageResponse(stubsAnswer(data, editor))
+        return pageResponse(stubsAnswer(data, editor, deleted))
       })
       : Effect.succeed(seeOther(STUBS_URL))
 
@@ -347,7 +346,7 @@ export const makeUiRouter = (deps: UiDeps) => {
   const deleteStub = (request: Request, stubId: string): Effect.Effect<Response> =>
     deps.applyStubChange(StubChange.Remove({ stubId })).pipe(
       Effect.ignore,
-      Effect.andThen(changed(request, false))
+      Effect.andThen(changed(request, false, stubId))
     )
 
   const listRequests = (params: URLSearchParams): Effect.Effect<Response, UiError> =>

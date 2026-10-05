@@ -317,6 +317,11 @@ describe("the templates", () => {
     expect(answer).toContain(`id="tab-stubs-count" data-oob>2<`)
   })
 
+  it("a delete of the stub being edited drops the number from its heading", () => {
+    const answer = stubsAnswer(data({ stubs: [orders] }), undefined, "gone").value
+    expect(answer).toContain(`<span id="stub-position-gone" data-oob></span>`)
+  })
+
   it("an action's answer: the list, then the editor and the tab count out of band", () => {
     const answer = stubsAnswer(data({ stubs: [orders] }), newEditor).value
     expect(answer).toMatch(/id="stub-editor"[^>]* data-oob>/)
