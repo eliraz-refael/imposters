@@ -30,4 +30,9 @@ describe("ui.ts live list: found by the property test", () => {
     initial: 0,
     steps: [{ _tag: "GiveUp" }, { _tag: "Pause" }, { _tag: "Resume" }, { _tag: "Log", count: 2 }]
   })
+
+  pinned("rows queued before a re-fetch are not added on top of its newer answer", {
+    initial: 0,
+    steps: [{ _tag: "Open" }, { _tag: "Log", count: 25 }, { _tag: "PageHide" }, { _tag: "Log", count: 25 }]
+  })
 })

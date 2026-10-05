@@ -332,6 +332,9 @@ const startSse = (el: HTMLElement): void => {
   // page was rendered, before the stream subscribed, would otherwise never show
   let stale = false
   const waiting: Array<string> = []
+  // How many of the first waiting rows were queued before the re-fetch in flight was sent: its
+  // answer covers them (they are in it, or older than all of it), so they are dropped when it lands
+  let covered = 0
   // A failed re-fetch with the stream still open tries again after `retryMs` (doubling to 30s);
   // a stream that drops instead re-fetches when it opens
   let retry: ReturnType<typeof setTimeout> | undefined
@@ -381,6 +384,7 @@ const startSse = (el: HTMLElement): void => {
     try {
       while (stale && !paused && !awaitingOpen()) {
         stale = false
+        covered = waiting.length
         const rows = await fetchFragment(url)
         if (rows === null) {
           stale = true
@@ -393,9 +397,11 @@ const startSse = (el: HTMLElement): void => {
           break
         }
         swap(el, rows, "inner")
+        waiting.splice(0, covered)
       }
     } finally {
       reloading = false
+      covered = 0
       if (failed) {
         if (!paused) waiting.splice(0).forEach(insert)
         retryLater()
@@ -443,6 +449,7 @@ const startSse = (el: HTMLElement): void => {
       waiting.push(event.data)
       if (waiting.length > max) {
         waiting.shift()
+        if (covered > 0) covered--
         stale = true
       }
       renderPause()
