@@ -72,6 +72,8 @@ let reloadRows: ReadonlyArray<RequestLogEntry> = []
 // Set to hold the next rows re-fetch until the test answers it
 let holdReload = false
 let releaseReload: (() => void) | undefined
+// Set to fail the next rows re-fetch with a 500
+let failReload = false
 let liveTotal = 0
 
 const rowsEl = (): HTMLElement => {
@@ -104,6 +106,8 @@ const reconnect = (): void => {
   source().dispatchEvent(new Event("error"))
   source().dispatchEvent(new Event("open"))
 }
+// Lets pending promise callbacks (a re-fetch landing, the next one starting) run
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 const row = (id: string, path: string): string => requestRow(entry(id, path), ctx).value
 
 beforeAll(async () => {
@@ -114,6 +118,10 @@ beforeAll(async () => {
     if (url.endsWith("/_admin/fragments/requests")) {
       // The rows as the server had them when it was asked
       const body = requestRows(reloadRows, ctx).value
+      if (failReload) {
+        failReload = false
+        return Promise.resolve(new Response("down", { status: 500 }))
+      }
       if (!holdReload) return Promise.resolve(new Response(body))
       holdReload = false
       return new Promise<Response>((resolve) => {
@@ -272,6 +280,48 @@ describe("ui.ts on the live page", () => {
     for (const id of ["p1", "p2", "p3"]) source("/plain").emit(`<p id="${id}">${id}</p>`)
     plainPause.click()
     expect(Array.from(plainRows.children, (child) => child.id)).toEqual(["p3", "p2"])
+  })
+
+  it("a stream that drops during a re-fetch is re-fetched when it opens again, not before", async () => {
+    reloadRows = [entry("u1", "/before-the-drop")]
+    holdReload = true
+    reconnect()
+    await vi.waitFor(() => expect(releaseReload).toBeDefined())
+    source().dispatchEvent(new Event("error"))
+    const before = reloads()
+    release()
+    await vi.waitFor(() => expect(paths()).toEqual(["/before-the-drop"]))
+    await flush()
+    // Still down: a re-fetch now would miss what is logged before the stream is back
+    expect(reloads()).toBe(before)
+    reloadRows = [entry("u2", "/logged-while-down"), entry("u1", "/before-the-drop")]
+    source().dispatchEvent(new Event("open"))
+    await vi.waitFor(() => expect(paths()).toEqual(["/logged-while-down", "/before-the-drop"]))
+  })
+
+  it("resuming while the stream is down waits for it to open before re-fetching", async () => {
+    pauseButton().click()
+    source().dispatchEvent(new Event("error"))
+    reloadRows = [entry("v1", "/before-resume")]
+    const before = reloads()
+    pauseButton().click()
+    await flush()
+    expect(reloads()).toBe(before)
+    reloadRows = [entry("v2", "/logged-before-open"), entry("v1", "/before-resume")]
+    source().dispatchEvent(new Event("open"))
+    await vi.waitFor(() => expect(paths()).toEqual(["/logged-before-open", "/before-resume"]))
+  })
+
+  it("a failed re-fetch leaves the list stale, so the next resume re-fetches", async () => {
+    reloadRows = [entry("w1", "/after-the-failure")]
+    failReload = true
+    const before = reloads()
+    reconnect()
+    await vi.waitFor(() => expect(reloads()).toBe(before + 1))
+    await flush()
+    pauseButton().click()
+    pauseButton().click()
+    await vi.waitFor(() => expect(paths()).toEqual(["/after-the-failure"]))
   })
 
   it("closes the stream when the page is hidden", () => {

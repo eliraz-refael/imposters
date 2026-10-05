@@ -227,12 +227,16 @@ const copyFrom = async (el: HTMLElement): Promise<void> => {
 
 // ---------------------------------------------------------------- polling
 
-const fetchInto = async (el: Element, url: string, mode: string): Promise<void> => {
+// Whether the element now holds the server's answer
+const fetchInto = async (el: Element, url: string, mode: string): Promise<boolean> => {
   try {
     const response = await fetch(url, { headers: FRAGMENT_HEADERS, cache: "no-store" })
-    if (response.ok) swap(el, await response.text(), mode)
+    if (!response.ok) return false
+    swap(el, await response.text(), mode)
+    return true
   } catch {
     // Offline or restarting: the next tick tries again
+    return false
   }
 }
 
@@ -314,6 +318,8 @@ const startSse = (el: HTMLElement): void => {
   // (dropped from a full `waiting`, or sent while the stream was down) and is cleared by a
   // re-fetch; with no data-sse-reload there is nothing to re-fetch, and the waiting rows are shown.
   let source: EventSource | null = null
+  // The stream has opened since it was created or last dropped
+  let connected = false
   let paused = false
   let reloading = false
   // The first open re-fetches too: rows logged after the page was rendered, before the stream
@@ -350,18 +356,30 @@ const startSse = (el: HTMLElement): void => {
     }
   }
 
+  // Created or dropped, and not yet (re)opened: a re-fetch now would miss whatever is logged
+  // before it opens, and the open re-fetches anyway. A stream the browser gave up on (CLOSED)
+  // will not open again.
+  const awaitingOpen = (): boolean => source !== null && !connected && source.readyState !== 2
+
   // Replaces the rows with the server's latest until nothing has gone stale meanwhile (a
-  // reconnect, a full queue), then settles
+  // reconnect, a full queue), then settles. A failed re-fetch leaves the list stale for the
+  // next open or resume, and shows the waiting rows meanwhile.
   const reload = async (url: string): Promise<void> => {
     reloading = true
+    let failed = false
     try {
-      while (stale) {
+      while (stale && !awaitingOpen()) {
         stale = false
-        await fetchInto(el, url, "inner")
+        if (!(await fetchInto(el, url, "inner"))) {
+          stale = true
+          failed = true
+          break
+        }
       }
     } finally {
       reloading = false
-      settle()
+      if (failed && !paused) waiting.splice(0).forEach(insert)
+      else settle()
     }
   }
 
@@ -369,10 +387,13 @@ const startSse = (el: HTMLElement): void => {
   const settle = (): void => {
     if (paused || reloading) return
     if (stale && reloadUrl !== undefined) {
-      void reload(reloadUrl)
-      return
+      if (!awaitingOpen()) {
+        void reload(reloadUrl)
+        return
+      }
+    } else {
+      stale = false
     }
-    stale = false
     waiting.splice(0).forEach(insert)
   }
 
@@ -398,11 +419,16 @@ const startSse = (el: HTMLElement): void => {
 
   const open = (): void => {
     if (source !== null) return
+    connected = false
     source = new EventSource(url)
     source.addEventListener(eventName, onEvent)
-    source.addEventListener("open", settle)
+    source.addEventListener("open", () => {
+      connected = true
+      settle()
+    })
     // EventSource reconnects by itself; rows sent meanwhile are lost, so re-fetch on the next open
     source.addEventListener("error", () => {
+      connected = false
       if (reloadUrl !== undefined) stale = true
     })
   }
@@ -410,6 +436,7 @@ const startSse = (el: HTMLElement): void => {
   const close = (): void => {
     source?.close()
     source = null
+    connected = false
   }
 
   el.addEventListener("ui:pause-toggle", () => {
