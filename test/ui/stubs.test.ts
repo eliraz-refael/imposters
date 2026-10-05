@@ -366,6 +366,15 @@ describe("the templates", () => {
     expect(edit).toContain(" data-focus")
   })
 
+  it("the editor's form skips the browser's own validation: the hidden form view must not block a post", () => {
+    // A status out of the number input's range: the hidden input is invalid, and only the
+    // server's check may refuse the stub
+    const text = JSON.stringify({ responses: [{ status: 999 }] })
+    const editor = stubEditor({ text, insert: "last" }).value
+    expect(editor).toContain(`max="599" step="1" data-c="status"`)
+    expect(editor).toMatch(/<form method="post"[^>]* novalidate>/)
+  })
+
   it("a delete's answer keeps the editor, and renumbers the heading of the stub it edits", () => {
     const second = stub({ id: "s2" })
     const answer = stubsAnswer(data({ stubs: [orders, second] })).value

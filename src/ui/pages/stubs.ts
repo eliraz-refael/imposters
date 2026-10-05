@@ -263,7 +263,7 @@ export const stubEditor = (state: EditorState): SafeHtml => {
   return html`<section class="panel panel-focus editor" id="${EDITOR_ID}" aria-labelledby="editor-title" data-stub-editor data-preview-url="${PREVIEW_URL}"${
     editing === undefined ? html`` : html` data-editing="${editing.id}"`
   }${state.focus === true ? html` data-focus` : html``}${state.oob === true ? html` data-oob` : html``}>
-  <form method="post" action="${action}" data-action data-target="#${LIST_ID}">
+  <form method="post" action="${action}" data-action data-target="#${LIST_ID}" novalidate>
     <div class="bar editor-bar">
       <div class="bar-title">${heading(state)}</div>
       ${editing === undefined ? insertControl(state.insert) : html``}
