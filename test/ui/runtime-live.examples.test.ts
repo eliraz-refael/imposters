@@ -76,4 +76,15 @@ describe("ui.ts live list: found by the property test", () => {
       { _tag: "AnswerOk", late: true }
     ]
   })
+
+  pinned("a row the list already shows does not count as waiting while paused", {
+    initial: 0,
+    steps: [
+      { _tag: "Open" },
+      { _tag: "LogInFlight", count: 1 },
+      { _tag: "AnswerOk", late: true },
+      { _tag: "Pause" },
+      { _tag: "Deliver", all: true }
+    ]
+  })
 })

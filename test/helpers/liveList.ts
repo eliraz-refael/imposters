@@ -299,9 +299,11 @@ const persistedPageshow = (persisted: boolean): Event => {
 
 const badge = (): string => element("[data-sse-pause] [data-sse-count]").textContent ?? ""
 
-// An event arrives: shown at once, or held back (counted) while paused or mid re-fetch
+// An event arrives: shown at once, or held back (counted) while paused or mid re-fetch. A row
+// the list already shows (a re-fetch answer carried it) is not new, so the badge does not count it.
 const arrive = (source: FakeEventSource, id: number): void => {
-  if (isPaused() || world.inFlight.length > 0) world.waiting = Math.min(world.waiting + 1, RECENT_ROWS)
+  const held = isPaused() || world.inFlight.length > 0
+  if (held && !listed().includes(id)) world.waiting = Math.min(world.waiting + 1, RECENT_ROWS)
   source.dispatchEvent(new MessageEvent("request", { data: requestRow(entry(id), ctx, id).value }))
 }
 

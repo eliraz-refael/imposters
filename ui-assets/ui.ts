@@ -465,6 +465,12 @@ const startSse = (el: HTMLElement): void => {
     }
     if (typeof event.data !== "string") return
     if (paused || reloading) {
+      // A row the list already shows would not be added, so it is not counted as waiting: a
+      // re-fetch answer can carry a row whose event was still in flight
+      if (Array.from(parse(event.data).children).every(isShown)) {
+        document.dispatchEvent(new CustomEvent("ui:arrival"))
+        return
+      }
       waiting.push(event.data)
       if (waiting.length > max) {
         waiting.shift()
