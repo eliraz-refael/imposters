@@ -15,7 +15,7 @@ import process from "node:process"
 import { setTimeout as sleep } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
-import { type Browser, chromium } from "playwright-core"
+import { type Browser, chromium, type Page } from "playwright-core"
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const CONFIG = "examples/ui-showcase.json"
@@ -30,6 +30,8 @@ interface Target {
   readonly imposter: string
   /** A logged request of the featured imposter that a stub answered */
   readonly requestId: string
+  /** The featured imposter's first stub (GET /orders: three responses), for the editor */
+  readonly stubId: string
 }
 
 interface Screen {
@@ -37,10 +39,16 @@ interface Screen {
   readonly url: (target: Target) => string
   /** Viewport width; the default is a 1440px desktop */
   readonly width?: number
+  /** Viewport height, for a screen whose sticky editor would otherwise scroll inside itself */
+  readonly height?: number
+  /** Done on the loaded page before the shot (a click, some typing) */
+  readonly prepare?: (page: Page) => Promise<void>
 }
 
 // orders-api has no stub for GET /v2/orders, and the traffic sends it
 const DRAFT = new URLSearchParams({ draft: "GET", path: "/v2/orders" }).toString()
+
+const editUrl = (t: Target): string => `${t.imposter}/_admin/stubs?edit=${encodeURIComponent(t.stubId)}`
 
 // One line per screen; each is captured once per theme
 const SCREENS: ReadonlyArray<Screen> = [
@@ -52,6 +60,21 @@ const SCREENS: ReadonlyArray<Screen> = [
   // "Stub it" on a route no stub answers: the editor opens on a draft, checked and previewed
   { name: "imposter-stubs-draft", url: (t) => `${t.imposter}/_admin/stubs?${DRAFT}` },
   { name: "imposter-stubs-draft-phone", url: (t) => `${t.imposter}/_admin/stubs?${DRAFT}`, width: 390 },
+  // The editor's form view on a stub with three responses, and on a phone
+  { name: "imposter-stubs-form", url: editUrl, height: 2100 },
+  { name: "imposter-stubs-form-phone", url: editUrl, width: 390 },
+  // A body that is not JSON: its line and column under it, and one thing to fix
+  {
+    name: "imposter-stubs-form-error",
+    url: editUrl,
+    height: 2300,
+    prepare: async (page) => {
+      await page.click("[data-k='r2.delay-range']")
+      await page.fill("[data-k='r2.body']", `{ "error": "service_unavailable" `)
+    }
+  },
+  // The same stub in the JSON tab
+  { name: "imposter-stubs-json", url: editUrl, prepare: (page) => page.click("[data-tab=json]") },
   { name: "imposter-requests", url: (t) => `${t.imposter}/_admin/requests` },
   { name: "imposter-request-detail", url: (t) => `${t.imposter}/_admin/requests/${encodeURIComponent(t.requestId)}` }
 ]
@@ -184,6 +207,7 @@ const ImposterList = Schema.Struct({
   imposters: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, port: Schema.Number }))
 })
 const RequestList = Schema.Array(Schema.Struct({ id: Schema.String }))
+const StubList = Schema.Array(Schema.Struct({ id: Schema.String }))
 
 const api = async (method: string, url: string, body?: unknown): Promise<unknown> => {
   const res = await fetch(`${admin}${url}`, {
@@ -346,15 +370,23 @@ const shoot = async (target: Target): Promise<Array<string>> => {
         const page = await context.newPage()
         page.setDefaultTimeout(SHOT_TIMEOUT_MS)
         try {
-          if (screen.width !== undefined) await page.setViewportSize({ ...DESKTOP, width: screen.width })
+          if (screen.width !== undefined || screen.height !== undefined) {
+            await page.setViewportSize({
+              width: screen.width ?? DESKTOP.width,
+              height: screen.height ?? DESKTOP.height
+            })
+          }
           // The pages poll or stream (SSE), so the network never goes idle
           await page.goto(screen.url(target), { waitUntil: "domcontentloaded", timeout: SHOT_TIMEOUT_MS })
           await withTimeout(page.evaluate(() => document.fonts.ready.then(() => undefined)), 10_000, "fonts")
+          if (screen.prepare !== undefined) await screen.prepare(page)
           // Let scripts that style or fill the page on load (the old pages' Tailwind runtime) finish
           await page.waitForTimeout(300)
           await page.screenshot({ path: file, animations: "disabled", fullPage: true, timeout: SHOT_TIMEOUT_MS })
           written.push(file)
-          console.log(`  ${path.basename(file)}`)
+          // A page wider than the window scrolls sideways, which no screen should
+          const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+          console.log(`  ${path.basename(file)}${overflow > 0 ? `  (scrolls sideways by ${String(overflow)}px)` : ""}`)
         } finally {
           await page.close()
         }
@@ -403,8 +435,16 @@ const main = async (): Promise<void> => {
   const request = requests[0]
   if (request === undefined) throw new Error("orders-api logged no POST /orders answered with 201")
 
+  const stub = Schema.decodeUnknownSync(StubList)(await api("GET", `/imposters/${featured.id}/stubs`))[0]
+  if (stub === undefined) throw new Error("orders-api has no stubs")
+
   console.log(`Capturing ${SCREENS.length} screens x ${THEMES.length} themes into ${outDir}`)
-  const written = await shoot({ admin, imposter: `http://${HOST}:${featured.port}`, requestId: request.id })
+  const written = await shoot({
+    admin,
+    imposter: `http://${HOST}:${featured.port}`,
+    requestId: request.id,
+    stubId: stub.id
+  })
   console.log(`Wrote ${written.length} screenshots in ${Math.round((Date.now() - startedAt) / 1000)}s`)
 }
 
