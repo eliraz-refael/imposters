@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { stubIssueMessages } from "../../schemas/IssueMessages.js"
 import { CreateStubRequest } from "../../schemas/StubSchema.js"
-import { locate, parseDraftText, type SyntaxProblem, type TextPosition } from "./draftText.js"
+import { type DraftPath, locate, parseDraftText, type SyntaxProblem, type TextPosition } from "./draftText.js"
 
 /**
  * The stub editor's text, checked on the server: the JSON (with its syntax error's line and
@@ -11,9 +11,13 @@ import { locate, parseDraftText, type SyntaxProblem, type TextPosition } from ".
  * preview and every write from the editor go through here.
  */
 
-/** A schema problem, at the line and column of the value it is about when the text has one */
+/**
+ * A schema problem: the path it is about, and the line and column of that value when the text
+ * has one
+ */
 export interface LocatedProblem {
   readonly message: string
+  readonly path: DraftPath
   readonly at?: TextPosition
 }
 
@@ -37,7 +41,7 @@ export const checkStubText = (text: string): Effect.Effect<StubCheck> => {
       Effect.succeed(StubCheck.Invalid({
         problems: stubIssueMessages(error, parsed.draft).map(({ message, path }) => {
           const at = locate(parsed, text, path)
-          return at === undefined ? { message } : { message, at }
+          return at === undefined ? { message, path } : { message, path, at }
         })
       }))
     )

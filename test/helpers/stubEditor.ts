@@ -6,7 +6,7 @@ import { afterAll, beforeAll, vi } from "vitest"
 import { CHECK_DELAY_MS } from "../../ui-assets/editor"
 
 /**
- * A harness for the stub editor's debounced check: the real ui-assets/ui.ts on the real editor
+ * A harness for the stub editor's debounced check: the real ui-assets/ui.ts and editor.js on the real editor
  * markup (in the calling test's happy-dom), against a fake preview endpoint whose answers stay in
  * flight until a step answers them, in any order. Each answer names the text it was asked about
  * (`data-text`), so the invariant can tell whose answer is on show: whatever the status shows
@@ -127,6 +127,47 @@ export const answer = (index: number, ok = true): void => {
   request.answer(ok ? answerFor(request.text) : new Response("down", { status: 503 }))
 }
 
+/** Answers the in-flight check at `index` (oldest first) with this status HTML */
+export const answerWith = (index: number, html: string): void => {
+  const [request] = world.inFlight.splice(index, 1)
+  request?.answer(new Response(html))
+}
+
+// ---------------------------------------------------------------- the form view
+
+/** The form's control with this key (data-k), or undefined */
+export const control = <E extends HTMLElement = HTMLElement>(key: string): E | undefined =>
+  Array.from(document.querySelectorAll<E>("[data-k]")).find((el) => el.dataset.k === key)
+
+export const mustControl = <E extends HTMLElement = HTMLElement>(key: string): E => {
+  const el = control<E>(key)
+  if (el === undefined) throw new Error(`no control ${key}`)
+  return el
+}
+
+/** Types a whole new value into an input or textarea, as one input event */
+export const typeInto = (key: string, value: string): void => {
+  const el = mustControl<HTMLInputElement | HTMLTextAreaElement>(key)
+  el.value = value
+  el.dispatchEvent(new Event("input", { bubbles: true }))
+}
+
+/** Picks an option in a select */
+export const choose = (key: string, value: string): void => {
+  const el = mustControl<HTMLSelectElement>(key)
+  el.value = value
+  el.dispatchEvent(new Event("change", { bubbles: true }))
+}
+
+export const press = (key: string): void => mustControl(key).click()
+
+/** The draft the JSON textarea holds now */
+export const textDraft = (): unknown => {
+  const parsed = parseDraftText(area().value)
+  if (!parsed.ok) throw new Error(`the textarea is not JSON: ${area().value}`)
+  return parsed.draft
+}
+
 /** Swaps in a fresh editor holding `text`, as an action's answer would, so ui.js starts it */
 export const mount = async (text: string, opts?: { readonly focus?: boolean }): Promise<void> => {
   world = { inFlight: [], failed: new Set(), sent: [] }
@@ -218,6 +259,8 @@ export const useEditorHarness = (): void => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] })
     vi.stubGlobal("fetch", fakeFetch)
     await import("../../ui-assets/ui")
+    // The stubs page's own script, as the page loads it after ui.js
+    await import("../../ui-assets/editor-main")
   })
   afterAll(() => {
     vi.useRealTimers()

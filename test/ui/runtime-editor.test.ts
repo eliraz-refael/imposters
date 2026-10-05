@@ -100,15 +100,16 @@ describe("ui.ts stub editor: the check", () => {
 })
 
 describe("ui.ts stub editor: the mode control", () => {
-  it("is shown by the script, follows the JSON, and is off while the text is not JSON", async () => {
+  it("is in the form the script shows, follows the JSON, and is off while the text is not JSON", async () => {
     await mount(TEXTS.VALID)
-    expect(element("[data-editor-mode]").hidden).toBe(false)
+    expect(element("[data-form-view]").hidden).toBe(false)
     expect(radio("sequential").checked).toBe(true)
     setText(TEXTS.OTHER_VALID)
     expect(radio("random").checked).toBe(true)
+    // The form gives way to the JSON view, and its controls go off with it
     setText(TEXTS.SYNTAX)
+    expect(element("[data-form-view]").hidden).toBe(true)
     expect(radio("random").disabled).toBe(true)
-    expect(radio("random").checked).toBe(false)
   })
 
   it("rewrites the JSON from the draft when clicked, and that is checked too", async () => {
@@ -133,8 +134,13 @@ describe("ui.ts stub editor: the mode control", () => {
 })
 
 describe("ui.ts stub editor: focus", () => {
-  it("an editor opened for an edit or a draft takes the focus", async () => {
+  it("an editor opened for an edit or a draft takes the focus: the form's first control", async () => {
     await mount(TEXTS.VALID, { focus: true })
+    expect(document.activeElement).toBe(element("[data-k='c0.field']"))
+  })
+
+  it("the JSON when the form cannot show the stub", async () => {
+    await mount(TEXTS.SYNTAX, { focus: true })
     expect(document.activeElement).toBe(area())
   })
 })

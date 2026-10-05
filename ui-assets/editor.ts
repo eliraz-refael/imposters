@@ -1,20 +1,26 @@
 /**
- * The stub editor (`data-stub-editor` on the stubs page): typing helpers in the JSON textarea,
- * the response-mode control kept in step with the JSON, and a debounced check while typing. A
- * syntax error shows at once (draftText.ts runs here too); valid JSON is posted to
- * `data-preview-url`, which answers with the status box's HTML: "✓ valid stub" with what it
- * would answer, or every problem in plain English.
+ * The stub editor (`data-stub-editor` on the stubs page): a form view and a JSON view of one
+ * draft, and a debounced check while editing. A syntax error shows at once (draftText.ts runs
+ * here too); valid JSON is posted to `data-preview-url`, which answers with the status box's
+ * HTML: "✓ valid stub" with what it would answer, or every problem in plain English.
  *
- * The model is the draft: the parsed JSON of the text, when it parses. The textarea is one view
- * of it. A form view would be another, reading `draft` and writing through `setDraft`, which
- * prints it back as text (draftToText), so both stay one model.
+ * The model is the draft, and the JSON textarea always holds it: it is what the form posts,
+ * with JS or without. The form (form.ts) is the other view: it is read from the draft when it
+ * opens, and every edit in it writes the draft back as text (draftToText). An edit the draft
+ * cannot hold yet (a body that is not JSON, a header with no name) leaves the draft as it was:
+ * the form lists the problem in the status box, marks the control, keeps "add stub" off and the
+ * JSON tab closed until it is fixed. The JSON tab opens the form again only for JSON the form
+ * can show; otherwise the note under the tabs says why.
  *
  * A check's answer is shown only while it is for the text as it is now: each edit bumps
  * `version` and marks the status pending, and an answer for an older version is dropped, so a
  * slow answer for old text can never land over a newer one.
  */
-import { draftToText, parseDraftText, type SyntaxProblem } from "../src/ui/editor/draftText.js"
-import { editForKey, type TextEdit } from "./textEdit"
+import { type DraftPath, draftToText, parseDraftText, type SyntaxProblem } from "../src/ui/editor/draftText.js"
+import { type FormProblem, type FormState, readForm, writeForm } from "../src/ui/editor/formModel.js"
+import { applyEdit } from "./applyEdit"
+import { type FormView, startForm } from "./form"
+import { editForKey } from "./textEdit"
 
 // Typing pauses this long before the text is checked
 export const CHECK_DELAY_MS = 250
@@ -22,9 +28,10 @@ export const CHECK_DELAY_MS = 250
 const FRAGMENT_HEADERS = { "x-imposters-fragment": "1" }
 
 type StatusState = "pending" | "valid" | "invalid"
+type View = "form" | "json"
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
+// A call, so TypeScript does not narrow `view` below to its first value: handlers change it
+const firstView = (): View => "json"
 
 const parseHtml = (text: string): DocumentFragment => {
   const template = document.createElement("template")
@@ -56,20 +63,45 @@ const unreachable = (): DocumentFragment => {
   return fragment
 }
 
-// Replaces [from, to) the way typing would, so the browser's undo still works; where that is not
-// available, sets the text and announces it as an input
-const applyEdit = (area: HTMLTextAreaElement, edit: TextEdit): void => {
-  area.focus()
-  if (edit.insert !== "" || edit.from !== edit.to) {
-    area.setSelectionRange(edit.from, edit.to)
-    const typed = typeof document.execCommand === "function" &&
-      document.execCommand(edit.insert === "" ? "delete" : "insertText", false, edit.insert)
-    if (!typed) {
-      area.setRangeText(edit.insert, edit.from, edit.to, "end")
-      area.dispatchEvent(new Event("input", { bubbles: true }))
-    }
+// The form's own problems, each a link to the control it is about
+const formStatus = (problems: ReadonlyArray<FormProblem>): DocumentFragment => {
+  const fragment = document.createDocumentFragment()
+  const count = problems.length === 1 ? "1 thing to fix" : `${String(problems.length)} things to fix`
+  const list = element("ul", "status-problems", "")
+  for (const problem of problems) {
+    const item = element("li", "", "")
+    const link = element("a", "", problem.label)
+    link.setAttribute("href", "#editor-form")
+    link.setAttribute("data-goto-key", problem.key)
+    item.append(link, `: ${problem.message}`)
+    list.append(item)
   }
-  area.setSelectionRange(edit.selectStart, edit.selectEnd)
+  fragment.append(element("span", "status-head c-error", `✗ ${count}`), list)
+  return fragment
+}
+
+const isPath = (value: unknown): value is DraftPath =>
+  Array.isArray(value) && value.every((segment) => typeof segment === "string" || typeof segment === "number")
+
+const pathIn = (text: string | null): DraftPath | undefined => {
+  if (text === null) return undefined
+  try {
+    const value: unknown = JSON.parse(text)
+    return isPath(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Where line `line` (from 1) starts in the text
+const lineOffset = (text: string, line: number): number => {
+  let offset = 0
+  for (let n = 1; n < line; n++) {
+    const next = text.indexOf("\n", offset)
+    if (next === -1) return text.length
+    offset = next + 1
+  }
+  return offset
 }
 
 export const startEditor = (el: HTMLElement): void => {
@@ -77,45 +109,69 @@ export const startEditor = (el: HTMLElement): void => {
   const status = el.querySelector<HTMLElement>("[data-editor-status]")
   const url = el.dataset.previewUrl
   if (area === null || status === null || url === undefined) return
-  const modes = el.querySelector<HTMLElement>("[data-editor-mode]")
-  const radios = modes === null ? [] : Array.from(modes.querySelectorAll<HTMLInputElement>("input[type=radio]"))
   const editing = el.dataset.editing ?? ""
+  const tabs = el.querySelector<HTMLElement>("[data-editor-tabs]")
+  const tabButtons = tabs === null ? [] : Array.from(tabs.querySelectorAll<HTMLButtonElement>("[data-tab]"))
+  const note = el.querySelector<HTMLElement>("[data-editor-note]")
+  const jsonView = el.querySelector<HTMLElement>("[data-json-view]")
+  const formRoot = el.querySelector<HTMLElement>("[data-form-view]")
+  const submit = el.querySelector<HTMLButtonElement>("button[type=submit]")
 
-  // The model: the draft the text holds, undefined while the text is not JSON
-  let draft: unknown
   // Bumped by every edit; an answer for an older one is stale
   let version = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let inflight: AbortController | undefined
   // Esc, then Tab, moves the focus on instead of indenting
   let leaving = false
+  let view: View = firstView()
+  // What the form holds that the draft cannot, yet
+  let formProblems: ReadonlyArray<FormProblem> = []
 
   const show = (state: StatusState, content?: DocumentFragment): void => {
     status.dataset.state = state
     if (content !== undefined) status.replaceChildren(content)
   }
 
-  // The mode control follows the draft: off while the text is not a JSON object
-  const syncModes = (): void => {
-    const mode = isRecord(draft) ? (draft.responseMode ?? "sequential") : undefined
-    for (const radio of radios) {
-      radio.disabled = !isRecord(draft)
-      radio.checked = radio.value === mode
-    }
+  // The schema paths the status's problems are about, for the form to mark
+  const markChecked = (): void => {
+    const paths = Array.from(status.querySelectorAll("[data-problem-path]"))
+      .map((item) => pathIn(item.getAttribute("data-problem-path")))
+      .filter(isPath)
+    form?.markPaths(paths)
   }
 
-  const readDraft = (): void => {
-    const parsed = parseDraftText(area.value)
-    draft = parsed.ok ? parsed.draft : undefined
-    syncModes()
+  // Why the other view will not open, if it will not: under the tabs, and read with the tab
+  const syncTabs = (): void => {
+    let reason = ""
+    if (view === "json") {
+      const parsed = parseDraftText(area.value)
+      const read = parsed.ok ? readForm(parsed.draft) : undefined
+      if (!parsed.ok) reason = "the form opens once the JSON is valid"
+      else if (read !== undefined && !read.ok) {
+        reason = `the form can't show this stub, so edit it here: ${read.reasons.join("; ")}`
+      }
+    } else if (formProblems.length > 0) {
+      reason = "the JSON opens once the problems below are fixed: it can't hold them yet"
+    }
+    for (const button of tabButtons) {
+      if (reason !== "" && button.dataset.tab !== view) button.setAttribute("aria-disabled", "true")
+      else button.removeAttribute("aria-disabled")
+    }
+    if (note !== null) {
+      note.textContent = reason
+      note.hidden = reason === ""
+    }
+    if (submit !== null) submit.disabled = view === "form" && formProblems.length > 0
   }
 
   const check = async (asOf: number): Promise<void> => {
     if (!el.isConnected || asOf !== version) return
+    syncTabs()
     const text = area.value
     const parsed = parseDraftText(text)
     if (!parsed.ok) {
       show("invalid", syntaxStatus(parsed.problem))
+      form?.markPaths([])
       return
     }
     inflight?.abort()
@@ -138,37 +194,87 @@ export const startEditor = (el: HTMLElement): void => {
       const content = parseHtml(html)
       const valid = content.querySelector("[data-check]")?.getAttribute("data-check") === "valid"
       show(valid ? "valid" : "invalid", content)
+      markChecked()
     } catch {
       if (asOf === version) show("invalid", unreachable())
     }
   }
 
+  // The text changed (typed, or written by the form): check it once typing pauses
   const changed = (): void => {
     version++
     const asOf = version
-    readDraft()
     show("pending")
     clearTimeout(timer)
     timer = setTimeout(() => void check(asOf), CHECK_DELAY_MS)
   }
 
-  /** Sets the model, and the text from it */
-  const setDraft = (next: unknown): void => {
-    // applyEdit focuses the textarea (typing into it needs that); give the focus back, so a
-    // keyboard user can keep moving through the mode control with the arrow keys
-    const active = document.activeElement
-    applyEdit(area, {
-      from: 0,
-      to: area.value.length,
-      insert: draftToText(next),
-      selectStart: 0,
-      selectEnd: 0
-    })
-    if (active instanceof HTMLElement && active !== area) active.focus()
-    // applyEdit announced the change as an input, which re-read the draft and queued a check
+  // Every form edit: the draft it makes goes into the text, or its problems into the status
+  const formEdited = (state: FormState): void => {
+    const written = writeForm(state)
+    formProblems = written.ok ? [] : written.problems
+    form?.showProblems(formProblems)
+    // The check's marks are for the form as it was: the next answer marks it again
+    form?.markPaths([])
+    if (written.ok) {
+      area.value = draftToText(written.draft)
+      changed()
+    } else {
+      // No check is wanted for a draft the form is not showing, and none in flight is shown
+      version++
+      clearTimeout(timer)
+      inflight?.abort()
+      show("invalid", formStatus(formProblems))
+    }
+    syncTabs()
   }
 
-  area.addEventListener("input", changed)
+  const form: FormView | undefined = formRoot === null ? undefined : startForm(formRoot, formEdited)
+
+  const setView = (next: View): void => {
+    view = next
+    el.dataset.view = next
+    if (jsonView !== null) jsonView.hidden = next !== "json"
+    form?.setActive(next === "form")
+    for (const button of tabButtons) {
+      const selected = button.dataset.tab === next
+      button.setAttribute("aria-selected", String(selected))
+      button.tabIndex = selected ? 0 : -1
+    }
+    syncTabs()
+  }
+
+  // The form, read from the draft; false (and the JSON view stays) when the draft is not one it can show
+  const openForm = (): boolean => {
+    if (form === undefined) return false
+    const parsed = parseDraftText(area.value)
+    const read = parsed.ok ? readForm(parsed.draft) : undefined
+    if (read === undefined || !read.ok) return false
+    formProblems = []
+    form.showProblems([])
+    form.show(read.form)
+    setView("form")
+    markChecked()
+    return true
+  }
+
+  const openJson = (): boolean => {
+    if (formProblems.length > 0) return false
+    setView("json")
+    return true
+  }
+
+  const pick = (tab: string | undefined): void => {
+    const opened = tab === "form" ? view === "form" || openForm() : view === "json" || openJson()
+    if (!opened) syncTabs()
+  }
+
+  area.addEventListener("input", () => {
+    changed()
+    // Changed while the form is showing (by a script, not by typing: the textarea is hidden),
+    // so the form shows the new draft, or gives way to the JSON view
+    if (view === "form" && !openForm()) setView("json")
+  })
   area.addEventListener("keydown", (event) => {
     if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
     if (event.key === "Escape") {
@@ -190,17 +296,52 @@ export const startEditor = (el: HTMLElement): void => {
     applyEdit(area, edit)
   })
 
-  for (const radio of radios) {
-    radio.addEventListener("change", () => {
-      if (radio.checked && isRecord(draft)) setDraft({ ...draft, responseMode: radio.value })
+  for (const button of tabButtons) {
+    button.addEventListener("click", () => pick(button.dataset.tab))
+    // Left and right move between the tabs, opening the one they land on
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return
+      event.preventDefault()
+      const other = tabButtons.find((b) => b !== button)
+      if (other === undefined) return
+      other.focus()
+      pick(other.dataset.tab)
     })
   }
 
-  if (modes !== null) modes.hidden = false
-  readDraft()
-  // Opened for an edit or a draft: bring the whole panel (its heading too) into view, then type
+  // A problem's link: "line 8" puts the caret on that line, "response 1 · status" focuses it
+  status.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a") : null
+    if (link === null) return
+    const line = Number(link.getAttribute("data-line") ?? Number.NaN)
+    const path = pathIn(link.getAttribute("data-goto"))
+    const key = link.getAttribute("data-goto-key")
+    if (Number.isInteger(line) && line > 0) {
+      event.preventDefault()
+      const offset = lineOffset(area.value, line)
+      area.focus()
+      area.setSelectionRange(offset, offset)
+    } else if (path !== undefined) {
+      event.preventDefault()
+      form?.focusPath(path)
+    } else if (key !== null) {
+      event.preventDefault()
+      form?.focusKey(key)
+    }
+  })
+
+  if (formRoot !== null && jsonView !== null && tabs !== null) {
+    tabs.hidden = false
+    formRoot.setAttribute("role", "tabpanel")
+    formRoot.setAttribute("aria-labelledby", "editor-tab-form")
+    jsonView.setAttribute("role", "tabpanel")
+    jsonView.setAttribute("aria-labelledby", "editor-tab-json")
+    if (!openForm()) setView("json")
+  }
+  // Opened for an edit or a draft: bring the whole panel (its heading too) into view, then edit
   if (el.hasAttribute("data-focus")) {
     el.scrollIntoView({ block: "nearest" })
-    area.focus({ preventScroll: true })
+    if (view === "form") form?.focusFirst()
+    else area.focus({ preventScroll: true })
   }
 }

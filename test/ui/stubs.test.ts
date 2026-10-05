@@ -213,8 +213,15 @@ describe("draftFromStub", () => {
 
 const hostile = stub({
   id: "h1",
-  predicates: [{ field: "path", operator: "equals", value: HOSTILE_PATH }],
-  responses: [{ status: 200, headers: { "x-evil": HOSTILE_HEADER }, body: HOSTILE_BODY }]
+  predicates: [
+    { field: "path", operator: "equals", value: HOSTILE_PATH },
+    { field: "headers", operator: "equals", value: { [HOSTILE_HEADER]: HOSTILE_BODY } }
+  ],
+  responses: [{
+    status: 200,
+    headers: { "x-evil": HOSTILE_HEADER, [HOSTILE_HEADER]: HOSTILE_PATH },
+    body: HOSTILE_BODY
+  }]
 })
 
 const body = (page: string): string => /<body>([\s\S]*)<\/body>/.exec(page)?.[1] ?? ""
@@ -253,11 +260,38 @@ describe("the templates", () => {
     expect(page).not.toContain(`</textarea><script>`)
     document.body.innerHTML = body(page)
     expect(document.querySelectorAll("script")).toHaveLength(0)
-    const area = document.querySelector("textarea")
+    const area = document.querySelector<HTMLTextAreaElement>("#stub-json")
     // happy-dom keeps the newline written after <textarea>, which a browser's parser drops
     expect(area?.value).toBe(`\n${text}`)
     const parsed = parseDraftText(area?.value ?? "")
     expect(parsed.ok && parsed.draft).toEqual(draftFromStub(hostile))
+  })
+
+  it("escape hostile values in the form's rows, which hold them as written", () => {
+    const text = draftToText(draftFromStub(hostile))
+    const page = stubsPage(data({ stubs: [hostile] }), {
+      theme: null,
+      editor: { editing: { id: hostile.id, position: 1 }, text, insert: "last" }
+    }).value
+    expect(page).not.toContain("<img")
+    expect(page).not.toContain(`' onmouseover`)
+    document.body.innerHTML = body(page)
+    expect(document.querySelectorAll("script, img, [onmouseover], [onerror]")).toHaveLength(0)
+    const value = (key: string): string | undefined => {
+      const el = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-k]"))
+        .find((control) => control.dataset.k === key)
+      return el?.value
+    }
+    expect(value("c0.value")).toBe(HOSTILE_PATH)
+    expect(value("c1.name")).toBe(HOSTILE_HEADER)
+    expect(value("c1.value")).toBe(HOSTILE_BODY)
+    expect(value("r0.h0.value")).toBe(HOSTILE_HEADER)
+    expect(value("r0.h1.name")).toBe(HOSTILE_HEADER)
+    expect(value("r0.h1.value")).toBe(HOSTILE_PATH)
+    expect(value("r0.body")).toBe(HOSTILE_BODY)
+    // A header name is in a schema path too, quoted
+    const headerValue = document.querySelector<HTMLElement>("[data-k='r0.h1.value']")
+    expect(headerValue?.dataset.path).toBe(`responses[0].headers[${JSON.stringify(HOSTILE_HEADER)}]`)
   })
 
   it("escape hostile values the status and the problems quote", () => {
@@ -281,6 +315,23 @@ describe("the templates", () => {
     expect(preview).toContain("would answer 1 of the 2 unmatched requests")
   })
 
+  it("a problem names its place both ways: the JSON line (a link to it) and the form's control", () => {
+    const text = draftToText({ responses: [{ status: "ok" }] })
+    const status = editorStatus({ check: run(checkStubText(text)) }).value
+    document.body.innerHTML = status
+    const item = document.querySelector("li")
+    expect(item?.getAttribute("data-problem-path")).toBe(`["responses",0,"status"]`)
+    expect(item?.querySelector(".in-json")?.textContent).toBe(
+      "line 3: responses[0].status must be an HTTP status code (100–599), like 200, not \"ok\""
+    )
+    expect(item?.querySelector(".in-json a")?.getAttribute("href")).toBe("#stub-json")
+    expect(item?.querySelector(".in-json a")?.getAttribute("data-line")).toBe("3")
+    expect(item?.querySelector(".in-form")?.textContent).toBe(
+      "response 1 · status must be an HTTP status code (100–599), like 200, not \"ok\""
+    )
+    expect(item?.querySelector(".in-form a")?.getAttribute("data-goto")).toBe(`["responses",0,"status"]`)
+  })
+
   it("the page: the header's tab count, the cards' actions, and the editor's data hooks", () => {
     const page = stubsPage(data({ stubs: [orders] }), { theme: "light", editor: newEditor }).value
     expect(page).toContain(`<html lang="en" data-theme="light">`)
@@ -291,7 +342,13 @@ describe("the templates", () => {
     expect(page).toContain(`data-confirm="Delete stub #1 (GET /Orders)?"`)
     expect(page).toContain(`href="/_admin/stubs?edit=035e9a87-long-id#stub-editor"`)
     expect(page).toContain(`data-stub-editor data-preview-url="/_admin/stubs/preview"`)
-    expect(page).toContain(`<fieldset class="seg" data-editor-mode hidden>`)
+    // The form and its tabs wait for editor.js, the stubs page's own script
+    expect(page).toContain(`<div class="editor-tabs" data-editor-tabs hidden>`)
+    expect(page).toContain(`<div class="stub-form" id="editor-form" data-form-view hidden>`)
+    expect(page).toContain(`<fieldset class="seg" data-editor-mode>`)
+    expect(page).toMatch(
+      /<script defer src="\/_admin\/assets\/ui\.[0-9a-f]{10}\.js"><\/script>\s*<script defer src="\/_admin\/assets\/editor\.[0-9a-f]{10}\.js"><\/script>/
+    )
     expect(page).toContain(`<span class="tok-op">any case</span>`)
     expect(page).not.toContain("cdn.tailwindcss.com")
   })

@@ -1,4 +1,4 @@
-import { assets, favicon, geistFont, martianMonoFont, uiCss, uiJs } from "imposters/ui/assets/generated"
+import { assets, editorJs, favicon, geistFont, martianMonoFont, uiCss, uiJs } from "imposters/ui/assets/generated"
 import { assetRoute, assetUrl, serveAsset } from "imposters/ui/assets/serve"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -19,6 +19,7 @@ describe("generated UI assets", () => {
     expect(assets.map((asset) => asset.name)).toEqual([
       hashedName("ui.css", uiCss.hash),
       hashedName("ui.js", uiJs.hash),
+      hashedName("editor.js", editorJs.hash),
       hashedName("favicon.svg", favicon.hash),
       hashedName("martian-mono-latin-standard-normal.woff2", martianMonoFont.hash),
       hashedName("geist-latin-wght-normal.woff2", geistFont.hash)
@@ -44,17 +45,22 @@ describe("generated UI assets", () => {
   })
 
   it("nothing is fetched from another origin", () => {
-    for (const asset of [uiCss, uiJs]) {
+    for (const asset of [uiCss, uiJs, editorJs]) {
       expect(asset.body).not.toMatch(/https?:\/\/(?!www\.w3\.org)/)
       expect(asset.body).not.toMatch(/@import/)
     }
   })
 
-  it("the script is a small IIFE", () => {
-    expect(uiJs.body).toMatch(/^("use strict";)?\(\(\)=>\{/)
-    expect(uiJs.body.trimEnd().endsWith("})();")).toBe(true)
-    // About 8 KB of runtime plus the stub editor (its JSON scanner's messages are most of it)
-    expect(uiJs.body.length).toBeLessThan(20 * 1024)
+  it("the scripts are small IIFEs: ui.js on every page, editor.js on the stubs page only", () => {
+    for (const script of [uiJs, editorJs]) {
+      expect(script.body).toMatch(/^("use strict";)?\(\(\)=>\{/)
+      expect(script.body.trimEnd().endsWith("})();")).toBe(true)
+    }
+    // About 8 KB of runtime; the stub editor is not in it
+    expect(uiJs.body.length).toBeLessThan(12 * 1024)
+    expect(uiJs.body).not.toContain("data-stub-editor")
+    // The JSON scanner's and the form's messages are most of the editor
+    expect(editorJs.body.length).toBeLessThan(40 * 1024)
   })
 })
 

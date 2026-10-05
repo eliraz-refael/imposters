@@ -1,6 +1,6 @@
-import { favicon, geistFont, martianMonoFont, uiCss, uiJs } from "../assets/generated.js"
+import { favicon, geistFont, martianMonoFont, type UiAsset, uiCss, uiJs } from "../assets/generated.js"
 import { assetUrl, type UiPrefix } from "../assets/serve.js"
-import { html, type SafeHtml } from "../html.js"
+import { concat, html, type SafeHtml } from "../html.js"
 import type { Theme } from "../theme.js"
 
 export interface ShellOpts {
@@ -9,6 +9,8 @@ export interface ShellOpts {
   readonly prefix: UiPrefix
   // From the theme cookie (themeFromCookie); null follows the system setting
   readonly theme: Theme | null
+  // The page's own scripts, loaded after ui.js (the stubs page's editor.js)
+  readonly scripts?: ReadonlyArray<UiAsset>
 }
 
 /**
@@ -27,7 +29,12 @@ export const shell = (opts: ShellOpts, body: SafeHtml): SafeHtml =>
   <link rel="preload" href="${assetUrl(opts.prefix, martianMonoFont)}" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="${assetUrl(opts.prefix, geistFont)}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="${assetUrl(opts.prefix, uiCss)}">
-  <script defer src="${assetUrl(opts.prefix, uiJs)}"></script>
+  <script defer src="${assetUrl(opts.prefix, uiJs)}"></script>${
+    concat((opts.scripts ?? []).map((script) =>
+      html`
+  <script defer src="${assetUrl(opts.prefix, script)}"></script>`
+    ))
+  }
 </head>
 <body>
 <div class="page">

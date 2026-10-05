@@ -24,6 +24,9 @@ const svgIcon = (size: number, paths: string): SafeHtml =>
 
 export const icons = {
   trash: svgIcon(15, `<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path>`),
+  close: svgIcon(14, `<path d="M6 6l12 12M18 6L6 18"></path>`),
+  up: svgIcon(14, `<path d="M6 15l6-6 6 6"></path>`),
+  down: svgIcon(14, `<path d="M6 9l6 6 6-6"></path>`),
   sun: svgIcon(
     16,
     `<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>`
