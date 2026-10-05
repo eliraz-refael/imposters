@@ -64,7 +64,7 @@ const describeChar = (char: string | undefined): string =>
  * afterwards: its messages differ between engines and do not always say where, which is why
  * this scanner exists.
  */
-const scan = (text: string): ReadonlyMap<string, number> => {
+const scan = (text: string, what: string): ReadonlyMap<string, number> => {
   const offsets = new Map<string, number>()
   let i = 0
 
@@ -234,15 +234,19 @@ const scan = (text: string): ReadonlyMap<string, number> => {
   scanValue([])
   skipSpace()
   if (i < text.length) {
-    throw new Stop(i, `unexpected ${describeChar(text[i])} after the end of the stub: is a comma or a { missing?`)
+    throw new Stop(i, `unexpected ${describeChar(text[i])} after the end of the ${what}: is a comma or a { missing?`)
   }
   return offsets
 }
 
-/** The draft the text holds, or the first syntax error in it with its line and column */
-export const parseDraftText = (text: string): DraftParse => {
+/**
+ * The draft the text holds, or the first syntax error in it with its line and column. `what`
+ * names the text in a message about something after its end: the form parses a response body
+ * with it too.
+ */
+export const parseDraftText = (text: string, what = "stub"): DraftParse => {
   try {
-    const offsets = scan(text)
+    const offsets = scan(text, what)
     const draft: unknown = JSON.parse(text)
     return { ok: true, draft, offsets }
   } catch (error) {
