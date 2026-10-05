@@ -320,6 +320,8 @@ describe("E2E: Imposter UI fixes", () => {
 
       const stubsPage = await (await fetch(`http://localhost:9638${link ?? ""}`)).text()
       expect(stubsPage).toContain("from GET /payments/pm_81")
+      // Opened for the draft: ui.js brings the editor into view and focuses it
+      expect(stubsPage).toMatch(/id="stub-editor"[^>]* data-focus/)
       // A stub for one request goes first, before the broader ones
       expect(stubsPage).toMatch(/value="first" checked/)
       const text = (/<textarea id="stub-json"[^>]*>([^<]*)<\/textarea>/.exec(stubsPage)?.[1] ?? "")

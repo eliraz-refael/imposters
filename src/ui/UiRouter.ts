@@ -223,7 +223,10 @@ export const makeUiRouter = (deps: UiDeps) => {
 
   const showStubsPage = (request: Request, url: URL): Effect.Effect<Response> =>
     Effect.gen(function*() {
-      const editor = yield* editorFor(url.searchParams, false)
+      // An edit or a draft is what the page was opened for: ui.js moves the focus to the editor,
+      // which on a phone (where it comes after the cards) also scrolls to it
+      const opened = url.searchParams.has("edit") || url.searchParams.has("draft")
+      const editor = yield* editorFor(url.searchParams, opened)
       if (editor !== null) return yield* stubsPageResponse(request, editor)
       const fresh = yield* newStubEditor(false)
       return yield* stubsPageResponse(request, fresh, {

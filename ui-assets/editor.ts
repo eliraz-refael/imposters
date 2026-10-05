@@ -194,5 +194,9 @@ export const startEditor = (el: HTMLElement): void => {
 
   if (modes !== null) modes.hidden = false
   readDraft()
-  if (el.hasAttribute("data-focus")) area.focus()
+  // Opened for an edit or a draft: bring the whole panel (its heading too) into view, then type
+  if (el.hasAttribute("data-focus")) {
+    el.scrollIntoView({ block: "nearest" })
+    area.focus({ preventScroll: true })
+  }
 }

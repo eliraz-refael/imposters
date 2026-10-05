@@ -117,6 +117,13 @@ describe("ui.ts stub editor: the mode control", () => {
   })
 })
 
+describe("ui.ts stub editor: focus", () => {
+  it("an editor opened for an edit or a draft takes the focus", async () => {
+    await mount(TEXTS.VALID, { focus: true })
+    expect(document.activeElement).toBe(area())
+  })
+})
+
 describe("ui.ts stub editor: typing helpers", () => {
   it("closes a brace and steps over its closer", async () => {
     await mount("")

@@ -128,10 +128,10 @@ export const answer = (index: number, ok = true): void => {
 }
 
 /** Swaps in a fresh editor holding `text`, as an action's answer would, so ui.js starts it */
-export const mount = async (text: string): Promise<void> => {
+export const mount = async (text: string, opts?: { readonly focus?: boolean }): Promise<void> => {
   world = { inFlight: [], failed: new Set(), sent: [] }
   vi.clearAllTimers()
-  editorMarkup = stubEditor({ text, insert: "last" }).value
+  editorMarkup = stubEditor({ text, insert: "last", focus: opts?.focus === true }).value
   document.body.innerHTML = `<div id="host"></div><button id="load" data-action="GET /page" data-target="#host">`
   element("#load").click()
   await flush()
