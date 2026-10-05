@@ -89,7 +89,7 @@ const queryString = (query: Readonly<Record<string, string>>): string => {
 export const requestRow = (entry: RequestLogEntry, ctx: RowContext): SafeHtml => {
   const method = entry.request.method.toUpperCase()
   const fullPath = `${entry.request.path}${queryString(entry.request.query)}`
-  return html`<a class="req req-row" href="/_admin/requests/${
+  return html`<a class="req req-row" id="req-${entry.id}" href="/_admin/requests/${
     encodeURIComponent(entry.id)
   }"><span class="req-time c-muted">${
     clockTime(DateTime.toEpochMillis(entry.timestamp))

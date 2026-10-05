@@ -69,6 +69,9 @@ const data = (totalRequests: number): LiveData =>
 
 const fetched: Array<string> = []
 let reloadRows: ReadonlyArray<RequestLogEntry> = []
+// Set to hold the next rows re-fetch until the test answers it
+let holdReload = false
+let releaseReload: (() => void) | undefined
 let liveTotal = 0
 
 const rowsEl = (): HTMLElement => {
@@ -94,10 +97,16 @@ beforeAll(async () => {
   vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
     const url = String(input)
     fetched.push(url)
-    const body = url.endsWith("/_admin/fragments/requests")
-      ? requestRows(reloadRows, ctx).value
-      : liveFragment(data(liveTotal)).value
-    return Promise.resolve(new Response(body))
+    if (url.endsWith("/_admin/fragments/requests")) {
+      // The rows as the server had them when it was asked
+      const body = requestRows(reloadRows, ctx).value
+      if (!holdReload) return Promise.resolve(new Response(body))
+      holdReload = false
+      return new Promise<Response>((resolve) => {
+        releaseReload = () => resolve(new Response(body))
+      })
+    }
+    return Promise.resolve(new Response(liveFragment(data(liveTotal)).value))
   })
   const page = livePage(data(1), { theme: null, recent: [entry("r0", "/first")] }).value
   document.body.innerHTML = /<body>([\s\S]*)<\/body>/.exec(page)?.[1] ?? ""
@@ -112,6 +121,29 @@ describe("ui.ts on the live page", () => {
   it("opens the page's event stream for request events", () => {
     expect(source().url).toBe("/_admin/events")
     expect(source().closed).toBe(false)
+  })
+
+  it("on its first open, re-fetches the rows logged since the page was rendered", async () => {
+    reloadRows = [entry("gap", "/between-render-and-open"), entry("r0", "/first")]
+    source().dispatchEvent(new Event("open"))
+    await vi.waitFor(() => expect(paths()).toEqual(["/between-render-and-open", "/first"]))
+    expect(fetched).toContain("/_admin/fragments/requests")
+  })
+
+  it("an event that arrives while the rows are re-fetched is neither lost nor shown twice", async () => {
+    // The server snapshots its rows with d1 logged and d2 not yet
+    reloadRows = [entry("d1", "/during"), entry("gap", "/between-render-and-open"), entry("r0", "/first")]
+    holdReload = true
+    source().dispatchEvent(new Event("error"))
+    source().dispatchEvent(new Event("open"))
+    await vi.waitFor(() => expect(releaseReload).toBeDefined())
+    source().emit(row("d1", "/during"))
+    source().emit(row("d2", "/after-the-snapshot"))
+    releaseReload?.()
+    releaseReload = undefined
+    await vi.waitFor(() =>
+      expect(paths()).toEqual(["/after-the-snapshot", "/during", "/between-render-and-open", "/first"])
+    )
   })
 
   it("puts a new request at the top, highlighted", () => {
@@ -160,6 +192,19 @@ describe("ui.ts on the live page", () => {
     source().dispatchEvent(new Event("open"))
     await vi.waitFor(() => expect(paths()).toEqual(["/missed-2", "/missed-1"]))
     expect(fetched).toContain("/_admin/fragments/requests")
+  })
+
+  it("a reconnect while paused re-fetches the rows on resume", async () => {
+    pauseButton().click()
+    const reloads = () => fetched.filter((url) => url.endsWith("/_admin/fragments/requests")).length
+    const before = reloads()
+    reloadRows = [entry("y1", "/missed-while-paused")]
+    source().dispatchEvent(new Event("error"))
+    source().dispatchEvent(new Event("open"))
+    expect(reloads()).toBe(before)
+    pauseButton().click()
+    await vi.waitFor(() => expect(paths()).toEqual(["/missed-while-paused"]))
+    expect(reloads()).toBe(before + 1)
   })
 
   it("closes the stream when the page is hidden", () => {

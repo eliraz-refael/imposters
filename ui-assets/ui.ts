@@ -16,8 +16,10 @@
  * - `data-sse="url"`: prepend each event's HTML (`data-sse-event`, default `message`), newest
  *   first, highlighted with `.fresh`; keep `data-sse-max` rows (default 100). A button with
  *   `data-sse-pause="<selector>"` pauses it; events are buffered (and counted in its
- *   `[data-sse-count]`) and flushed on resume. On reconnect, and on a page restored from the
- *   back-forward cache, the rows are re-fetched from `data-sse-reload`. The stream is closed on
+ *   `[data-sse-count]`) and flushed on resume. On the first open (rows logged after the page
+ *   was rendered), on reconnect, and on a page restored from the back-forward cache, the rows
+ *   are re-fetched from `data-sse-reload`; events arriving meanwhile are added after it, and a
+ *   row whose id is already listed is not added twice. The stream is closed on
  *   `pagehide`, and for good once a swap takes the element off the page, since browsers allow
  *   about six connections per host.
  * - `data-copy="text"` or `data-copy-from="<selector>"`: copy to the clipboard.
@@ -306,18 +308,39 @@ const startSse = (el: HTMLElement): void => {
   const eventName = el.dataset.sseEvent ?? "message"
 
   let source: EventSource | null = null
-  let reloadOnOpen = false
+  // The first open re-fetches too: rows logged after the page was rendered, before the stream
+  // subscribed, would otherwise never show
+  let reloadOnOpen = el.dataset.sseReload !== undefined
   let paused = false
   let dropped = false
+  // Events held back while paused (and counted), and while a re-fetch is in flight
   const buffer: Array<string> = []
+  const held: Array<string> = []
+  let reloading = false
 
-  const reload = (): void => {
+  // Replaces the rows with the server's latest, then adds what arrived meanwhile and is not among them
+  const reload = async (): Promise<void> => {
     const reloadUrl = el.dataset.sseReload
-    if (reloadUrl !== undefined) void fetchInto(el, reloadUrl, "inner")
+    if (reloadUrl === undefined || reloading) return
+    reloading = true
+    try {
+      await fetchInto(el, reloadUrl, "inner")
+    } finally {
+      reloading = false
+      held.splice(0).forEach(insert)
+    }
+  }
+
+  // A row already in the list (by id) is not added again: a re-fetch and an event can both carry it
+  const isShown = (row: Element): boolean => {
+    if (row.id === "") return false
+    const existing = document.getElementById(row.id)
+    return existing !== null && el.contains(existing)
   }
 
   const insert = (text: string): void => {
     const fragment = parse(text)
+    for (const row of Array.from(fragment.children)) if (isShown(row)) row.remove()
     const added = Array.from(fragment.children)
     el.prepend(fragment)
     for (const row of added) {
@@ -351,6 +374,8 @@ const startSse = (el: HTMLElement): void => {
         dropped = true
       }
       renderPause()
+    } else if (reloading) {
+      held.push(event.data)
     } else {
       insert(event.data)
     }
@@ -362,7 +387,9 @@ const startSse = (el: HTMLElement): void => {
     source = new EventSource(url)
     source.addEventListener(eventName, onEvent)
     source.addEventListener("open", () => {
-      if (reloadOnOpen && !paused) reload()
+      // Paused: the re-fetch waits for resume
+      if (reloadOnOpen && paused) dropped = true
+      else if (reloadOnOpen) void reload()
       reloadOnOpen = false
     })
     // EventSource reconnects by itself; rows sent meanwhile are lost, so re-fetch on the next open
@@ -379,8 +406,13 @@ const startSse = (el: HTMLElement): void => {
   el.addEventListener("ui:pause-toggle", () => {
     paused = !paused
     if (!paused) {
-      if (dropped) reload()
-      else buffer.forEach(insert)
+      if (dropped) {
+        // Some were dropped (or missed while paused): re-fetch, keeping the rest in case they are newer
+        for (const text of buffer) held.push(text)
+        void reload()
+      } else {
+        buffer.forEach(insert)
+      }
       buffer.length = 0
       dropped = false
     }
