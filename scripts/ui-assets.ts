@@ -68,9 +68,9 @@ export const withSystemLight = (tokens: string): string => {
 const minifyCss = async (css: string): Promise<string> =>
   (await esbuild.transform(css, { loader: "css", minify: true, legalComments: "none" })).code
 
-const bundleScript = async (): Promise<string> => {
+const bundleScript = async (entry: string): Promise<string> => {
   const result = await esbuild.build({
-    entryPoints: [path.join(rootDir, "ui-assets", "ui.ts")],
+    entryPoints: [path.join(rootDir, "ui-assets", entry)],
     tsconfig: path.join(rootDir, "tsconfig.ui-assets.json"),
     bundle: true,
     write: false,
@@ -135,7 +135,9 @@ export const generate = async (): Promise<string> => {
 
   return render([
     textAsset("uiCss", "ui.css", "text/css; charset=utf-8", css),
-    textAsset("uiJs", "ui.js", "text/javascript; charset=utf-8", await bundleScript()),
+    textAsset("uiJs", "ui.js", "text/javascript; charset=utf-8", await bundleScript("ui.ts")),
+    // The stubs page's editor, loaded on that page only
+    textAsset("editorJs", "editor.js", "text/javascript; charset=utf-8", await bundleScript("editor-main.ts")),
     textAsset("favicon", "favicon.svg", "image/svg+xml", read("site", "public", "favicon.svg").toString("utf8")),
     ...fonts
   ])

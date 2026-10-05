@@ -1,11 +1,17 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["ui-assets", "src/ui/editor/draftText.ts"],
+  "include": [
+    "ui-assets",
+    "src/ui/editor/draftText.ts",
+    "src/ui/editor/formModel.ts",
+    "src/ui/editor/formView.ts"
+  ],
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": [],
     "tsBuildInfoFile": ".tsbuildinfo/ui-assets.tsbuildinfo",
-    // "." and not "ui-assets": editor.ts bundles src/ui/editor/draftText.ts, which has no imports
+    // "." and not "ui-assets": the editor bundles src/ui/editor/{draftText,formModel,formView}.ts,
+    // which import nothing else
     "rootDir": ".",
     "noEmit": true,
     "plugins": []

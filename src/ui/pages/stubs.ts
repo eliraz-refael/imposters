@@ -1,11 +1,12 @@
 import type { PreviewResponse } from "../../schemas/ExplainSchema.js"
-import { ResponseMode } from "../../schemas/StubSchema.js"
+import { editorJs } from "../assets/generated.js"
 import { count, plural } from "../components/format.js"
 import { imposterHeader, STUB_COUNT_ID } from "../components/imposterHeader.js"
 import { icons, pill, postButton, tabCount } from "../components/primitives.js"
 import { shell } from "../components/shell.js"
-import { problemLines, type StubCheck } from "../editor/checkStub.js"
+import { type LocatedProblem, problemLines, type StubCheck } from "../editor/checkStub.js"
 import { parseDraftText } from "../editor/draftText.js"
+import { fieldLabel, readForm, splitMessage } from "../editor/formModel.js"
 import { concat, html, type SafeHtml } from "../html.js"
 import {
   type Fallback,
@@ -16,13 +17,14 @@ import {
   type StubsData
 } from "../StubsData.js"
 import type { Theme } from "../theme.js"
+import { stubFormView } from "./stubForm.js"
 
 /**
  * An imposter's stubs page (`/_admin/stubs`): a card per stub in matching order, with edit and
- * delete, and the editor that adds and edits them (JSON, checked and previewed as you type).
- * Every form works without JS: a POST answered with a 303 back here, or this page again with
- * the problems. ui.js swaps fragments instead (data-action), and runs the editor
- * (data-stub-editor).
+ * delete, and the editor that adds and edits them (a form and the JSON, checked and previewed as
+ * you type). Every form works without JS: a POST answered with a 303 back here, or this page
+ * again with the problems; the editor then shows the JSON alone. ui.js swaps fragments instead
+ * (data-action), and editor.js runs the editor (data-stub-editor).
  */
 
 export const STUBS_URL = "/_admin/stubs"
@@ -164,6 +166,25 @@ const previewLines = (preview: PreviewResponse): SafeHtml => {
   }${preview.error === undefined ? html`` : html`<span class="status-warn">⚠ ${preview.error}</span>`}`
 }
 
+/**
+ * A schema problem twice, for the two views (CSS shows the one in use): at its line in the
+ * JSON, and at its control in the form ("response 1 · status must be …"). Each place is a link
+ * the editor follows; without JS, "line 8" jumps to the textarea.
+ */
+const problemItem = (problem: LocatedProblem): SafeHtml => {
+  const { at, message, path } = problem
+  const inJson = at === undefined
+    ? html`${message}`
+    : html`<a href="#stub-json" data-line="${String(at.line)}">line ${String(at.line)}</a>: ${message}`
+  const split = splitMessage(message, path)
+  const target = split?.at ?? path
+  return html`<li data-problem-path="${
+    JSON.stringify(path)
+  }"><span class="in-json">${inJson}</span><span class="in-form"><a href="#editor-form" data-goto="${
+    JSON.stringify(target)
+  }">${fieldLabel(target)}</a>${split === undefined ? `: ${message}` : split.rest}</span></li>`
+}
+
 /** The status box's content: ✓ with the preview, or ✗ with every problem and where it is */
 export const editorStatus = (status: EditorStatus): SafeHtml => {
   const { check } = status
@@ -173,20 +194,21 @@ export const editorStatus = (status: EditorStatus): SafeHtml => {
     }`
   }
   const head = check._tag === "Syntax" ? "✗ not JSON yet" : "✗ not a valid stub yet"
-  return html`<span class="status-head c-error" data-check="invalid">${head}</span><ul class="status-problems">${
-    concat(problemLines(check).map((line) => html`<li>${line}</li>`))
-  }</ul>`
+  const items = check._tag === "Syntax"
+    ? concat(problemLines(check).map((line) => html`<li>${line}</li>`))
+    : concat(check.problems.map(problemItem))
+  return html`<span class="status-head c-error" data-check="invalid">${head}</span><ul class="status-problems">${items}</ul>`
 }
 
 const statusState = (status: EditorStatus | undefined): string =>
   status === undefined ? "idle" : status.check._tag === "Valid" ? "valid" : "invalid"
 
-// The mode the text asks for, so the segmented control starts in step with it
-const modeOf = (text: string): string | undefined => {
+// The mode the text asks for, so the form's control starts in step with it
+const modeOf = (text: string): string => {
   const parsed = parseDraftText(text)
-  if (!parsed.ok || typeof parsed.draft !== "object" || parsed.draft === null) return undefined
+  if (!parsed.ok || typeof parsed.draft !== "object" || parsed.draft === null) return "sequential"
   const mode: unknown = "responseMode" in parsed.draft ? parsed.draft.responseMode : "sequential"
-  return typeof mode === "string" ? mode : undefined
+  return typeof mode === "string" ? mode : "sequential"
 }
 
 const segOption = (name: string, value: string, checked: boolean): SafeHtml =>
@@ -200,14 +222,12 @@ const insertControl = (insert: InsertAt): SafeHtml =>
     segOption("position", "first", insert === "first")
   }${segOption("position", "last", insert === "last")}</fieldset>`
 
-// The response mode, in step with the JSON both ways (ui.js). The JSON is what is posted, so
-// without JS the control would do nothing: it stays hidden until ui.js shows it.
-const modeControl = (text: string): SafeHtml => {
-  const current = modeOf(text)
-  return html`<fieldset class="seg" data-editor-mode hidden><legend class="label">responses</legend>${
-    concat(ResponseMode.literals.map((mode) => segOption("mode", mode, mode === current)))
-  }</fieldset>`
-}
+// The form | JSON switch. Both views edit the JSON the editor posts, so without JS there is
+// nothing to switch: it stays hidden until editor.js shows it.
+const viewTabs = html`<div class="editor-tabs" data-editor-tabs hidden>
+        <div class="seg-btns" role="tablist" aria-label="Editor view"><button type="button" role="tab" id="editor-tab-form" aria-controls="editor-form" aria-selected="false" aria-describedby="editor-note" tabindex="-1" data-tab="form">form</button><button type="button" role="tab" id="editor-tab-json" aria-controls="editor-json" aria-selected="true" aria-describedby="editor-note" data-tab="json">JSON</button></div>
+        <span class="label editor-note" id="editor-note" data-editor-note hidden></span>
+      </div>`
 
 // The edited stub's place, " #2" (none for a stub no longer listed). A delete's answer carries
 // one for every stub, out of band: the page has only the edited stub's, which a delete above it
@@ -229,31 +249,38 @@ const heading = (state: EditorState): SafeHtml => {
 }
 
 /**
- * The editor: one form holding the whole stub as JSON, posted to add or save it. The textarea's
- * text starts on the line after its tag: the HTML parser drops one newline there, so a text that
- * starts with a blank line keeps it, and the problems' line numbers still match.
+ * The editor: one form holding the whole stub as JSON, posted to add or save it, and the form
+ * view of the same stub (shown by editor.js). The textarea's text starts on the line after its
+ * tag: the HTML parser drops one newline there, so a text that starts with a blank line keeps
+ * it, and the problems' line numbers still match.
  */
 export const stubEditor = (state: EditorState): SafeHtml => {
   const editing = state.editing
   const action = editing === undefined ? STUBS_URL : stubUrl(editing.id)
+  const parsed = parseDraftText(state.text)
+  const read = parsed.ok ? readForm(parsed.draft) : undefined
+  const form = read?.ok === true ? read.form : undefined
   return html`<section class="panel panel-focus editor" id="${EDITOR_ID}" aria-labelledby="editor-title" data-stub-editor data-preview-url="${PREVIEW_URL}"${
     editing === undefined ? html`` : html` data-editing="${editing.id}"`
   }${state.focus === true ? html` data-focus` : html``}${state.oob === true ? html` data-oob` : html``}>
-  <form method="post" action="${action}" data-action data-target="#${LIST_ID}">
+  <form method="post" action="${action}" data-action data-target="#${LIST_ID}" novalidate>
     <div class="bar editor-bar">
       <div class="bar-title">${heading(state)}</div>
       ${editing === undefined ? insertControl(state.insert) : html``}
     </div>
     <div class="editor-body">
-      <div class="editor-label"><label class="label" for="stub-json">stub · JSON</label><span class="label editor-hint">Tab indents · Esc, then Tab, leaves</span></div>
-      <textarea id="stub-json" name="stub" class="code editor-text" spellcheck="false" autocomplete="off" autocapitalize="off" rows="18" data-editor-text>
+      ${viewTabs}
+      ${stubFormView(form, form?.mode ?? modeOf(state.text))}
+      <div class="editor-json" id="editor-json" data-json-view>
+        <div class="editor-label"><label class="label" for="stub-json">stub · JSON</label><span class="label editor-hint">Tab indents · Esc, then Tab, leaves</span></div>
+        <textarea id="stub-json" name="stub" class="code editor-text" spellcheck="false" autocomplete="off" autocapitalize="off" rows="18" data-editor-text>
 ${state.text}</textarea>
+      </div>
       <div class="editor-status" data-editor-status data-state="${
     statusState(state.status)
   }" role="status" aria-live="polite">${state.status === undefined ? html`` : editorStatus(state.status)}</div>
       <div class="alert" data-error-slot>${state.error ?? ""}</div>
       <div class="editor-foot">
-        ${modeControl(state.text)}
         <div class="bar-actions editor-actions"><a class="btn" href="${STUBS_URL}" data-action="GET ${EDITOR_FRAGMENT_URL}" data-target="#${EDITOR_ID}" data-swap="outer">cancel</a><button class="btn btn-accent" type="submit">${
     editing === undefined ? "add stub" : "save"
   }</button></div>
@@ -312,5 +339,5 @@ export const stubsPage = (data: StubsData, opts: StubsPageOpts): SafeHtml => {
     ${stubEditor(opts.editor)}
   </div>
 </main>`
-  return shell({ title: `${config.name} · stubs`, prefix: "/_admin", theme: opts.theme }, body)
+  return shell({ title: `${config.name} · stubs`, prefix: "/_admin", theme: opts.theme, scripts: [editorJs] }, body)
 }
