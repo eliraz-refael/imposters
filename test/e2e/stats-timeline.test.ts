@@ -210,13 +210,13 @@ describe("E2E: what resets the stats", () => {
   })
 
   it("/_admin UI: stub edits and deletes go through the same reset rules", async () => {
-    const form = (method: string, fields: Record<string, string>): RequestInit => ({
-      method,
-      headers: { "content-type": "application/x-www-form-urlencoded", "hx-request": "true" },
-      body: new URLSearchParams(fields).toString()
+    const save = (stub: unknown): RequestInit => ({
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-imposters-fragment": "1" },
+      body: new URLSearchParams({ stub: JSON.stringify(stub) }).toString()
     })
     const ui = (path: string, init: RequestInit) => fetch(`http://127.0.0.1:9346/_admin${path}`, init)
-    const responses = JSON.stringify([{ status: 200 }, { status: 201 }])
+    const responses = [{ status: 200 }, { status: 201 }]
 
     await withRunning({ port: 9346 }, [
       { predicates: pathIs("/u"), responses: [{ status: 200 }, { status: 201 }] },
@@ -225,24 +225,17 @@ describe("E2E: what resets the stats", () => {
       await httpGet(9346, "/u")
       await httpGet(9346, "/other")
 
-      // The edit form sends every field; only the predicates differ, so nothing resets
-      const keep = await ui(
-        `/stubs/${sid}`,
-        form("PUT", {
-          predicates: JSON.stringify(pathIs("/u2")),
-          responses,
-          responseMode: "sequential"
-        })
-      )
+      // The editor sends the whole stub; only the predicates differ, so nothing resets
+      const keep = await ui(`/stubs/${sid}`, save({ predicates: pathIs("/u2"), responses, responseMode: "sequential" }))
       expect(keep.status).toBe(200)
       expect(await stubStats(id, sid)).toMatchObject({ hits: 1, byResponse: [1, 0], nextResponseIndex: 1 })
 
-      const reset = await ui(`/stubs/${sid}`, form("PUT", { responses: JSON.stringify([{ status: 299 }]) }))
+      const reset = await ui(`/stubs/${sid}`, save({ predicates: pathIs("/u2"), responses: [{ status: 299 }] }))
       expect(reset.status).toBe(200)
       expect(await stubStats(id, sid)).toEqual({ stubId: sid, hits: 0, byResponse: [0], nextResponseIndex: 0 })
       expect((await httpGet(9346, "/u2")).status).toBe(299)
 
-      const deleted = await ui(`/stubs/${sid}`, { method: "DELETE", headers: { "hx-request": "true" } })
+      const deleted = await ui(`/stubs/${sid}/delete`, { method: "POST", headers: { "x-imposters-fragment": "1" } })
       expect(deleted.status).toBe(200)
       const after = await stats(id)
       expect(after.stubs.map((s) => s.stubId)).toEqual([otherId])

@@ -1,8 +1,9 @@
-import type { CreateStubRequest } from "../schemas/StubSchema.js"
+import type { CreateStubRequest, Stub } from "../schemas/StubSchema.js"
 
 /**
- * "Stub it": a draft stub for a request no stub matched, which the stubs page offers in its add
- * form. Pure, and in the encoded (JSON) shape, since that is what the form shows and posts.
+ * Stub drafts: what the stubs page's editor starts from. "Stub it" drafts a stub for a request no
+ * stub matched; a new stub starts from a starter; an edit starts from the stub. Pure, and in the
+ * encoded (JSON) shape, since that is what the editor shows and posts.
  */
 
 export type StubDraft = typeof CreateStubRequest.Encoded
@@ -21,7 +22,20 @@ export const draftStubFrom = (method: string, path: string): StubDraft => ({
   responseMode: "sequential"
 })
 
-/** The stubs page with the add form prefilled for `method path` */
+/** What "new stub" starts from: a GET of / answered with an empty JSON 200 */
+export const starterDraft = (): StubDraft => draftStubFrom("GET", "/")
+
+/**
+ * A stub as the editor shows it: its predicates, responses and mode, with each predicate's
+ * `caseSensitive` left out where it is the default (true), so it reads as it was likely written
+ */
+export const draftFromStub = (stub: Stub): StubDraft => ({
+  predicates: stub.predicates.map(({ caseSensitive, ...rest }) => caseSensitive ? rest : { ...rest, caseSensitive }),
+  responses: stub.responses,
+  responseMode: stub.responseMode
+})
+
+/** The stubs page with the editor prefilled for `method path` */
 export const draftStubUrl = (method: string, path: string): string =>
   `/_admin/stubs?${new URLSearchParams({ draft: method.toUpperCase(), path }).toString()}`
 

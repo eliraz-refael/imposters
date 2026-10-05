@@ -53,7 +53,8 @@ describe("generated UI assets", () => {
   it("the script is a small IIFE", () => {
     expect(uiJs.body).toMatch(/^("use strict";)?\(\(\)=>\{/)
     expect(uiJs.body.trimEnd().endsWith("})();")).toBe(true)
-    expect(uiJs.body.length).toBeLessThan(8 * 1024)
+    // About 8 KB of runtime plus the stub editor (its JSON scanner's messages are most of it)
+    expect(uiJs.body.length).toBeLessThan(20 * 1024)
   })
 })
 

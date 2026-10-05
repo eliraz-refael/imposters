@@ -1,11 +1,12 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["ui-assets"],
+  "include": ["ui-assets", "src/ui/editor/draftText.ts"],
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": [],
     "tsBuildInfoFile": ".tsbuildinfo/ui-assets.tsbuildinfo",
-    "rootDir": "ui-assets",
+    // "." and not "ui-assets": editor.ts bundles src/ui/editor/draftText.ts, which has no imports
+    "rootDir": ".",
     "noEmit": true,
     "plugins": []
   }
