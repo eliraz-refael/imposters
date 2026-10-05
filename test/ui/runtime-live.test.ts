@@ -85,10 +85,24 @@ const pauseButton = (): HTMLElement => {
   if (el === null) throw new Error("no pause button")
   return el
 }
-const source = (): FakeEventSource => {
-  const last = FakeEventSource.instances.at(-1)
-  if (last === undefined) throw new Error("no EventSource")
+// The latest stream opened for `url`: the page's list, or the plain list beside it
+const source = (url = "/_admin/events"): FakeEventSource => {
+  const last = FakeEventSource.instances.filter((instance) => instance.url === url).at(-1)
+  if (last === undefined) throw new Error(`no EventSource for ${url}`)
   return last
+}
+
+// Answers the re-fetch held in flight
+const release = (): void => {
+  const answer = releaseReload
+  if (answer === undefined) throw new Error("no re-fetch in flight")
+  releaseReload = undefined
+  answer()
+}
+const reloads = (): number => fetched.filter((url) => url.endsWith("/_admin/fragments/requests")).length
+const reconnect = (): void => {
+  source().dispatchEvent(new Event("error"))
+  source().dispatchEvent(new Event("open"))
 }
 const row = (id: string, path: string): string => requestRow(entry(id, path), ctx).value
 
@@ -109,7 +123,10 @@ beforeAll(async () => {
     return Promise.resolve(new Response(liveFragment(data(liveTotal)).value))
   })
   const page = livePage(data(1), { theme: null, recent: [entry("r0", "/first")] }).value
-  document.body.innerHTML = /<body>([\s\S]*)<\/body>/.exec(page)?.[1] ?? ""
+  // Beside the page: a list with no data-sse-reload, so nothing to re-fetch from
+  const plain = `<section class="panel"><button id="plain-pause" data-sse-pause="#plain-rows"></button>` +
+    `<div id="plain-rows" data-sse="/plain" data-sse-event="request" data-sse-max="2"></div></section>`
+  document.body.innerHTML = (/<body>([\s\S]*)<\/body>/.exec(page)?.[1] ?? "") + plain
   await import("../../ui-assets/ui")
 })
 
@@ -196,7 +213,6 @@ describe("ui.ts on the live page", () => {
 
   it("a reconnect while paused re-fetches the rows on resume", async () => {
     pauseButton().click()
-    const reloads = () => fetched.filter((url) => url.endsWith("/_admin/fragments/requests")).length
     const before = reloads()
     reloadRows = [entry("y1", "/missed-while-paused")]
     source().dispatchEvent(new Event("error"))
@@ -205,6 +221,57 @@ describe("ui.ts on the live page", () => {
     pauseButton().click()
     await vi.waitFor(() => expect(paths()).toEqual(["/missed-while-paused"]))
     expect(reloads()).toBe(before + 1)
+  })
+
+  it("a re-fetch asked for while one is in flight runs after it, so the list ends on the newer answer", async () => {
+    reloadRows = [entry("o1", "/older")]
+    holdReload = true
+    reconnect()
+    await vi.waitFor(() => expect(releaseReload).toBeDefined())
+    // The stream drops and comes back while the first re-fetch is still out; more was logged meanwhile
+    reloadRows = [entry("n1", "/logged-while-down"), entry("o1", "/older")]
+    reconnect()
+    release()
+    await vi.waitFor(() => expect(paths()).toEqual(["/logged-while-down", "/older"]))
+  })
+
+  it("rows buffered while paused, resumed during a re-fetch, survive it landing", async () => {
+    reloadRows = [entry("s1", "/snapshot")]
+    holdReload = true
+    reconnect()
+    await vi.waitFor(() => expect(releaseReload).toBeDefined())
+    pauseButton().click()
+    source().emit(row("b1", "/buffered"))
+    pauseButton().click()
+    release()
+    await vi.waitFor(() => expect(paths()).toEqual(["/buffered", "/snapshot"]))
+  })
+
+  it("a pause while a re-fetch is in flight keeps the rows that arrived meanwhile until resume", async () => {
+    reloadRows = [entry("t1", "/snapshot-2")]
+    holdReload = true
+    reconnect()
+    await vi.waitFor(() => expect(releaseReload).toBeDefined())
+    source().emit(row("h1", "/held-then-paused"))
+    pauseButton().click()
+    const before = reloads()
+    release()
+    await vi.waitFor(() => expect(paths()).toEqual(["/snapshot-2"]))
+    // Paused: counted, not shown
+    expect(pauseButton().querySelector("[data-sse-count]")?.textContent).toBe("1")
+    pauseButton().click()
+    expect(paths()).toEqual(["/held-then-paused", "/snapshot-2"])
+    expect(reloads()).toBe(before)
+  })
+
+  it("with nothing to re-fetch from, resuming after the buffer overflowed shows the latest rows", () => {
+    const plainPause = document.getElementById("plain-pause")
+    const plainRows = document.getElementById("plain-rows")
+    if (plainPause === null || plainRows === null) throw new Error("no plain list")
+    plainPause.click()
+    for (const id of ["p1", "p2", "p3"]) source("/plain").emit(`<p id="${id}">${id}</p>`)
+    plainPause.click()
+    expect(Array.from(plainRows.children, (child) => child.id)).toEqual(["p3", "p2"])
   })
 
   it("closes the stream when the page is hidden", () => {
