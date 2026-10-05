@@ -27,6 +27,8 @@ export const Step = Schema.Union([
   Schema.TaggedStruct("Drop", {}),
   // The browser gives up on the stream (CLOSED), as on an HTTP error answer
   Schema.TaggedStruct("GiveUp", {}),
+  // The browser's reconnect attempt fails too; it keeps trying (still CONNECTING)
+  Schema.TaggedStruct("Retrying", {}),
   // The server logs requests: each is sent on an open stream, and arrives at once
   Schema.TaggedStruct("Log", { count: Schema.Literals([1, 2, 25]) }),
   // The server logs requests whose events are still in flight on an open stream: they arrive,
@@ -51,6 +53,117 @@ export const Case = Schema.Struct({
   steps: Schema.Array(Step).check(Schema.isMaxLength(60))
 })
 export type Case = typeof Case.Type
+
+// ---------------------------------------------------------------- episodes
+
+// Uniform random steps rarely line up into the states that break a live list, so most of a
+// generated scenario is episodes: short scripts aimed at them, with their details generated.
+// `Random` keeps everything else reachable.
+const Many = Schema.Literals([20, 25, 45])
+export const Episode = Schema.Union([
+  Schema.TaggedStruct("Random", { steps: Schema.Array(Step).check(Schema.isMaxLength(8)) }),
+  // A row in flight from before a re-fetch is sent arrives after its answer, with `newer` rows
+  // logged in between (so it may not be in the answer at all)
+  Schema.TaggedStruct("LateEvent", { newer: Many, late: Schema.Boolean, deliverFirst: Schema.Boolean }),
+  // A burst while a re-fetch is in flight, perhaps paused, perhaps with the stream dropping
+  Schema.TaggedStruct("BurstDuringRefetch", {
+    burst: Many,
+    inFlight: Schema.Boolean,
+    late: Schema.Boolean,
+    drop: Schema.Boolean,
+    pause: Schema.Boolean
+  }),
+  // Pause and resume around a re-fetch's answer, with rows arriving on both sides of it
+  Schema.TaggedStruct("PauseAroundAnswer", {
+    count: Schema.Literals([1, 2, 25]),
+    late: Schema.Boolean,
+    deliverFirst: Schema.Boolean,
+    resumeFirst: Schema.Boolean
+  }),
+  // The stream drops (or is given up on) while a re-fetch is out, and more is logged meanwhile
+  Schema.TaggedStruct("DropMidRefetch", { giveUp: Schema.Boolean, late: Schema.Boolean, fail: Schema.Boolean })
+])
+export type Episode = typeof Episode.Type
+
+export const Scenario = Schema.Struct({
+  initial: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 25 })),
+  episodes: Schema.Array(Episode).check(Schema.isMaxLength(10))
+})
+export type Scenario = typeof Scenario.Type
+
+const logMany = (n: 20 | 25 | 45, inFlight: boolean): ReadonlyArray<Step> => {
+  const tag = inFlight ? "LogInFlight" : "Log"
+  if (n === 20) return Array.from({ length: 10 }, (): Step => ({ _tag: tag, count: 2 }))
+  if (n === 25) return [{ _tag: tag, count: 25 }]
+  return [{ _tag: tag, count: 25 }, ...Array.from({ length: 10 }, (): Step => ({ _tag: tag, count: 2 }))]
+}
+
+const deliverAll: Step = { _tag: "Deliver", all: true }
+
+const when = (condition: boolean, ...steps: ReadonlyArray<Step>): ReadonlyArray<Step> => condition ? steps : []
+
+// The steps an episode plays
+export const expand = (episode: Episode): ReadonlyArray<Step> => {
+  switch (episode._tag) {
+    case "Random":
+      return episode.steps
+    case "LateEvent":
+      // The open's re-fetch fails; its retry is sent with one row still in flight
+      return [
+        { _tag: "Open" },
+        { _tag: "AnswerFail" },
+        { _tag: "LogInFlight", count: 1 },
+        { _tag: "Advance", ms: 1000 },
+        ...logMany(episode.newer, true),
+        ...when(episode.deliverFirst, deliverAll),
+        { _tag: "AnswerOk", late: episode.late },
+        deliverAll
+      ]
+    case "BurstDuringRefetch":
+      return [
+        { _tag: "Drop" },
+        { _tag: "Open" },
+        ...when(episode.pause, { _tag: "Pause" }),
+        ...logMany(episode.burst, episode.inFlight),
+        episode.drop ? { _tag: "Drop" } : { _tag: "Deliver", all: false },
+        { _tag: "AnswerOk", late: episode.late },
+        { _tag: "Open" },
+        ...when(episode.pause, { _tag: "Resume" }),
+        deliverAll
+      ]
+    case "PauseAroundAnswer":
+      return [
+        { _tag: "Drop" },
+        { _tag: "Open" },
+        { _tag: "LogInFlight", count: episode.count },
+        { _tag: "Pause" },
+        ...when(episode.deliverFirst, deliverAll),
+        ...when(episode.resumeFirst, { _tag: "Resume" }),
+        { _tag: "AnswerOk", late: episode.late },
+        { _tag: "LogInFlight", count: episode.count },
+        deliverAll,
+        { _tag: "Resume" }
+      ]
+    case "DropMidRefetch":
+      return [
+        { _tag: "Drop" },
+        { _tag: "Open" },
+        { _tag: "LogInFlight", count: 1 },
+        deliverAll,
+        { _tag: episode.giveUp ? "GiveUp" : "Drop" },
+        { _tag: "Log", count: 25 },
+        { _tag: "AnswerOk", late: episode.late },
+        ...when(episode.fail, { _tag: "AnswerFail" }),
+        { _tag: "Advance", ms: 1000 },
+        { _tag: "Open" }
+      ]
+  }
+}
+
+export const toCase = (scenario: Scenario): Case => ({
+  initial: scenario.initial,
+  steps: scenario.episodes.flatMap(expand)
+})
 
 // ---------------------------------------------------------------- the fakes
 
@@ -125,9 +238,11 @@ interface World {
   readonly sources: Array<FakeEventSource>
   readonly inFlight: Array<InFlight>
   hidden: boolean
+  // Rows the page has received and is holding back (paused or mid re-fetch): its badge's count
+  waiting: number
 }
 
-const freshWorld = (log: Array<number>): World => ({ log, sources: [], inFlight: [], hidden: false })
+const freshWorld = (log: Array<number>): World => ({ log, sources: [], inFlight: [], hidden: false, waiting: 0 })
 
 let world: World = freshWorld([])
 
@@ -182,8 +297,11 @@ const persistedPageshow = (persisted: boolean): Event => {
   return event
 }
 
-// An event arrives
+const badge = (): string => element("[data-sse-pause] [data-sse-count]").textContent ?? ""
+
+// An event arrives: shown at once, or held back (counted) while paused or mid re-fetch
 const arrive = (source: FakeEventSource, id: number): void => {
+  if (isPaused() || world.inFlight.length > 0) world.waiting = Math.min(world.waiting + 1, RECENT_ROWS)
   source.dispatchEvent(new MessageEvent("request", { data: requestRow(entry(id), ctx, id).value }))
 }
 
@@ -213,6 +331,9 @@ const apply = async (step: Step): Promise<void> => {
         source.readyState = CONNECTING
         source.dispatchEvent(new Event("error"))
       }
+      break
+    case "Retrying":
+      if (source !== undefined && source.readyState === CONNECTING) source.dispatchEvent(new Event("error"))
       break
     case "GiveUp":
       if (source !== undefined && source.readyState !== CLOSED) {
@@ -269,6 +390,8 @@ const apply = async (step: Step): Promise<void> => {
       break
   }
   await flush()
+  // Shown as soon as the page is neither paused nor re-fetching
+  if (!isPaused() && world.inFlight.length === 0) world.waiting = 0
 }
 
 const fail = (message: string, at: number, steps: ReadonlyArray<Step>): never => {
@@ -284,6 +407,9 @@ const check = (before: ReadonlyArray<number>, wasPaused: boolean, at: number, st
     fail(`the list changed while paused: ${JSON.stringify(before)} → ${JSON.stringify(ids)}`, at, steps)
   }
   for (const id of ids) if (!world.log.includes(id)) fail(`r${String(id)} was never logged`, at, steps)
+  if (isPaused() && badge() !== String(world.waiting)) {
+    fail(`the paused badge says ${badge()}, ${String(world.waiting)} rows are waiting`, at, steps)
+  }
   // Ids are logged in increasing order, so newest first is strictly decreasing
   for (let i = 1; i < ids.length; i++) {
     if ((ids[i] ?? 0) >= (ids[i - 1] ?? 0)) fail(`rows out of order: ${JSON.stringify(ids)}`, at, steps)
