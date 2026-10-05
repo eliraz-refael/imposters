@@ -22,6 +22,9 @@ export interface RequestLoggerShape {
   readonly getRecent: (imposterId: string, limit: number) => Effect.Effect<ReadonlyArray<LoggedEntry>>
   readonly getCount: (imposterId: string) => Effect.Effect<number>
   readonly clear: (imposterId: string) => Effect.Effect<void>
+  // Every imposter's entries as they are logged (published API; `follow` is the per-imposter,
+  // numbered form)
+  readonly subscribe: Effect.Effect<PubSub.Subscription<RequestLogEntry>, never, Scope.Scope>
   // The imposter's entries as they are logged, from the moment this runs: it subscribes at once
   // (so nothing logged after it returns is missed, however late the stream is first pulled) and
   // unsubscribes when the scope closes. The pubsub slides, so a slow reader loses its oldest
@@ -46,6 +49,7 @@ export const RequestLoggerLive = Layer.effect(
   Effect.gen(function*() {
     const storeRef = yield* Ref.make<Store>({ entries: HashMap.empty(), nextSeq: 1 })
     const pubsub = yield* PubSub.sliding<LoggedEntry>(256)
+    const plain = yield* PubSub.sliding<RequestLogEntry>(256)
     const followersRef = yield* Ref.make(HashMap.empty<string, number>())
 
     const logged = (store: Store, imposterId: string): ReadonlyArray<LoggedEntry> =>
@@ -56,7 +60,11 @@ export const RequestLoggerLive = Layer.effect(
         const next: LoggedEntry = { entry, seq: store.nextSeq }
         const updated = [...logged(store, entry.imposterId), next].slice(-MAX_ENTRIES)
         return [next, { entries: HashMap.set(store.entries, entry.imposterId, updated), nextSeq: store.nextSeq + 1 }]
-      }).pipe(Effect.flatMap((next) => PubSub.publish(pubsub, next)), Effect.asVoid)
+      }).pipe(
+        Effect.flatMap((next) => PubSub.publish(pubsub, next)),
+        Effect.andThen(PubSub.publish(plain, entry)),
+        Effect.asVoid
+      )
 
     const getEntries = (
       imposterId: string,
@@ -83,6 +91,8 @@ export const RequestLoggerLive = Layer.effect(
 
     const clear = (imposterId: string): Effect.Effect<void> =>
       Ref.update(storeRef, (store) => ({ ...store, entries: HashMap.set(store.entries, imposterId, []) }))
+
+    const subscribe: Effect.Effect<PubSub.Subscription<RequestLogEntry>, never, Scope.Scope> = PubSub.subscribe(plain)
 
     const followers = (imposterId: string): Effect.Effect<number> =>
       Ref.get(followersRef).pipe(Effect.map((counts) => Option.getOrElse(HashMap.get(counts, imposterId), () => 0)))
@@ -116,6 +126,7 @@ export const RequestLoggerLive = Layer.effect(
       getRecent,
       getCount,
       clear,
+      subscribe,
       follow,
       followers,
       getEntryById,

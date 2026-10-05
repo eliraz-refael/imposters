@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber, ManagedRuntime, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, ManagedRuntime, PubSub, Scope, Stream } from "effect"
 import * as DateTime from "effect/DateTime"
 import { NonEmptyString } from "imposters/schemas/common"
 import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
@@ -227,6 +227,22 @@ describe("RequestLogger", () => {
         expect(entriesA.filter((e) => e.id === "iso1" || e.id === "iso3").length).toBe(2)
         expect(entriesB.filter((e) => e.id === "iso2").length).toBe(1)
       })
+    )
+  })
+
+  // A published API (the root barrel exports RequestLogger): kept alongside follow
+  it("PubSub: subscribe then log receives entry", async () => {
+    await runtime.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const logger = yield* RequestLogger
+          const dequeue = yield* logger.subscribe
+          const entry = makeEntry({ id: "ps1", imposterId: "i-pubsub" })
+          yield* logger.log(entry)
+          const received = yield* PubSub.take(dequeue)
+          expect(received.id).toBe("ps1")
+        })
+      )
     )
   })
 
