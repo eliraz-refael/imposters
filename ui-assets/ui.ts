@@ -11,7 +11,8 @@
  *   replaces the page's element with that id. A failed answer's HTML goes into the action's own
  *   `[data-error-slot]` (one inside its form), else the page's first; a new action clears them all.
  * - `data-poll="ms"` with `data-url`: re-fetch into the element while the tab is visible.
- *   `data-poll-throttle="ms"` also refreshes on each SSE arrival, at most that often.
+ *   `data-poll-throttle="ms"` also refreshes on each SSE arrival, at most that often; an arrival
+ *   during a refresh gets one more once it completes, since that answer may predate it.
  * - `data-sse="url"`: prepend each event's HTML (`data-sse-event`, default `message`), newest
  *   first, highlighted with `.fresh`; keep `data-sse-max` rows (default 100). A button with
  *   `data-sse-pause="<selector>"` pauses it; events are buffered (and counted in its
@@ -241,6 +242,8 @@ const startPoll = (el: HTMLElement): void => {
   const stop = new AbortController()
   let last = Date.now()
   let inflight = false
+  // An arrival came in during a refresh, whose answer may predate it: refresh once more after
+  let dirty = false
   let pending: ReturnType<typeof setTimeout> | undefined
 
   const refresh = async (): Promise<void> => {
@@ -253,27 +256,40 @@ const startPoll = (el: HTMLElement): void => {
     last = Date.now()
     await fetchInto(el, url, el.dataset.swap ?? "inner")
     inflight = false
+    if (dirty) {
+      dirty = false
+      schedule()
+    }
+  }
+
+  // The next throttled refresh: at most one per `throttle` ms, however many arrivals ask
+  const schedule = (): void => {
+    if (inflight) {
+      dirty = true
+      return
+    }
+    if (pending !== undefined) return
+    const wait = Math.max(0, throttle - (Date.now() - last))
+    pending = setTimeout(() => {
+      pending = undefined
+      if (inflight) dirty = true
+      else void refresh()
+    }, wait)
   }
 
   const timer = setInterval(() => {
     if (document.visibilityState === "visible" && Date.now() - last >= every) void refresh()
   }, every)
-  stop.signal.addEventListener("abort", () => clearInterval(timer))
+  stop.signal.addEventListener("abort", () => {
+    clearInterval(timer)
+    clearTimeout(pending)
+  })
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && Date.now() - last >= every) void refresh()
   }, { signal: stop.signal })
 
-  if (throttle > 0) {
-    document.addEventListener("ui:arrival", () => {
-      if (pending !== undefined) return
-      const wait = Math.max(0, throttle - (Date.now() - last))
-      pending = setTimeout(() => {
-        pending = undefined
-        void refresh()
-      }, wait)
-    }, { signal: stop.signal })
-  }
+  if (throttle > 0) document.addEventListener("ui:arrival", schedule, { signal: stop.signal })
 }
 
 // ---------------------------------------------------------------- server-sent events
