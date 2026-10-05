@@ -165,6 +165,12 @@ describe("E2E: the stubs page", () => {
       const save = await post(8704, "/_admin/stubs/gone", { stub: stubJson({ responses: [{}] }) }, { fragment: true })
       expect(save.status).toBe(404)
       expect(await save.text()).toContain("add it as a new stub")
+      // Without JS the page comes back with the editor: a stub that is not listed has no number
+      const page404 = await post(8704, "/_admin/stubs/gone", { stub: stubJson({ responses: [{}] }) })
+      expect(page404.status).toBe(404)
+      const html = await page404.text()
+      expect(html).toContain(`<h2 class="title" id="editor-title">edit stub</h2>`)
+      expect(html).not.toContain("edit stub #0")
       expect(await stubsOf(id)).toEqual([])
     })
   }, 10000)
