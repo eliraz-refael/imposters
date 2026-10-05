@@ -228,16 +228,22 @@ const copyFrom = async (el: HTMLElement): Promise<void> => {
 // ---------------------------------------------------------------- polling
 
 // Whether the element now holds the server's answer
-const fetchInto = async (el: Element, url: string, mode: string): Promise<boolean> => {
+// A fragment's HTML, or null when the server could not be reached or answered an error
+const fetchFragment = async (url: string): Promise<string | null> => {
   try {
     const response = await fetch(url, { headers: FRAGMENT_HEADERS, cache: "no-store" })
-    if (!response.ok) return false
-    swap(el, await response.text(), mode)
-    return true
+    return response.ok ? await response.text() : null
   } catch {
     // Offline or restarting: the next tick tries again
-    return false
+    return null
   }
+}
+
+const fetchInto = async (el: Element, url: string, mode: string): Promise<boolean> => {
+  const text = await fetchFragment(url)
+  if (text === null) return false
+  swap(el, text, mode)
+  return true
 }
 
 const startPoll = (el: HTMLElement): void => {
@@ -375,11 +381,18 @@ const startSse = (el: HTMLElement): void => {
     try {
       while (stale && !paused && !awaitingOpen()) {
         stale = false
-        if (!(await fetchInto(el, url, "inner"))) {
+        const rows = await fetchFragment(url)
+        if (rows === null) {
           stale = true
           failed = true
           break
         }
+        // Paused while it was out: the list stays as it is, and resume re-fetches
+        if (paused) {
+          stale = true
+          break
+        }
+        swap(el, rows, "inner")
       }
     } finally {
       reloading = false

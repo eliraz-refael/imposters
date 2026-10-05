@@ -20,4 +20,9 @@ describe("ui.ts live list: found by the property test", () => {
     initial: 0,
     steps: [{ _tag: "Log", count: 2 }, { _tag: "GiveUp" }]
   })
+
+  pinned("a re-fetch that lands while paused leaves the list as it is", {
+    initial: 0,
+    steps: [{ _tag: "Log", count: 2 }, { _tag: "Open" }, { _tag: "Pause" }, { _tag: "AnswerOk" }]
+  })
 })

@@ -255,21 +255,25 @@ describe("ui.ts on the live page", () => {
     await vi.waitFor(() => expect(paths()).toEqual(["/buffered", "/snapshot"]))
   })
 
-  it("a pause while a re-fetch is in flight keeps the rows that arrived meanwhile until resume", async () => {
+  it("a pause while a re-fetch is in flight freezes the list: the answer and the rows meanwhile wait for resume", async () => {
     reloadRows = [entry("t1", "/snapshot-2")]
     holdReload = true
     reconnect()
     await vi.waitFor(() => expect(releaseReload).toBeDefined())
     source().emit(row("h1", "/held-then-paused"))
     pauseButton().click()
+    const frozen = paths()
     const before = reloads()
     release()
-    await vi.waitFor(() => expect(paths()).toEqual(["/snapshot-2"]))
-    // Paused: counted, not shown
+    await flush()
+    // Paused: the answer is not applied, and the arrival is counted, not shown
+    expect(paths()).toEqual(frozen)
     expect(pauseButton().querySelector("[data-sse-count]")?.textContent).toBe("1")
+    // Resume re-fetches; the server has logged h1 by now
+    reloadRows = [entry("h1", "/held-then-paused"), entry("t1", "/snapshot-2")]
     pauseButton().click()
-    expect(paths()).toEqual(["/held-then-paused", "/snapshot-2"])
-    expect(reloads()).toBe(before)
+    await vi.waitFor(() => expect(paths()).toEqual(["/held-then-paused", "/snapshot-2"]))
+    expect(reloads()).toBe(before + 1)
   })
 
   it("with nothing to re-fetch from, resuming after the buffer overflowed shows the latest rows", () => {
@@ -348,11 +352,12 @@ describe("ui.ts on the live page", () => {
     pauseButton().click()
     // Goes stale again while paused and mid re-fetch
     reconnect()
+    const frozen = paths()
     const before = reloads()
     release()
-    await vi.waitFor(() => expect(paths()).toEqual(["/in-flight"]))
     await flush()
-    // Paused: the list stays as it is
+    // Paused: the list stays as it is, and nothing is re-fetched
+    expect(paths()).toEqual(frozen)
     expect(reloads()).toBe(before)
     reloadRows = [entry("y2", "/logged-while-paused"), entry("y1", "/in-flight")]
     pauseButton().click()
