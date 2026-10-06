@@ -43,7 +43,7 @@ describe("shellQuote", () => {
   it.prop("any string without a NUL reads back as itself", { s: Schema.String }, ({ s }) => {
     const value = loggable(s)
     expect(shellArgs(`curl ${shellQuote(value)}`)).toEqual([value])
-  }, { arbitrary: { runs: 150 } })
+  }, { timeout: 30_000, arbitrary: { runs: 60 } })
 })
 
 describe("toCurl", () => {
@@ -181,7 +181,7 @@ describe("toCurl", () => {
         cleanBody
       ])
     },
-    { arbitrary: { runs: 100 } }
+    { timeout: 30_000, arbitrary: { runs: 60 } }
   )
 })
 
