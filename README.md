@@ -15,7 +15,7 @@ Programmable mock servers for HTTP APIs and an in-memory S3, with stubs, hot-rel
 [![Check](https://img.shields.io/github/actions/workflow/status/eliraz-refael/imposters/check.yml?branch=master&label=check&labelColor=0a0d0b)](https://github.com/eliraz-refael/imposters/actions/workflows/check.yml)
 [![License: MIT](https://img.shields.io/github/license/eliraz-refael/imposters?labelColor=0a0d0b&color=7f9184)](LICENSE)
 
-**[Try it in your browser →](https://eliraz-refael.github.io/imposters/#playground)** · [Docs](https://eliraz-refael.github.io/imposters/docs/) · [Roadmap](ROADMAP.md) (what is planned next, with an issue per item) · [Website](https://eliraz-refael.github.io/imposters/)
+**[Try it in your browser →](https://eliraz-refael.github.io/imposters/#playground)** · [npm](https://www.npmjs.com/package/imposters) · [Docs](https://eliraz-refael.github.io/imposters/docs/) · [Roadmap](ROADMAP.md) (what is planned next, with an issue per item) · [Website](https://eliraz-refael.github.io/imposters/)
 
 <img src="assets/demo.svg" alt="A terminal session: npx imposters start --config imposters.json starts a users-api imposter on port 3000; curl localhost:3000/users/42 answers {&quot;id&quot;:&quot;42&quot;,&quot;name&quot;:&quot;Alice&quot;}; a PUT to the stub on the admin API changes it while it runs, and the same curl now answers {&quot;id&quot;:&quot;42&quot;,&quot;name&quot;:&quot;Bob&quot;}" width="821">
 
@@ -45,14 +45,27 @@ Imposters lets you spin up fake HTTP servers ("imposters") that respond to reque
 - **Node or Bun** — Runs on Node.js (`node:http`) by default; `--runtime bun` serves the admin API with `Bun.serve()`
 - **Built on Effect** — Fiber-based concurrency, typed errors, and composable services
 
+## Installation
+
+Imposters is published on npm as [`imposters`](https://www.npmjs.com/package/imposters). Add it to a project as a dev dependency:
+
+```bash
+npm install --save-dev imposters
+```
+
+Or run it without installing: `npx imposters start`.
+
+Every release also attaches the same package to its [GitHub release](https://github.com/eliraz-refael/imposters/releases) as `imposters-<version>.tgz`. It contains the same files as the npm package. The publish workflow also compares its integrity hash with npm's and warns on a mismatch. Where the npm registry is not reachable, depend on the file directly. Any release works; substitute its version in both places:
+
+```json
+"imposters": "https://github.com/eliraz-refael/imposters/releases/download/v0.14.0/imposters-0.14.0.tgz"
+```
+
 ## Quick Start
 
 ```bash
-# Install dependencies
-bun install
-
 # Start the admin server on the default port (2525)
-bun tsx src/Program.ts start   # or, with the package installed: npx imposters start
+npx imposters start
 
 # Create an imposter
 curl -X POST http://localhost:2525/imposters \
@@ -84,17 +97,7 @@ curl http://localhost:3000/users/1
 # => {"id":1,"name":"Alice"}
 ```
 
-## Installation
-
-```bash
-npm install --save-dev imposters
-```
-
-Every release also attaches the same package to its [GitHub release](https://github.com/eliraz-refael/imposters/releases) as `imposters-<version>.tgz`. It contains the same files as the npm package. The publish workflow also compares its integrity hash with npm's and warns on a mismatch. Where the npm registry is not reachable, depend on the file directly. Any release works; substitute its version in both places:
-
-```json
-"imposters": "https://github.com/eliraz-refael/imposters/releases/download/v0.6.0/imposters-0.6.0.tgz"
-```
+To run it from a clone of this repository instead, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## CLI Usage
 
