@@ -137,7 +137,7 @@ describe("E2E: Imposter UI", () => {
 // test/e2e/stub-editor.test.ts).
 const form = (fields: Record<string, string>): RequestInit => ({
   method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded", "hx-request": "true" },
+  headers: { "content-type": "application/x-www-form-urlencoded" },
   body: new URLSearchParams(fields).toString()
 })
 
@@ -204,9 +204,7 @@ describe("E2E: Imposter UI fixes", () => {
       await fetch("http://localhost:9624/some/path")
       const page = await (await fetch("http://localhost:9624/_admin/requests")).text()
       expect(page).not.toContain("NaN")
-      expect(page).toMatch(/>\d{2}:\d{2}:\d{2} UTC</)
-      const list = await (await fetch("http://localhost:9624/_admin/requests/list")).text()
-      expect(list).toMatch(/>\d{2}:\d{2}:\d{2} UTC</)
+      expect(page).toMatch(/class="req-time c-muted">\d{2}:\d{2}:\d{2}\.\d{3}</)
     })
   }, 10000)
 
@@ -223,15 +221,21 @@ describe("E2E: Imposter UI fixes", () => {
     })
   }, 10000)
 
-  it("Send Test Request: a path without a leading slash works, and errors are escaped 400s", async () => {
+  it("send a request: a path without a leading slash works, and errors are escaped 400s", async () => {
     await withRunningImposter(9630, async (id) => {
       await addStub(id, {
         predicates: [{ field: "path", operator: "equals", value: "/ping" }],
         responses: [{ status: 200, body: "pong" }]
       })
+      // Sent, it is logged like any request, and the answer is its page
       const ok = await fetch("http://localhost:9630/_admin/requests/test", form({ method: "GET", path: "ping" }))
       expect(ok.status).toBe(200)
-      expect(await ok.text()).toContain("pong")
+      expect(ok.redirected).toBe(true)
+      expect(ok.url).toMatch(/\/_admin\/requests\/[0-9a-f-]{36}$/)
+      const detail = await ok.text()
+      expect(detail).toContain(`<h2 class="detail-path">/ping</h2>`)
+      expect(detail).toContain("pong")
+      expect(await loggedPaths(id)).toEqual(["/ping"])
 
       const bad = await fetch(
         "http://localhost:9630/_admin/requests/test",
@@ -247,26 +251,30 @@ describe("E2E: Imposter UI fixes", () => {
 
   it("a non-numeric status filter is a visible 400, not an empty table", async () => {
     await withRunningImposter(9631, async () => {
-      const resp = await fetch("http://localhost:9631/_admin/requests/list?status=abc")
+      const resp = await fetch("http://localhost:9631/_admin/requests?status=abc")
       expect(resp.status).toBe(400)
-      expect(resp.headers.get("hx-retarget")).toBe("#ui-error")
-      expect(await resp.text()).toContain("Status filter must be a number")
+      const page = await resp.text()
+      expect(page).toContain(
+        `<div class="alert" data-error-slot>Status filter must be a number, got &quot;abc&quot;.</div>`
+      )
+      // The field keeps what was typed, marked
+      expect(page).toMatch(/id="filter-status"[^>]*value="abc"[^>]*aria-invalid="true"/)
     })
   }, 10000)
 
-  it("a detail link for an unknown request id is a 404 page inside the layout", async () => {
+  it("a detail link for an unknown request id is a 404 page in the imposter's shell", async () => {
     await withRunningImposter(9632, async () => {
       const resp = await fetch("http://localhost:9632/_admin/requests/no-such-id")
       expect(resp.status).toBe(404)
       const page = await resp.text()
       expect(page).toContain("<!DOCTYPE html>")
-      expect(page).toContain("Request not found")
-      expect(page).toContain("Back to Requests")
+      expect(page).toContain("request not found")
+      expect(page).toContain(`href="/_admin/requests">← requests</a>`)
       expect(page).toContain("no-such-id")
     })
   }, 10000)
 
-  it("the request detail page shows the instant in UTC and the matched stub without a Delete button", async () => {
+  it("the request detail page shows the instant in UTC and the matched stub, escaping the body", async () => {
     await withRunningImposter(9633, async (id) => {
       await addStub(id, { predicates: [], responses: [{ status: 200, body: "<script>alert(1)</script>" }] })
       await fetch("http://localhost:9633/x")
@@ -274,10 +282,13 @@ describe("E2E: Imposter UI fixes", () => {
       const link = /href="(\/_admin\/requests\/[0-9a-f-]{36})"/.exec(list)?.[1]
       expect(link).toBeDefined()
       const page = await (await fetch(`http://localhost:9633${link ?? ""}`)).text()
-      expect(page).toMatch(/Timestamp: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/)
-      expect(page).toContain("Matched Stub")
-      expect(page).not.toContain("hx-delete")
+      expect(page).toMatch(
+        /<time datetime="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z">\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} UTC<\/time>/
+      )
+      expect(page).toContain(`matched <a href="/_admin/stubs#stub-`)
+      expect(page).toContain("#1 catch-all</a>")
       expect(page).not.toContain("<script>alert(1)</script>")
+      expect(page).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
     })
   }, 10000)
 

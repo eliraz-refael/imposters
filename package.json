@@ -106,8 +106,7 @@
       "exclude": [
         "types/**/*.d.ts",
         "ui/assets/**",
-        "ui/pages/request-detail.ts",
-        "ui/partials.ts"
+        "ui/pages/request-detail.ts"
       ]
     },
     "generateIndex": {
@@ -120,8 +119,7 @@
         "cli/Commands.ts",
         "extensions/*/**/*.ts",
         "ui/assets/**",
-        "ui/pages/request-detail.ts",
-        "ui/partials.ts"
+        "ui/pages/request-detail.ts"
       ]
     }
   }

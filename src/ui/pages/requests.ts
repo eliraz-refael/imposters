@@ -1,141 +1,156 @@
 import type { ImposterConfig } from "../../domain/imposter.js"
 import type { RequestLogEntry } from "../../schemas/RequestLogSchema.js"
-import { html, raw } from "../html.js"
-import type { SafeHtml } from "../html.js"
-import { layout } from "../layout.js"
-import { requestTablePartial, statusBadge } from "../partials.js"
+import type { Stub } from "../../schemas/StubSchema.js"
+import { MAX_ENTRIES } from "../../services/RequestLogger.js"
+import { count, plural } from "../components/format.js"
+import { imposterHeader } from "../components/imposterHeader.js"
+import { linkButton, postButton } from "../components/primitives.js"
+import { shell } from "../components/shell.js"
+import { concat, html, type SafeHtml } from "../html.js"
+import { isFiltered, type ParsedFilters } from "../RequestsData.js"
+import type { Theme } from "../theme.js"
+import { requestRow, type RowContext } from "./live.js"
+
+/**
+ * An imposter's request log (`/_admin/requests`): every logged request, newest first, in the
+ * live view's rows, each linking to its page; filters by method, path and status; clearing the
+ * log; and a form that sends a request to the imposter. Every form works without JS: the filters
+ * are a GET, clearing and sending are POSTs answered with a 303 (sending, to the new request's page).
+ */
+
+export const REQUESTS_URL = "/_admin/requests"
+export const CLEAR_URL = "/_admin/requests/clear"
+export const SEND_URL = "/_admin/requests/test"
+// The request log keeps this many entries per imposter
+export const LOG_SIZE = MAX_ENTRIES
+
+/** A logged request's page */
+export const requestUrl = (id: string): string => `${REQUESTS_URL}/${encodeURIComponent(id)}`
+
+const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+const CONTENT_TYPES = ["application/json", "text/plain", "application/x-www-form-urlencoded", "application/xml"]
+
+const option = (value: string, label: string, selected: boolean): SafeHtml =>
+  html`<option value="${value}"${selected ? html` selected` : html``}>${label}</option>`
+
+const filterForm = (parsed: ParsedFilters): SafeHtml => {
+  const { fields } = parsed
+  // A method the select does not offer (typed into the URL) is still shown as the one filtered by
+  const methods = fields.method === "" || METHODS.includes(fields.method) ? METHODS : [...METHODS, fields.method]
+  return html`<form class="panel filters" method="get" action="${REQUESTS_URL}" aria-label="Filter requests">
+  <div class="field"><label class="label" for="filter-method">method</label><select class="input" id="filter-method" name="method">${
+    option("", "any", fields.method === "")
+  }${concat(methods.map((m) => option(m, m, m === fields.method)))}</select></div>
+  <div class="field filter-path"><label class="label" for="filter-path">path</label><input class="input" id="filter-path" name="path" type="text" value="${fields.path}" placeholder="/orders" autocomplete="off" spellcheck="false"></div>
+  <div class="field filter-status"><label class="label" for="filter-status">status</label><input class="input" id="filter-status" name="status" type="text" inputmode="numeric" value="${fields.status}" placeholder="503" autocomplete="off"${
+    parsed.error === undefined ? html`` : html` aria-invalid="true"`
+  }></div>
+  <div class="filter-actions"><button class="btn" type="submit">filter</button>${
+    isFiltered(parsed.filters) || parsed.error !== undefined
+      ? linkButton({ href: REQUESTS_URL, label: "show all" })
+      : html``
+  }</div>
+</form>`
+}
+
+/** What the send form held, to show it again after a refused send (without JS) */
+export interface SendForm {
+  readonly method: string
+  readonly path: string
+  readonly contentType: string
+  readonly headers: string
+  readonly body: string
+}
+
+const EMPTY_SEND: SendForm = { method: "GET", path: "/", contentType: "application/json", headers: "", body: "" }
+
+const sendPanel = (form: SendForm, error: string | undefined): SafeHtml =>
+  html`<details class="panel send"${error === undefined ? html`` : html` open`}>
+  <summary class="bar send-bar"><h2 class="title">send a request</h2><span class="label">to this imposter, logged like any other; opens its page</span></summary>
+  <form class="send-form" method="post" action="${SEND_URL}" data-action>
+    <div class="send-line">
+      <div class="field"><label class="label" for="send-method">method</label><select class="input" id="send-method" name="method">${
+    concat(METHODS.map((m) => option(m, m, m === form.method)))
+  }</select></div>
+      <div class="field send-path"><label class="label" for="send-path">path</label><input class="input" id="send-path" name="path" type="text" value="${form.path}" placeholder="/orders?status=open" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label class="label" for="send-type">content type</label><select class="input" id="send-type" name="contentType">${
+    concat(CONTENT_TYPES.map((t) => option(t, t, t === form.contentType)))
+  }</select></div>
+    </div>
+    <div class="field"><label class="label" for="send-headers">headers · one per line, name: value</label><textarea class="input code-input" id="send-headers" name="headers" rows="2" placeholder="authorization: Bearer token123" spellcheck="false">
+${form.headers}</textarea></div>
+    <div class="field"><label class="label" for="send-body">body · not sent with GET or HEAD</label><textarea class="input code-input" id="send-body" name="body" rows="4" placeholder='{ "key": "value" }' spellcheck="false">
+${form.body}</textarea></div>
+    <div class="alert" data-error-slot>${error ?? ""}</div>
+    <div class="send-foot"><button class="btn btn-accent" type="submit">send</button></div>
+  </form>
+</details>`
+
+const listTitle = (shown: number, total: number, filtered: boolean): string =>
+  filtered ? `${count(shown)} of ${plural(total, "request")}` : plural(total, "request")
 
 export interface RequestsPageData {
   readonly config: ImposterConfig
+  readonly stubs: ReadonlyArray<Stub>
+  // Newest first, filtered
   readonly entries: ReadonlyArray<RequestLogEntry>
+  // Every entry the log holds
+  readonly total: number
+  readonly filters: ParsedFilters
 }
 
-const testRequestForm = (_port: number): SafeHtml =>
-  html`<details class="bg-white rounded-lg shadow p-4 mb-6">
-    <summary class="text-lg font-semibold cursor-pointer">Send Test Request</summary>
-    <form hx-post="/_admin/requests/test" hx-target="#test-result" hx-swap="innerHTML" class="mt-3 space-y-3">
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Method</label>
-          <select name="method" class="w-full border rounded p-2 text-sm">
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-            <option value="PUT">PUT</option>
-            <option value="PATCH">PATCH</option>
-            <option value="DELETE">DELETE</option>
-            <option value="HEAD">HEAD</option>
-            <option value="OPTIONS">OPTIONS</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Path</label>
-          <input name="path" type="text" value="/" class="w-full border rounded p-2 text-sm font-mono" placeholder="/api/test" />
-        </div>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Content-Type</label>
-        <select name="contentType" class="w-full border rounded p-2 text-sm">
-          <option value="application/json">application/json</option>
-          <option value="text/plain">text/plain</option>
-          <option value="application/x-www-form-urlencoded">application/x-www-form-urlencoded</option>
-          <option value="application/xml">application/xml</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Headers (one per line: Key: Value)</label>
-        <textarea name="headers" rows="2" class="w-full border rounded p-2 text-sm font-mono" placeholder="Authorization: Bearer token123"></textarea>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Body</label>
-        <textarea name="body" rows="3" class="w-full border rounded p-2 text-sm font-mono" placeholder='{"key": "value"}'></textarea>
-      </div>
-      <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">Send Request</button>
-    </form>
-    <div id="test-result" class="mt-3"></div>
-  </details>`
-
-const filterBar = (): SafeHtml =>
-  html`<div class="bg-white rounded-lg shadow p-4 mb-6">
-    <form hx-get="/_admin/requests/list" hx-target="#request-table-body" hx-swap="innerHTML" class="flex flex-wrap gap-3 items-end">
-      <div>
-        <label class="block text-xs text-gray-500 mb-1">Method</label>
-        <select name="method" class="border rounded p-1.5 text-sm">
-          <option value="">All</option>
-          <option value="GET">GET</option>
-          <option value="POST">POST</option>
-          <option value="PUT">PUT</option>
-          <option value="PATCH">PATCH</option>
-          <option value="DELETE">DELETE</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs text-gray-500 mb-1">Path</label>
-        <input name="path" type="text" class="border rounded p-1.5 text-sm font-mono w-40" placeholder="/api/..." />
-      </div>
-      <div>
-        <label class="block text-xs text-gray-500 mb-1">Status</label>
-        <input name="status" type="text" class="border rounded p-1.5 text-sm font-mono w-20" placeholder="200" />
-      </div>
-      <button type="submit" class="bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 text-sm">Filter</button>
-      <button type="button" hx-delete="/_admin/requests" hx-target="#request-table-body" hx-swap="innerHTML" hx-confirm="Clear all request logs?" class="bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded hover:bg-red-100 text-sm ml-auto">Clear Log</button>
-    </form>
-  </div>`
-
-export const requestsPage = (data: RequestsPageData): SafeHtml => {
-  const content = html`
-    ${testRequestForm(data.config.port)}
-    ${filterBar()}
-    <div class="bg-white rounded-lg shadow overflow-x-auto">
-      <table class="w-full text-left">
-        <thead>
-          <tr class="text-xs text-gray-500 uppercase border-b">
-            <th class="py-2 px-3">Time</th>
-            <th class="py-2 px-3">Method</th>
-            <th class="py-2 px-3">Path</th>
-            <th class="py-2 px-3">Status</th>
-            <th class="py-2 px-3">Stub</th>
-            <th class="py-2 px-3">Duration</th>
-            <th class="py-2 px-3"></th>
-          </tr>
-        </thead>
-        <tbody id="request-table-body">
-          ${raw(requestTablePartial(data.entries.slice().reverse()).value)}
-        </tbody>
-      </table>
-    </div>`
-
-  return layout(
-    {
-      title: `${data.config.name} — Requests`,
-      imposterName: data.config.name,
-      port: data.config.port,
-      activeTab: "requests"
-    },
-    content
-  )
+export interface RequestsPageOpts {
+  readonly theme: Theme | null
+  readonly adminUiUrl?: string
+  // A refused send without JS: the form as posted, and why
+  readonly send?: { readonly form: SendForm; readonly error: string }
 }
 
-export const testResultPartial = (
-  result: { status: number; headers: Record<string, string>; body: string; duration: number }
-): SafeHtml => {
-  const headerRows = Object.entries(result.headers).map(([k, v]) =>
-    html`<tr class="border-t"><td class="py-1 px-2 text-xs font-mono text-gray-600">${k}</td><td class="py-1 px-2 text-xs font-mono">${v}</td></tr>`
-  )
-  return html`<div class="bg-gray-50 rounded p-3 border">
-    <div class="flex items-center gap-3 mb-2">
-      <span class="font-semibold text-sm">Response</span>
-      ${statusBadge(result.status)}
-      <span class="text-xs text-gray-500">${String(result.duration)}ms</span>
-    </div>
-    ${
-    headerRows.length > 0
-      ? html`<table class="w-full mb-2"><thead><tr class="text-xs text-gray-500"><th class="text-left px-2">Header</th><th class="text-left px-2">Value</th></tr></thead><tbody>${
-        headerRows.reduce((a, r) => html`${a}${r}`, html``)
-      }</tbody></table>`
-      : html``
-  }
-    <pre class="bg-white border rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto">${
-    result.body || "(empty body)"
-  }</pre>
-  </div>`
+/** The header of the requests pages: the imposter, with the requests tab current */
+export const requestsHeader = (config: ImposterConfig, stubCount: number, adminUiUrl: string | undefined): SafeHtml =>
+  imposterHeader({
+    name: config.name,
+    port: config.port,
+    protocol: config.protocol,
+    running: config.status === "running",
+    ...(config.proxy !== undefined ? { proxyMode: config.proxy.mode } : {}),
+    stubCount,
+    current: "requests",
+    ...(adminUiUrl !== undefined ? { adminUiUrl } : {})
+  })
+
+export const requestsPage = (data: RequestsPageData, opts: RequestsPageOpts): SafeHtml => {
+  const { config } = data
+  const header = requestsHeader(config, data.stubs.length, opts.adminUiUrl)
+  const ctx: RowContext = { stubs: data.stubs, protocol: config.protocol }
+  const filtered = isFiltered(data.filters.filters)
+  const empty = data.total === 0
+    ? `nothing logged yet: requests to :${String(config.port)} appear here`
+    : "no logged request matches these filters"
+  const body = html`${header}
+<main class="main">
+  <div class="requests-head">
+    <div class="stack page-head"><h2 class="page-title">requests</h2><span class="label">newest first · UTC · the log keeps the last ${LOG_SIZE}, from this start</span></div>
+    <div class="bar-actions">${
+    postButton({
+      action: CLEAR_URL,
+      label: "clear log",
+      variant: "danger",
+      confirm: "Clear this imposter's request log?"
+    })
+  }</div>
+  </div>
+  <div class="alert" data-error-slot>${data.filters.error ?? ""}</div>
+  ${sendPanel(opts.send?.form ?? EMPTY_SEND, opts.send?.error)}
+  ${filterForm(data.filters)}
+  <section class="panel" aria-labelledby="log-title">
+    <div class="bar"><h2 class="title" id="log-title">${
+    listTitle(data.entries.length, data.total, filtered)
+  }</h2><a class="label c-ok" href="/_admin">live view →</a></div>
+    <div class="req req-head" aria-hidden="true"><span>time</span><span>method</span><span>path</span><span class="num-head">status</span><span>stub</span><span class="num-head">duration</span></div>
+    <div class="req-list">${concat(data.entries.map((entry) => requestRow(entry, ctx)))}</div>
+    <p class="rows-empty label">${empty}</p>
+  </section>
+</main>`
+  return shell({ title: `${config.name} · requests`, prefix: "/_admin", theme: opts.theme }, body)
 }

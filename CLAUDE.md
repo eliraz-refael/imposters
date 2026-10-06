@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 1004 tests across 91 files.
+All three gates pass: `bun check`, `bun lint`, and 1044 tests across 94 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -27,7 +27,7 @@ All three gates pass: `bun check`, `bun lint`, and 1004 tests across 91 files.
 | Proxy mode — passthrough and record-as-stub | ✅ |
 | Request logging + inspector | ✅ |
 | Metrics / statistics per imposter | ✅ |
-| Web UIs — `/_ui` (admin, the self-hosted Disguise dashboard) and `/_admin` (per imposter: the live view and the stubs page are redesigned; requests and request detail stay htmx until PR 9) | ✅ |
+| Web UIs — `/_ui` (admin, the self-hosted Disguise dashboard) and `/_admin` (per imposter: live view, stubs with a form editor, the request log and a page per request with explain, copy as curl and replay), all self-hosted with no CDN | ✅ |
 | Typed client library + `withImposter` test helpers | ✅ |
 | CLI via `effect/unstable/cli`, JSON config file loading | ✅ |
 | Node **and** Bun runtimes (`--runtime` flag) | ✅ |
@@ -164,16 +164,15 @@ src/
     MetricsService.ts      # counts, percentiles, error rate
     Uuid.ts / UuidLive.ts
   ui/
-    UiRouter.ts            # per-imposter /_admin — plain URL matcher, returns Response | null; GET /_admin/events is the SSE stream
-    LiveData.ts            # pure data for the live view; stubDraft.ts ("stub it" drafts); crossSite.ts (the shared POST guard)
+    UiRouter.ts            # per-imposter /_admin — plain URL matcher, returns Response | null; GET /_admin/events is the SSE stream; POST /_admin/requests/:id/replay goes through ImposterServer's serve (deps.serveRequest)
+    LiveData.ts            # pure data for the live view; RequestsData.ts (list filters, request page, explain rows); stubDraft.ts ("stub it" drafts); resend.ts (toCurl, replayRequest); forms.ts (formString); crossSite.ts (the shared POST guard)
     StubsData.ts           # the stubs page's view-model: cards, next marker, delay labels, the fallback line
     editor/                # draftText.ts (text ⇄ stub draft, line/column errors), formModel.ts (draft ⇄ form state, edits; pure), formView.ts (each form control's attributes, shared by server and runtime): the three import only each other, editor.js bundles them; checkStub.ts (server-side check)
     html.ts                # tagged-template engine with auto-escaping
-    layout.ts, partials.ts
     assets/                # generated.ts (committed, from ui-assets/ by `bun gen-ui-assets`), serve.ts (hashed, immutable, ETag)
     components/            # shell (data-theme, hashed asset links), header, imposterHeader (tabs), primitives (postButton…), sparkline (pure points()), format
     theme.ts               # themeFromCookie (imposters-theme)
-    pages/                 # live and stubs (redesigned; stubForm.ts is the editor's form view and row templates), requests, request-detail (old layout until PR 9)
+    pages/                 # live, stubs (stubForm.ts is the editor's form view and row templates), requests, request-detail; all on components/shell.ts
     admin/                 # global /_ui dashboard: AdminUiRouter (forms: 303 without JS, fragments with), OverviewData (decodes the API), pages/Overview.ts
 ui-assets/                 # UI sources: tokens.css, fonts.css, ui.css, ui.ts (runtime on every page; dispatches ui:init), editor-main.ts (editor.js, stubs page only) with editor.ts, form.ts, applyEdit.ts, textEdit.ts; own tsconfig, rootDir "." so it can bundle src/ui/editor/{draftText,formModel,formView}.ts
 scripts/ui-assets.ts       # the asset generator (gen-ui-assets.ts is its CLI)
@@ -245,10 +244,11 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710, request detail/replay 9561–9569). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - **`ui-assets/ui.ts` is tested in happy-dom,** opted into per file with `// @vitest-environment happy-dom` (everything else stays on node), against a fake `EventSource` and `fetch`.
-- **`/_ui` POSTs and every non-GET `/_admin` request refuse cross-site requests** (403, `src/ui/crossSite.ts`): `Sec-Fetch-Site: cross-site`, or, when the header is `same-site` or absent, an `Origin` whose host differs from the request's. The stub writes are `POST /_admin/stubs`, `/stubs/:id`, `/stubs/:id/delete` and `/stubs/preview`. Keep that guard on any new UI form endpoint: the admin API has no auth, and a form post needs no CORS preflight.
+- **`/_ui` POSTs and every non-GET `/_admin` request refuse cross-site requests** (403, `src/ui/crossSite.ts`): `Sec-Fetch-Site: cross-site`, or, when the header is `same-site` or absent, an `Origin` whose host differs from the request's. Every `/_admin` state change is behind it: the stub writes (`POST /_admin/stubs`, `/stubs/:id`, `/stubs/:id/delete`, `/stubs/preview`) and `/requests/clear`, `/requests/test`, `/requests/:id/replay`. Keep that guard on any new UI form endpoint: the admin API has no auth, and a form post needs no CORS preflight.
+- **No CDN, no htmx:** `test/ui/self-hosted.test.ts` fails on any `unpkg`, `cdn.`, `htmx` or `hx-` in `src/` (generated assets included) or `ui-assets/`.
 - **UI tokens:** every `--im-*` value must match `site/src/styles/theme.css` (a test checks it); UI-only tokens are `--ui-*`. The `imposters-theme` cookie is set on both `/_ui` and `/_admin`.
 - **Randomness goes through Effect's `Random`** (delay ranges, random response mode), never `Math.random`. In tests, fix it with `Effect.provideService(Random.Random, { nextDoubleUnsafe: () => d, nextIntUnsafe: () => 0 })` or `Random.withSeed(seed)`. `Random.nextIntBetween(min, max)` includes both ends unless `{ halfOpen: true }`.
 - **SSE streams subscribe before their first chunk** (`RequestLogger.follow` returns a scoped Stream), and every stream does `Stream.interruptWhen(shutdown)` on the run's Deferred, so it ends on stop even on a server that never cancels a body.

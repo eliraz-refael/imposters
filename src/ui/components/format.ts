@@ -61,3 +61,9 @@ export const clockTime = (epochMs: number): string => {
   const at = DateTime.toPartsUtc(DateTime.makeUnsafe(epochMs))
   return `${pad(at.hour)}:${pad(at.minute)}:${pad(at.second)}.${pad(at.millisecond, 3)}`
 }
+
+/** The date and time in UTC, to the millisecond: 1759659292311 → "2025-10-05 10:14:52.311" */
+export const dateTime = (epochMs: number): string => {
+  const at = DateTime.toPartsUtc(DateTime.makeUnsafe(epochMs))
+  return `${pad(at.year, 4)}-${pad(at.month)}-${pad(at.day)} ${clockTime(epochMs)}`
+}

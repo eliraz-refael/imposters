@@ -2,7 +2,8 @@ import type { Scope } from "effect"
 import { Context, Effect, HashMap, Layer, Option, PubSub, Ref, Stream } from "effect"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 
-const MAX_ENTRIES = 100
+// How many entries the log keeps per imposter
+export const MAX_ENTRIES = 100
 
 // A logged request with its place in the log: `seq` increases with every entry logged, across
 // all imposters and restarts, so a page can order rows that reach it out of order (an event

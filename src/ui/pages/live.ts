@@ -51,7 +51,7 @@ export interface RowContext {
   readonly protocol: string
 }
 
-const METHOD_CLASS: Record<string, string> = {
+const METHOD_CLASS: Readonly<Record<string, string>> = {
   GET: "m-get",
   HEAD: "m-get",
   POST: "m-post",
@@ -60,7 +60,11 @@ const METHOD_CLASS: Record<string, string> = {
   DELETE: "m-delete"
 }
 
-const statusClass = (status: number): string => status >= 500 ? "c-error" : status >= 400 ? "c-caution" : "c-ok"
+/** A method's colour class: GET lime, POST teal, PUT and PATCH amber, DELETE red */
+export const methodClass = (method: string): string => METHOD_CLASS[method.toUpperCase()] ?? "c-text-2"
+
+/** A status's colour class: 5xx red, 4xx amber, else lime */
+export const statusClass = (status: number): string => status >= 500 ? "c-error" : status >= 400 ? "c-caution" : "c-ok"
 
 // Which stub answered, "no match", the proxy, or the extension (by its protocol)
 const answeredBy = (entry: RequestLogEntry, ctx: RowContext): SafeHtml => {
@@ -98,7 +102,7 @@ export const requestRow = (entry: RequestLogEntry, ctx: RowContext, seq?: number
   } href="/_admin/requests/${encodeURIComponent(entry.id)}"><span class="req-time c-muted">${
     clockTime(DateTime.toEpochMillis(entry.timestamp))
   }</span><span class="req-method ${
-    METHOD_CLASS[method] ?? "c-text-2"
+    methodClass(method)
   }">${method}</span><span class="req-path ellipsis" title="${fullPath}">${entry.request.path}</span><span class="req-status num ${
     statusClass(entry.response.status)
   }">${entry.response.status}</span>${answeredBy(entry, ctx)}<span class="req-ms num ${

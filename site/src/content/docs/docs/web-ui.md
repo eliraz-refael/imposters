@@ -3,7 +3,7 @@ title: Web UIs
 description: The admin dashboard at /_ui and the per-imposter UI at /_admin.
 ---
 
-Imposters serves two browser UIs, both server-rendered HTML with nothing to install. The admin dashboard ships its own stylesheet, fonts and script, so it works offline. The per-imposter pages still load [htmx](https://htmx.org/) and Tailwind from a CDN while they move to the same design, so for now the browser needs to reach `unpkg.com` and `cdn.tailwindcss.com` for them.
+Imposters serves two browser UIs, both server-rendered HTML with nothing to install. Every page ships its own stylesheet, fonts and script, so both work offline, with no CDN.
 
 ## `/_ui`: the admin dashboard
 
@@ -25,8 +25,9 @@ Each imposter serves its own UI on its own port, at `/_admin`: `http://localhost
 
 | Page | What it shows |
 |---|---|
-| **Dashboard** (`/_admin`) | The imposter's configuration, its stub and request counts, and the latest requests |
-| **Stubs** (`/_admin/stubs`) | Every stub, in matching order. Add one by pasting its predicates and responses as JSON and picking a response mode, edit or delete existing ones |
-| **Requests** (`/_admin/requests`) | The [request log](../requests-and-stats/), filterable by method, path and status, with each request's detail. A form sends a test request (method, path, headers, body) to the imposter itself, and the log can be cleared |
+| **Live** (`/_admin`) | Requests per minute with a trend line, the 5xx share, p50/p95/p99 and the total since start. Requests stream in as they arrive (pause holds them). Each stub shows its hits, each response's share and the response it gives next; requests no stub matched are grouped by method and path, each with **stub it** |
+| **Stubs** (`/_admin/stubs`) | Every stub as a card, in matching order, with its hits and next response. One editor adds and edits: a form (conditions as rows, each response as a card with status, headers, body and a fixed or random delay) or the JSON, insert first or last. It checks the stub as you type, explains mistakes in plain words, and previews how many of the unmatched requests it would answer |
+| **Requests** (`/_admin/requests`) | The [request log](../requests-and-stats/), newest first, filterable by method, path and status. A form sends a request (method, path, headers, body) to the imposter itself, and the log can be cleared |
+| **A request** (`/_admin/requests/:id`) | What was asked and answered, which stub and response answered, and why each stub matches it or not, with a warning when today's stubs would answer differently. **copy as curl**, **replay** (sends it to the imposter again and opens the new entry) and **stub it** for a request no stub matched |
 
 The UIs use the same in-memory state as the admin API, so a stub added in the browser is live on the next request, exactly like one added with `POST /imposters/:id/stubs`.

@@ -7,8 +7,8 @@ import { DEFAULT_HOST } from "../../server/ServerFactory.js"
 import { assetRoute } from "../assets/serve.js"
 import { browserHost, crossSiteRefusal, isCrossSite } from "../crossSite.js"
 import { faviconResponse } from "../favicon.js"
+import { formString } from "../forms.js"
 import { html, type SafeHtml } from "../html.js"
-import { formString } from "../htmx.js"
 import { themeFromCookie } from "../theme.js"
 import {
   decodeHealth,

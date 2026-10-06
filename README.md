@@ -524,9 +524,9 @@ Effect.provide(test, clientLayer).pipe(Effect.runPromise)
 ## Admin UI
 
 - **`/_ui`** on the admin port — Global dashboard showing all imposters
-- **`/_admin`** on each imposter port — Per-imposter UI: a live view (requests streamed as they arrive, stub hits with the response each stub gives next, unmatched requests you can turn into a stub), plus stubs and captured requests
+- **`/_admin`** on each imposter port — Per-imposter UI: a live view (requests streamed as they arrive, stub hits with the response each stub gives next, unmatched requests you can turn into a stub), plus stubs and the request log, with a page per request
 
-Both UIs are server-rendered, in dark and light themes (the toggle is remembered in a cookie). The `/_ui` dashboard and each imposter's live view and stubs page serve their own stylesheet, fonts and script, so they work offline; the live view streams requests over server-sent events, and the stubs page edits a stub in a form or as JSON, checking and previewing it as you type, with plain-English errors. An imposter's requests and request-detail pages still use HTMX and Tailwind from `unpkg.com` and `cdn.tailwindcss.com` until they are redesigned: there the browser must reach those hosts, or the pages render unstyled and their forms and buttons do nothing.
+Both UIs are server-rendered, in dark and light themes (the toggle is remembered in a cookie), and fully self-hosted: every page serves its own stylesheet, fonts and script, so the UIs work offline and need no CDN. The live view streams requests over server-sent events, and the stubs page edits a stub in a form or as JSON, checking and previewing it as you type, with plain-English errors. A request's page shows what was asked and answered, which stub and response answered it, and why each stub matches it or not (flagging it when today's stubs would answer differently); it copies the request as a curl command, replays it to the imposter, and turns an unmatched one into a stub. Every form also works with JavaScript off.
 
 ## Development
 

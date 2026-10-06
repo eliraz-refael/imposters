@@ -68,9 +68,10 @@ describe("E2E: Request Inspector", () => {
       expect(resp.status).toBe(200)
       const html = await resp.text()
       expect(html).toContain("<!DOCTYPE html>")
-      expect(html).toContain("Requests")
-      expect(html).toContain("Send Test Request")
-      expect(html).toContain("Filter")
+      expect(html).toContain(`<h2 class="page-title">requests</h2>`)
+      expect(html).toContain("send a request")
+      expect(html).toContain(`<form class="panel filters" method="get" action="/_admin/requests"`)
+      expect(html).toContain("nothing logged yet")
     } finally {
       await stopImposter(imp.id)
     }
@@ -97,7 +98,7 @@ describe("E2E: Request Inspector", () => {
     }
   }, 10000)
 
-  it("GET /requests/list filters by method", async () => {
+  it("GET /_admin/requests?method= filters by method, path and status", async () => {
     const imp = await createImposter(9613)
     await addStub(imp.id, {
       predicates: [],
@@ -109,17 +110,35 @@ describe("E2E: Request Inspector", () => {
       // Make GET and POST requests
       await fetch("http://localhost:9613/test")
       await fetch("http://localhost:9613/test", { method: "POST", body: "data" })
+      await fetch("http://localhost:9613/other", { method: "POST", body: "data" })
 
-      // Filter by POST
-      const resp = await fetch("http://localhost:9613/_admin/requests/list?method=POST")
-      const html = await resp.text()
-      expect(html).toContain("POST")
+      const methods = (page: string) => Array.from(page.matchAll(/class="req-method [^"]*">([A-Z]+)</g), (m) => m[1])
+      const paths = (page: string) => Array.from(page.matchAll(/class="req-path ellipsis"[^>]*>([^<]*)</g), (m) => m[1])
+
+      const posts = await (await fetch("http://localhost:9613/_admin/requests?method=post")).text()
+      expect(methods(posts)).toEqual(["POST", "POST"])
+      expect(posts).toContain("2 of 3 requests")
+      // The select shows the filter in use
+      expect(posts).toContain(`<option value="POST" selected>POST</option>`)
+
+      const one = await (await fetch("http://localhost:9613/_admin/requests?method=POST&path=%2Ftest&status=200"))
+        .text()
+      expect(paths(one)).toEqual(["/test"])
+      expect(methods(one)).toEqual(["POST"])
+
+      const none = await (await fetch("http://localhost:9613/_admin/requests?status=500")).text()
+      expect(paths(none)).toEqual([])
+      expect(none).toContain("no logged request matches these filters")
+
+      // Newest first, unfiltered
+      const all = await (await fetch("http://localhost:9613/_admin/requests")).text()
+      expect(paths(all)).toEqual(["/other", "/test", "/test"])
     } finally {
       await stopImposter(imp.id)
     }
   }, 10000)
 
-  it("DELETE /_admin/requests clears the log", async () => {
+  it("POST /_admin/requests/clear clears the log and goes back to the list", async () => {
     const imp = await createImposter(9614)
     await addStub(imp.id, {
       predicates: [],
@@ -131,11 +150,24 @@ describe("E2E: Request Inspector", () => {
       // Make a request
       await fetch("http://localhost:9614/test")
 
+      // A page on another site cannot clear it
+      const refused = await fetch("http://localhost:9614/_admin/requests/clear", {
+        method: "POST",
+        headers: { "sec-fetch-site": "cross-site" }
+      })
+      expect(refused.status).toBe(403)
+      expect(await (await fetch("http://localhost:9614/_admin/requests")).text()).toContain("1 request<")
+
       // Clear the log
-      const delResp = await fetch("http://localhost:9614/_admin/requests", { method: "DELETE" })
-      expect(delResp.status).toBe(200)
-      const html = await delResp.text()
-      expect(html).toContain("No requests recorded")
+      const cleared = await fetch("http://localhost:9614/_admin/requests/clear", {
+        method: "POST",
+        redirect: "manual",
+        headers: { "sec-fetch-site": "same-origin" }
+      })
+      expect(cleared.status).toBe(303)
+      expect(cleared.headers.get("location")).toBe("/_admin/requests")
+      const html = await (await fetch("http://localhost:9614/_admin/requests")).text()
+      expect(html).toContain("nothing logged yet")
     } finally {
       await stopImposter(imp.id)
     }
@@ -157,23 +189,24 @@ describe("E2E: Request Inspector", () => {
       const listResp = await fetch("http://localhost:9615/_admin/requests")
       const listHtml = await listResp.text()
       // Extract the entry ID from the detail link
-      const match = listHtml.match(/\/_admin\/requests\/([a-f0-9-]+)/)
+      const match = listHtml.match(/\/_admin\/requests\/([a-f0-9-]{36})"/)
       expect(match).not.toBeNull()
-      const entryId = match![1]
+      const entryId = match?.[1] ?? ""
 
       // Get the detail page
       const detailResp = await fetch(`http://localhost:9615/_admin/requests/${entryId}`)
       expect(detailResp.status).toBe(200)
       const detailHtml = await detailResp.text()
       expect(detailHtml).toContain("/my-path")
-      expect(detailHtml).toContain("Request")
-      expect(detailHtml).toContain("Response")
+      expect(detailHtml).toContain(`aria-label="Request"`)
+      expect(detailHtml).toContain(`aria-label="Response"`)
+      expect(detailHtml).toContain("&quot;detail&quot;: &quot;test&quot;")
     } finally {
       await stopImposter(imp.id)
     }
   }, 10000)
 
-  it("POST /_admin/requests/test sends test request and returns result", async () => {
+  it("POST /_admin/requests/test sends a request and answers with its page", async () => {
     const imp = await createImposter(9616)
     await addStub(imp.id, {
       predicates: [{ field: "path", operator: "equals", value: "/api/echo" }],
@@ -195,9 +228,10 @@ describe("E2E: Request Inspector", () => {
         body: formData.toString()
       })
       expect(resp.status).toBe(200)
+      expect(resp.redirected).toBe(true)
       const html = await resp.text()
-      expect(html).toContain("Response")
-      expect(html).toContain("200")
+      expect(html).toContain(`aria-label="Response"`)
+      expect(html).toContain("200 OK")
       expect(html).toContain("echoed")
     } finally {
       await stopImposter(imp.id)
