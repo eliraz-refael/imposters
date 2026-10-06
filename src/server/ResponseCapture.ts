@@ -1,7 +1,8 @@
 import { decodeUtf8 } from "../matching/RequestMatcher.js"
 import { isNullBodyStatus } from "../matching/ResponseGenerator.js"
 
-const LOG_BODY_LIMIT_BYTES = 10240
+// The log keeps this much of a response body
+export const LOG_BODY_LIMIT_BYTES = 10240
 
 export interface CapturedResponse {
   /** An unread copy of the response, byte-identical to the original */

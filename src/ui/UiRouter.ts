@@ -26,8 +26,8 @@ import { browserHost, crossSiteRefusal, isCrossSite } from "./crossSite.js"
 import { checkStubText, problemLines, type StubCheck } from "./editor/checkStub.js"
 import { draftToText } from "./editor/draftText.js"
 import { faviconResponse } from "./favicon.js"
+import { formString } from "./forms.js"
 import { concat, html, type SafeHtml } from "./html.js"
-import { errorBox, errorResponse, formString, htmlResponse } from "./htmx.js"
 import { buildLiveData, type LiveData } from "./LiveData.js"
 import {
   liveFragment,
@@ -38,8 +38,8 @@ import {
   requestRows,
   type RowContext
 } from "./pages/live.js"
-import { requestDetailPage, requestNotFoundPage } from "./pages/request-detail.js"
-import { requestsPage, testResultPartial } from "./pages/requests.js"
+import { noticePage, type RequestDetailOpts, requestDetailPage, requestNotFoundPage } from "./pages/request-detail.js"
+import { LOG_SIZE, REQUESTS_URL, requestsPage, requestUrl, type SendForm } from "./pages/requests.js"
 import {
   type EditorState,
   type EditorStatus,
@@ -50,7 +50,8 @@ import {
   stubsAnswer,
   stubsPage
 } from "./pages/stubs.js"
-import { requestTablePartial } from "./partials.js"
+import { buildRequestDetail, parseFilters } from "./RequestsData.js"
+import { replayRequest } from "./resend.js"
 import { draftFromQuery, draftFromStub, starterDraft } from "./stubDraft.js"
 import { buildStubsData, type StubsData } from "./StubsData.js"
 import { themeFromCookie } from "./theme.js"
@@ -75,8 +76,13 @@ export interface UiDeps {
   // The admin server's port, for the link back to the admin UI
   readonly adminPort?: number
   readonly runPromise: <A>(effect: Effect.Effect<A>) => Promise<A>
-  // The imposter's own handler, so a test request does not depend on the address it binds
-  readonly fetchSelf: (request: Request) => Promise<Response>
+  // The imposter's matching pipeline (stubs, extension, proxy, 404), skipping /_admin: a replay
+  // or a sent request goes through it in process, so it does not depend on the address the
+  // imposter binds, and is logged like any request. `entryId` is the entry it made (none when
+  // this run stopped meanwhile).
+  readonly serveRequest: (
+    request: Request
+  ) => Promise<{ readonly response: Response; readonly entryId: string | undefined }>
 }
 
 const ADMIN_PREFIX = "/_admin"
@@ -117,6 +123,8 @@ const isFragmentRequest = (request: Request): boolean => request.headers.get(FRA
 const seeOther = (location: string): Response => new Response(null, { status: 303, headers: { location, ...NO_STORE } })
 
 const STUB_PATH = /^\/stubs\/([^/]+)$/
+const REQUEST_PATH = /^\/requests\/([^/]+)$/
+const REPLAY_PATH = /^\/requests\/([^/]+)\/replay$/
 const STUB_DELETE_PATH = /^\/stubs\/([^/]+)\/delete$/
 
 const decodeSegment = (segment: string | undefined): string | null => {
@@ -349,88 +357,176 @@ export const makeUiRouter = (deps: UiDeps) => {
       Effect.andThen(changed(request, false, stubId))
     )
 
-  const listRequests = (params: URLSearchParams): Effect.Effect<Response, UiError> =>
+  // ---------------------------------------------------------------- requests
+
+  const pageOpts = (request: Request, config: ImposterConfig, stubCount: number): RequestDetailOpts => {
+    const adminUiUrl = adminUiUrlFor(request)
+    return {
+      config,
+      stubCount,
+      theme: themeFromCookie(request.headers.get("cookie")),
+      ...(adminUiUrl !== undefined ? { adminUiUrl } : {})
+    }
+  }
+
+  // The imposter's address as the browser reached it, for the curl command (the Node server
+  // rewrites request.url to localhost, so the Host header is what the browser used)
+  const originOf = (request: Request): string => {
+    const host = request.headers.get("host")
+    return host !== null && URL.canParse(`http://${host}`)
+      ? `http://${new URL(`http://${host}`).host}`
+      : `http://localhost:${String(deps.config.port)}`
+  }
+
+  // Where a replayed or sent request goes: the imposter's own pipeline, in process, so it does
+  // not depend on the address the imposter binds
+  const selfOrigin = `http://localhost:${String(deps.config.port)}`
+
+  const requestsPageResponse = (
+    request: Request,
+    params: URLSearchParams,
+    send?: { readonly form: SendForm; readonly error: string; readonly status: number }
+  ): Effect.Effect<Response> =>
     Effect.gen(function*() {
-      const opts: { limit?: number; method?: string; path?: string; status?: number } = { limit: 100 }
-      const methodFilter = params.get("method")?.trim()
-      if (methodFilter) opts.method = methodFilter
-      const pathFilter = params.get("path")?.trim()
-      if (pathFilter) opts.path = pathFilter
-      const statusFilter = params.get("status")?.trim()
-      if (statusFilter) {
-        const status = Number(statusFilter)
-        if (!Number.isInteger(status)) {
-          return yield* new UiError({ message: `Status filter must be a number, got "${statusFilter}".`, status: 400 })
-        }
-        opts.status = status
-      }
-      const entries = yield* deps.requestLogger.getEntries(deps.id, opts)
-      return htmlResponse(requestTablePartial(entries.slice().reverse()))
+      const parsed = parseFilters(params)
+      const config = yield* currentConfig
+      const stubs = yield* Ref.get(deps.stubsRef)
+      const entries = yield* deps.requestLogger.getEntries(deps.id, { limit: LOG_SIZE, ...parsed.filters })
+      const total = yield* deps.requestLogger.getCount(deps.id)
+      const opts = pageOpts(request, config, stubs.length)
+      return pageResponse(
+        requestsPage(
+          { config, stubs, entries: entries.slice().reverse(), total, filters: parsed },
+          {
+            theme: opts.theme,
+            ...(opts.adminUiUrl !== undefined ? { adminUiUrl: opts.adminUiUrl } : {}),
+            ...(send !== undefined ? { send: { form: send.form, error: send.error } } : {})
+          }
+        ),
+        send?.status ?? (parsed.error !== undefined ? 400 : 200)
+      )
     })
 
-  // Errors here stay in #test-result (no retarget): that is where the user looks for the answer
-  const sendTestRequest = (request: Request): Effect.Effect<Response> =>
-    Effect.gen(function*() {
-      const form = yield* readForm(request)
-      const testMethod = formString(form, "method") || "GET"
-      const rawPath = formString(form, "path")?.trim() || "/"
-      const testPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`
-      const testBody = formString(form, "body") || undefined
-      const testContentType = formString(form, "contentType") || "application/json"
-      const testHeadersRaw = formString(form, "headers") ?? ""
-
-      const headers: Record<string, string> = {}
-      if (testBody !== undefined) {
-        headers["content-type"] = testContentType
-      }
-      for (const line of testHeadersRaw.split("\n")) {
-        const colonIdx = line.indexOf(":")
-        if (colonIdx > 0) {
-          headers[line.slice(0, colonIdx).trim()] = line.slice(colonIdx + 1).trim()
-        }
-      }
-
-      const testRequest = yield* Effect.try({
-        try: () =>
-          new Request(`http://localhost:${deps.config.port}${testPath}`, {
-            method: testMethod,
-            headers,
-            ...(testBody !== undefined && testMethod !== "GET" && testMethod !== "HEAD" ? { body: testBody } : {})
-          }),
-        catch: (err) => new UiError({ message: `Invalid test request: ${String(err)}`, status: 400 })
-      })
-
-      const startTime = yield* Clock.currentTimeMillis
-      const testResp = yield* Effect.tryPromise({
-        try: () => deps.fetchSelf(testRequest),
-        catch: (err) => new UiError({ message: `Request failed: ${String(err)}`, status: 502 })
-      })
-      const respBody = yield* Effect.tryPromise({
-        try: () => testResp.text(),
-        catch: (err) => new UiError({ message: `Reading the response failed: ${String(err)}`, status: 502 })
-      })
-      const duration = (yield* Clock.currentTimeMillis) - startTime
-
-      const respHeaders: Record<string, string> = {}
-      testResp.headers.forEach((val, key) => {
-        respHeaders[key] = val
-      })
-
-      return htmlResponse(
-        testResultPartial({ status: testResp.status, headers: respHeaders, body: respBody, duration })
-      )
-    }).pipe(Effect.catchTag("UiError", (err) => Effect.succeed(htmlResponse(errorBox(err.message), err.status))))
-
-  const requestDetail = (entryId: string): Effect.Effect<Response> =>
+  const notFoundPage = (request: Request, entryId: string, doing?: string): Effect.Effect<Response> =>
     Effect.gen(function*() {
       const config = yield* currentConfig
+      const stubs = yield* Ref.get(deps.stubsRef)
+      return pageResponse(requestNotFoundPage(entryId, pageOpts(request, config, stubs.length), doing), 404)
+    })
+
+  const requestDetail = (request: Request, entryId: string): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const entry = yield* deps.requestLogger.getEntryById(deps.id, entryId)
+      if (entry === null) return yield* notFoundPage(request, entryId)
+      const config = yield* currentConfig
+      const stubs = yield* Ref.get(deps.stubsRef)
+      const logged = stubs.find((stub) => stub.id === entry.response.matchedStubId)
+      const next = logged === undefined ? Option.none() : yield* deps.nextResponseIndex(logged)
+      const detail = buildRequestDetail({
+        entry,
+        config,
+        stubs,
+        nextIndex: Option.getOrUndefined(next),
+        origin: originOf(request)
+      })
+      return pageResponse(requestDetailPage(detail, pageOpts(request, config, stubs.length)))
+    })
+
+  // Sends a request through the stubs and answers with a 303 to its page, or why it could not
+  const sendThrough = (outgoing: Request): Effect.Effect<Response, UiError> =>
+    Effect.gen(function*() {
+      const served = yield* Effect.tryPromise({
+        try: () => deps.serveRequest(outgoing),
+        catch: (err) => new UiError({ message: `Request failed: ${String(err)}`, status: 502 })
+      })
+      // The log has what it needs; nothing reads this copy of the answer
+      yield* Effect.promise(() => served.response.body?.cancel() ?? Promise.resolve())
+      if (served.entryId === undefined) {
+        return yield* new UiError({ message: "The imposter stopped before the request was logged.", status: 409 })
+      }
+      return seeOther(requestUrl(served.entryId))
+    })
+
+  // A failed replay: the message for the page's error slot with JS, else a page saying it
+  const replayFailed = (request: Request, error: UiError): Effect.Effect<Response> =>
+    isFragmentRequest(request)
+      ? Effect.succeed(pageResponse(html`${error.message}`, error.status))
+      : noticeResponse(request, "replay failed", error.message, error.status)
+
+  const replay = (request: Request, entryId: string): Effect.Effect<Response> =>
+    Effect.gen(function*() {
       const entry = yield* deps.requestLogger.getEntryById(deps.id, entryId)
       if (entry === null) {
-        return htmlResponse(requestNotFoundPage(config, entryId), 404)
+        if (isFragmentRequest(request)) {
+          return pageResponse(
+            html`That request is no longer in the log (it keeps the last ${LOG_SIZE}), so it cannot be replayed.`,
+            404
+          )
+        }
+        return yield* notFoundPage(request, entryId, "replay")
       }
+      const built = replayRequest(entry, selfOrigin)
+      if (built._tag === "Refused") {
+        return yield* replayFailed(request, new UiError({ message: built.reason, status: 422 }))
+      }
+      return yield* sendThrough(built.request).pipe(Effect.catchTag("UiError", (err) => replayFailed(request, err)))
+    })
+
+  // "send a request": the form's fields as a request to the imposter, then its page
+  const sendTest = (request: Request): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const form = yield* readForm(request).pipe(Effect.option)
+      const posted: SendForm = Option.match(form, {
+        onNone: () => ({ method: "GET", path: "/", contentType: "application/json", headers: "", body: "" }),
+        onSome: (f) => ({
+          method: formString(f, "method") || "GET",
+          path: formString(f, "path") ?? "/",
+          contentType: formString(f, "contentType") || "application/json",
+          headers: formString(f, "headers") ?? "",
+          body: formString(f, "body") ?? ""
+        })
+      })
+      const refused = (error: UiError): Effect.Effect<Response> =>
+        isFragmentRequest(request)
+          ? Effect.succeed(pageResponse(html`${error.message}`, error.status))
+          : requestsPageResponse(request, new URLSearchParams(), {
+            form: posted,
+            error: error.message,
+            status: error.status
+          })
+      if (Option.isNone(form)) {
+        return yield* refused(new UiError({ message: "Expected a form submission.", status: 400 }))
+      }
+
+      const rawPath = posted.path.trim() || "/"
+      const path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`
+      const method = posted.method.toUpperCase()
+      const body = posted.body === "" || method === "GET" || method === "HEAD" ? undefined : posted.body
+      const outgoing = yield* Effect.try({
+        try: () => {
+          const headers = new Headers()
+          if (body !== undefined) headers.set("content-type", posted.contentType)
+          for (const line of posted.headers.split("\n")) {
+            const colon = line.indexOf(":")
+            if (colon > 0) headers.set(line.slice(0, colon).trim(), line.slice(colon + 1).trim())
+          }
+          return new Request(`${selfOrigin}${path}`, { method, headers, ...(body !== undefined ? { body } : {}) })
+        },
+        catch: (err) => new UiError({ message: `Invalid test request: ${String(err)}`, status: 400 })
+      }).pipe(Effect.result)
+      if (outgoing._tag === "Failure") return yield* refused(outgoing.failure)
+      return yield* sendThrough(outgoing.success).pipe(Effect.catchTag("UiError", refused))
+    })
+
+  const clearLog = (): Effect.Effect<Response> =>
+    deps.requestLogger.clear(deps.id).pipe(Effect.as(seeOther(REQUESTS_URL)))
+
+  // A page with one message: an unknown /_admin path, a failed action without JS
+  const noticeResponse = (request: Request, title: string, message: string, status: number): Effect.Effect<Response> =>
+    Effect.gen(function*() {
+      const config = yield* currentConfig
       const stubs = yield* Ref.get(deps.stubsRef)
-      const matchedStub = stubs.find((s) => s.id === entry.response.matchedStubId) ?? null
-      return htmlResponse(requestDetailPage({ config, entry, matchedStub }))
+      return pageResponse(noticePage(title, message, pageOpts(request, config, stubs.length)), status)
     })
 
   const rowContext: Effect.Effect<RowContext> = Ref.get(deps.stubsRef).pipe(
@@ -505,7 +601,7 @@ export const makeUiRouter = (deps: UiDeps) => {
 
     if (method === "GET" && path === "/favicon.svg") return Effect.succeed(faviconResponse())
 
-    // Every change goes through a form post or an htmx request; a page on another site must not send one
+    // Every change goes through a form post (or ui.js sending one); a page on another site must not send one
     if (method !== "GET" && method !== "HEAD" && isCrossSite(request)) return Effect.succeed(crossSiteRefusal())
 
     if (method === "GET" && path === "/") return livePageResponse(request)
@@ -536,26 +632,19 @@ export const makeUiRouter = (deps: UiDeps) => {
     const stubId = decodeSegment(STUB_PATH.exec(path)?.[1])
     if (method === "POST" && stubId !== null) return saveStub(request, stubId)
 
-    if (method === "GET" && path === "/requests") {
-      return Effect.gen(function*() {
-        const config = yield* currentConfig
-        const entries = yield* deps.requestLogger.getEntries(deps.id, { limit: 100 })
-        return htmlResponse(requestsPage({ config, entries }))
-      })
-    }
+    if (method === "GET" && path === "/requests") return requestsPageResponse(request, url.searchParams)
 
-    if (method === "GET" && path === "/requests/list") return listRequests(url.searchParams)
+    if (method === "POST" && path === "/requests/clear") return clearLog()
 
-    if (method === "POST" && path === "/requests/test") return sendTestRequest(request)
+    if (method === "POST" && path === "/requests/test") return sendTest(request)
 
-    if (method === "DELETE" && path === "/requests") {
-      return deps.requestLogger.clear(deps.id).pipe(Effect.as(htmlResponse(requestTablePartial([]))))
-    }
+    const replayId = decodeSegment(REPLAY_PATH.exec(path)?.[1])
+    if (method === "POST" && replayId !== null) return replay(request, replayId)
 
-    const detailMatch = /^\/requests\/([^/]+)$/.exec(path)
-    if (method === "GET" && detailMatch?.[1] !== undefined) return requestDetail(detailMatch[1])
+    const entryId = decodeSegment(REQUEST_PATH.exec(path)?.[1])
+    if (method === "GET" && entryId !== null) return requestDetail(request, entryId)
 
-    return Effect.succeed(htmlResponse(html`<h1>Not Found</h1>`, 404))
+    return noticeResponse(request, "not found", `Nothing is served at ${url.pathname}.`, 404)
   }
 
   return async (request: Request): Promise<Response | null> => {
@@ -564,7 +653,10 @@ export const makeUiRouter = (deps: UiDeps) => {
     if (url.pathname !== ADMIN_PREFIX && !url.pathname.startsWith(`${ADMIN_PREFIX}/`)) return null
     return deps.runPromise(
       route(request, url).pipe(
-        Effect.catchTag("UiError", (err) => Effect.succeed(errorResponse(err.message, err.status)))
+        Effect.catchTag("UiError", (err) =>
+          isFragmentRequest(request)
+            ? Effect.succeed(pageResponse(html`${err.message}`, err.status))
+            : noticeResponse(request, "something went wrong", err.message, err.status))
       )
     )
   }

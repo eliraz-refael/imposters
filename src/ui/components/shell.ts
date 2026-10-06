@@ -14,8 +14,8 @@ export interface ShellOpts {
 }
 
 /**
- * A redesigned page's document: the self-hosted stylesheet, fonts, script and icon, and the
- * theme rendered on <html> so the first paint is already in it. No CDN.
+ * A page's document: the self-hosted stylesheet, fonts, script and icon, and the theme
+ * rendered on <html> so the first paint is already in it. Nothing loads from another host.
  */
 export const shell = (opts: ShellOpts, body: SafeHtml): SafeHtml =>
   html`<!DOCTYPE html>

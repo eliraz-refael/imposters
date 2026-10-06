@@ -71,6 +71,12 @@ interface ImposterState {
 }
 
 // How a request was answered, for the request log
+// What serving one request gave: the response, and the request log entry it made (if any)
+interface Served {
+  readonly response: Response
+  readonly entryId: string | undefined
+}
+
 interface Outcome {
   readonly response: Response
   readonly kind: RequestOutcome
@@ -145,8 +151,8 @@ export const ImposterServerLive = Layer.effect(
           shutdown: Deferred.await(shutdown),
           ...(adminPort !== undefined ? { adminPort } : {}),
           runPromise,
-          // handler is declared below; it is only called once a request arrives
-          fetchSelf: (request) => handler(request)
+          // serve is declared below; it is only called once a request arrives
+          serveRequest: (request) => runPromise(serve(request))
         })
 
         const fromStub = (stub: Stub, ctx: RequestContext): Effect.Effect<Outcome> =>
@@ -191,92 +197,96 @@ export const ImposterServerLive = Layer.effect(
           kind: "unmatched"
         })
 
+        // A request through the matching pipeline (stubs, extension, proxy, 404), logged and counted.
+        // `entryId` is the log entry it made: none when this run stopped while it was in flight.
+        const serve = (request: Request): Effect.Effect<Served> =>
+          Effect.gen(function*() {
+            const startTime = yield* Clock.currentTimeMillis
+            const ctx = yield* Effect.promise(() => extractRequestContext(request))
+            // Read after the body: a stub change made during a slow upload must not be answered with the old stubs
+            const stubs = yield* Ref.get(stubsRef)
+            const proxyConfig = yield* Ref.get(proxyConfigRef)
+            const stub = findMatchingStub(ctx, stubs)
+
+            // Stubs first, then the extension (terminal), then the proxy, then 404
+            const outcome = yield* stub !== undefined
+              ? fromStub(stub, ctx)
+              : extension !== undefined
+              ? fromExtension(extension, ctx)
+              : proxyConfig !== undefined
+              ? fromProxy(proxyConfig, ctx, new URL(request.url))
+              : Effect.succeed(notFound(ctx))
+
+            // Capture response for logging; the body is read once, so send the captured copy
+            const captured = yield* Effect.promise(() => captureResponse(outcome.response))
+            const response = captured.response
+            const logBody = captured.logBody
+
+            const duration = (yield* Clock.currentTimeMillis) - startTime
+            const logEntry: RequestLogEntry = {
+              id: NonEmptyString.make(crypto.randomUUID()),
+              imposterId: NonEmptyString.make(id),
+              timestamp: DateTime.makeUnsafe(startTime),
+              request: {
+                method: ctx.method,
+                path: ctx.path,
+                headers: ctx.headers,
+                query: ctx.query,
+                body: ctx.body
+              },
+              response: {
+                status: response.status,
+                headers: captured.headers,
+                ...(logBody !== undefined ? { body: logBody } : {}),
+                ...(outcome.matchedStubId !== undefined
+                  ? { matchedStubId: NonEmptyString.make(outcome.matchedStubId) }
+                  : {}),
+                proxied: outcome.kind === "proxy",
+                outcome: outcome.kind,
+                ...(outcome.responseIndex !== undefined
+                  ? { responseIndex: outcome.responseIndex }
+                  : {})
+              },
+              duration
+            }
+            // Only this run counts: a request still in flight from a stopped run (or one that
+            // finished after a restart) would otherwise land in the new run's log and stats.
+            // Checked again before the stats, since the log also publishes to subscribers.
+            const isCurrentRun = Ref.get(stateMapRef).pipe(
+              Effect.map((map) => Option.exists(HashMap.get(map, id), (state) => state.stubsRef === stubsRef))
+            )
+            const logged = yield* isCurrentRun
+            if (logged) {
+              yield* requestLogger.log(logEntry).pipe(Effect.catch(() => Effect.void))
+            }
+            if (yield* isCurrentRun) {
+              // A stub removed, or whose answers changed, while this request was in flight has had
+              // its counters restarted; this hit belongs to the old version, so it is not attributed
+              const current = (yield* Ref.get(stubsRef)).find((s) => s.id === stub?.id)
+              const stale = stub !== undefined && (current === undefined || answersChanged(stub, current))
+              const { matchedStubId: _matched, responseIndex: _index, ...unattributed } = logEntry.response
+              const metricsEntry: RequestLogEntry = stale ? { ...logEntry, response: unattributed } : logEntry
+              yield* metricsService.recordRequest(metricsEntry).pipe(Effect.catch(() => Effect.void))
+            }
+
+            return { response, entryId: logged ? logEntry.id : undefined }
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.succeed({
+                response: new Response(
+                  JSON.stringify({ error: "Internal server error", details: String(cause) }),
+                  { status: 500, headers: { "content-type": "application/json" } }
+                ),
+                entryId: undefined
+              })
+            )
+          )
+
         const handler = async (request: Request): Promise<Response> => {
           // Try UI router first (returns null if not a /_admin path)
           const uiResponse = await uiRouter(request)
           if (uiResponse !== null) return uiResponse
-
-          return runPromise(
-            Effect.gen(function*() {
-              const startTime = yield* Clock.currentTimeMillis
-              const ctx = yield* Effect.promise(() => extractRequestContext(request))
-              // Read after the body: a stub change made during a slow upload must not be answered with the old stubs
-              const stubs = yield* Ref.get(stubsRef)
-              const proxyConfig = yield* Ref.get(proxyConfigRef)
-              const stub = findMatchingStub(ctx, stubs)
-
-              // Stubs first, then the extension (terminal), then the proxy, then 404
-              const outcome = yield* stub !== undefined
-                ? fromStub(stub, ctx)
-                : extension !== undefined
-                ? fromExtension(extension, ctx)
-                : proxyConfig !== undefined
-                ? fromProxy(proxyConfig, ctx, new URL(request.url))
-                : Effect.succeed(notFound(ctx))
-
-              // Capture response for logging; the body is read once, so send the captured copy
-              const captured = yield* Effect.promise(() => captureResponse(outcome.response))
-              const response = captured.response
-              const logBody = captured.logBody
-
-              const duration = (yield* Clock.currentTimeMillis) - startTime
-              const logEntry: RequestLogEntry = {
-                id: NonEmptyString.make(crypto.randomUUID()),
-                imposterId: NonEmptyString.make(id),
-                timestamp: DateTime.makeUnsafe(startTime),
-                request: {
-                  method: ctx.method,
-                  path: ctx.path,
-                  headers: ctx.headers,
-                  query: ctx.query,
-                  body: ctx.body
-                },
-                response: {
-                  status: response.status,
-                  headers: captured.headers,
-                  ...(logBody !== undefined ? { body: logBody } : {}),
-                  ...(outcome.matchedStubId !== undefined
-                    ? { matchedStubId: NonEmptyString.make(outcome.matchedStubId) }
-                    : {}),
-                  proxied: outcome.kind === "proxy",
-                  outcome: outcome.kind,
-                  ...(outcome.responseIndex !== undefined
-                    ? { responseIndex: outcome.responseIndex }
-                    : {})
-                },
-                duration
-              }
-              // Only this run counts: a request still in flight from a stopped run (or one that
-              // finished after a restart) would otherwise land in the new run's log and stats.
-              // Checked again before the stats, since the log also publishes to subscribers.
-              const isCurrentRun = Ref.get(stateMapRef).pipe(
-                Effect.map((map) => Option.exists(HashMap.get(map, id), (state) => state.stubsRef === stubsRef))
-              )
-              if (yield* isCurrentRun) {
-                yield* requestLogger.log(logEntry).pipe(Effect.catch(() => Effect.void))
-              }
-              if (yield* isCurrentRun) {
-                // A stub removed, or whose answers changed, while this request was in flight has had
-                // its counters restarted; this hit belongs to the old version, so it is not attributed
-                const current = (yield* Ref.get(stubsRef)).find((s) => s.id === stub?.id)
-                const stale = stub !== undefined && (current === undefined || answersChanged(stub, current))
-                const { matchedStubId: _matched, responseIndex: _index, ...unattributed } = logEntry.response
-                const metricsEntry: RequestLogEntry = stale ? { ...logEntry, response: unattributed } : logEntry
-                yield* metricsService.recordRequest(metricsEntry).pipe(Effect.catch(() => Effect.void))
-              }
-
-              return response
-            }).pipe(
-              Effect.catchCause((cause) =>
-                Effect.succeed(
-                  new Response(
-                    JSON.stringify({ error: "Internal server error", details: String(cause) }),
-                    { status: 500, headers: { "content-type": "application/json" } }
-                  )
-                )
-              )
-            )
-          )
+          return runPromise(serve(request).pipe(Effect.map((served) => served.response)))
         }
 
         // Completed by the server fiber: succeeds once the port is bound, fails if

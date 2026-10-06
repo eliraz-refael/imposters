@@ -201,8 +201,8 @@ export * as imposterHeader from "./ui/components/imposterHeader.js"
 export * as primitives from "./ui/components/primitives.js"
 
 /**
- * A redesigned page's document: the self-hosted stylesheet, fonts, script and icon, and the
- * theme rendered on <html> so the first paint is already in it. No CDN.
+ * A page's document: the self-hosted stylesheet, fonts, script and icon, and the theme
+ * rendered on <html> so the first paint is already in it. Nothing loads from another host.
  */
 export * as shell from "./ui/components/shell.js"
 
@@ -262,10 +262,6 @@ export * as formView from "./ui/editor/formView.js"
 export * as favicon from "./ui/favicon.js"
 
 export * as html from "./ui/html.js"
-
-export * as htmx from "./ui/htmx.js"
-
-export * as layout from "./ui/layout.js"
 
 /**
  * An imposter's live page (`/_admin`): its numbers, the requests as they arrive (server-sent
