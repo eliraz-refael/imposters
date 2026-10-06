@@ -30,6 +30,8 @@ interface Target {
   readonly imposter: string
   /** A logged request of the featured imposter that a stub answered */
   readonly requestId: string
+  /** A logged request of the featured imposter that no stub answered (long path, query and headers) */
+  readonly unmatchedId: string
   /** The featured imposter's first stub (GET /orders: three responses), for the editor */
   readonly stubId: string
 }
@@ -49,6 +51,21 @@ interface Screen {
 const DRAFT = new URLSearchParams({ draft: "GET", path: "/v2/orders" }).toString()
 
 const editUrl = (t: Target): string => `${t.imposter}/_admin/stubs?edit=${encodeURIComponent(t.stubId)}`
+const requestUrl = (t: Target): string => `${t.imposter}/_admin/requests/${encodeURIComponent(t.requestId)}`
+const unmatchedUrl = (t: Target): string => `${t.imposter}/_admin/requests/${encodeURIComponent(t.unmatchedId)}`
+
+// A request orders-api has no stub for, with a long path, query and header values, so the
+// request page shows how they wrap (on a phone too)
+const UNMATCHED = {
+  path: "/v2/orders/ord_1001/shipments/shp_9f8e7d6c5b4a3f2e/tracking-events",
+  query: "since=2026-10-01T00:00:00Z&include=carrier,location,estimated_delivery&page_size=50",
+  headers: {
+    accept: "application/json",
+    "user-agent": "fulfilment-worker/4.12.0 (node-fetch; +https://example.com/bots/fulfilment)",
+    traceparent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+    "x-request-id": "7f3c9a1e-5b2d-4c8e-9f10-2a6b8d4e1c37"
+  }
+}
 
 // One line per screen; each is captured once per theme
 const SCREENS: ReadonlyArray<Screen> = [
@@ -76,7 +93,13 @@ const SCREENS: ReadonlyArray<Screen> = [
   // The same stub in the JSON tab
   { name: "imposter-stubs-json", url: editUrl, prepare: (page) => page.click("[data-tab=json]") },
   { name: "imposter-requests", url: (t) => `${t.imposter}/_admin/requests` },
-  { name: "imposter-request-detail", url: (t) => `${t.imposter}/_admin/requests/${encodeURIComponent(t.requestId)}` }
+  { name: "imposter-requests-phone", url: (t) => `${t.imposter}/_admin/requests`, width: 390 },
+  // A templated order a stub answered: the request, the response, why its stub matched
+  { name: "imposter-request-detail", url: requestUrl },
+  { name: "imposter-request-detail-phone", url: requestUrl, width: 390 },
+  // A request no stub answered: every stub's verdicts, open, and "stub it"
+  { name: "imposter-request-unmatched", url: unmatchedUrl },
+  { name: "imposter-request-unmatched-phone", url: unmatchedUrl, width: 390 }
 ]
 
 const THEMES = ["dark", "light"] as const
@@ -380,7 +403,7 @@ const shoot = async (target: Target): Promise<Array<string>> => {
           await page.goto(screen.url(target), { waitUntil: "domcontentloaded", timeout: SHOT_TIMEOUT_MS })
           await withTimeout(page.evaluate(() => document.fonts.ready.then(() => undefined)), 10_000, "fonts")
           if (screen.prepare !== undefined) await screen.prepare(page)
-          // Let scripts that style or fill the page on load (the old pages' Tailwind runtime) finish
+          // Let scripts that style or fill the page on load finish
           await page.waitForTimeout(300)
           await page.screenshot({ path: file, animations: "disabled", fullPage: true, timeout: SHOT_TIMEOUT_MS })
           written.push(file)
@@ -435,6 +458,13 @@ const main = async (): Promise<void> => {
   const request = requests[0]
   if (request === undefined) throw new Error("orders-api logged no POST /orders answered with 201")
 
+  await fetch(`http://${HOST}:${featured.port}${UNMATCHED.path}?${UNMATCHED.query}`, { headers: UNMATCHED.headers })
+    .then((res) => res.arrayBuffer())
+  const unmatched = Schema.decodeUnknownSync(RequestList)(
+    await api("GET", `/imposters/${featured.id}/requests?method=GET&path=${encodeURIComponent(UNMATCHED.path)}&limit=1`)
+  )[0]
+  if (unmatched === undefined) throw new Error(`orders-api logged no GET ${UNMATCHED.path}`)
+
   const stub = Schema.decodeUnknownSync(StubList)(await api("GET", `/imposters/${featured.id}/stubs`))[0]
   if (stub === undefined) throw new Error("orders-api has no stubs")
 
@@ -443,6 +473,7 @@ const main = async (): Promise<void> => {
     admin,
     imposter: `http://${HOST}:${featured.port}`,
     requestId: request.id,
+    unmatchedId: unmatched.id,
     stubId: stub.id
   })
   console.log(`Wrote ${written.length} screenshots in ${Math.round((Date.now() - startedAt) / 1000)}s`)
