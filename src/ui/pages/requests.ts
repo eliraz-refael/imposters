@@ -1,6 +1,7 @@
 import type { ImposterConfig } from "../../domain/imposter.js"
 import type { RequestLogEntry } from "../../schemas/RequestLogSchema.js"
 import type { Stub } from "../../schemas/StubSchema.js"
+import { MAX_ENTRIES } from "../../services/RequestLogger.js"
 import { count, plural } from "../components/format.js"
 import { imposterHeader } from "../components/imposterHeader.js"
 import { linkButton, postButton } from "../components/primitives.js"
@@ -21,7 +22,7 @@ export const REQUESTS_URL = "/_admin/requests"
 export const CLEAR_URL = "/_admin/requests/clear"
 export const SEND_URL = "/_admin/requests/test"
 // The request log keeps this many entries per imposter
-export const LOG_SIZE = 100
+export const LOG_SIZE = MAX_ENTRIES
 
 /** A logged request's page */
 export const requestUrl = (id: string): string => `${REQUESTS_URL}/${encodeURIComponent(id)}`

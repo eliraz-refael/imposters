@@ -1,6 +1,7 @@
 import * as DateTime from "effect/DateTime"
 import type { ImposterConfig } from "../domain/imposter.js"
 import { contextFromCaptured, explainStubs } from "../matching/Explain.js"
+import { isNullBodyStatus } from "../matching/ResponseGenerator.js"
 import type { PredicateExplanation, StubExplanation } from "../schemas/ExplainSchema.js"
 import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import type { Stub } from "../schemas/StubSchema.js"
@@ -230,10 +231,12 @@ const requestBody = (request: RequestLogEntry["request"]): BodyView => {
 
 const encoder = new TextEncoder()
 
-const responseBody = (response: RequestLogEntry["response"]): BodyView => {
+const responseBody = (method: string, response: RequestLogEntry["response"]): BodyView => {
   const length = declaredLength(response.headers)
   if (response.body === undefined) {
-    return length !== undefined && length > 0 ? { kind: "binary", bytes: length } : { kind: "none" }
+    // A HEAD answer, a 204 or a 304 declares the length of a body it never carries
+    const bodiless = method.toUpperCase() === "HEAD" || isNullBodyStatus(response.status)
+    return !bodiless && length !== undefined && length > 0 ? { kind: "binary", bytes: length } : { kind: "none" }
   }
   // The log keeps the first 10 KiB; without a declared length, a body that fills them was probably cut
   const cut = length !== undefined
@@ -416,7 +419,7 @@ export const buildRequestDetail = (input: DetailInput): RequestDetail => {
       status: response.status,
       reason: reasonPhrase(response.status),
       headers: keyValues(response.headers),
-      body: responseBody(response)
+      body: responseBody(request.method, response)
     },
     answered,
     ...(line !== undefined ? { responseLine: line } : {}),

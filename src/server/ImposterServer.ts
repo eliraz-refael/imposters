@@ -70,13 +70,13 @@ interface ImposterState {
   readonly responseState: ResponseState
 }
 
-// How a request was answered, for the request log
 // What serving one request gave: the response, and the request log entry it made (if any)
 interface Served {
   readonly response: Response
   readonly entryId: string | undefined
 }
 
+// How a request was answered, for the request log
 interface Outcome {
   readonly response: Response
   readonly kind: RequestOutcome

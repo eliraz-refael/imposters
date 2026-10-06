@@ -15,7 +15,7 @@ import {
 } from "../RequestsData.js"
 import type { Theme } from "../theme.js"
 import { methodClass, statusClass } from "./live.js"
-import { REQUESTS_URL, requestsHeader, requestUrl } from "./requests.js"
+import { LOG_SIZE, REQUESTS_URL, requestsHeader, requestUrl } from "./requests.js"
 
 /**
  * One logged request (`/_admin/requests/:id`): what was asked and what was answered, which stub
@@ -249,7 +249,7 @@ export const requestDetailPage = (d: RequestDetail, opts: RequestDetailOpts): Sa
 
 /**
  * A request's page, or its replay, for an entry the log no longer holds (it keeps the latest
- * 100 of this run, and clearing it empties it) or never held
+ * LOG_SIZE of this run, and clearing it empties it) or never held
  */
 export const requestNotFoundPage = (entryId: string, opts: RequestDetailOpts, doing?: string): SafeHtml => {
   const body = html`${requestsHeader(opts.config, opts.stubCount, opts.adminUiUrl)}
@@ -257,7 +257,7 @@ export const requestNotFoundPage = (entryId: string, opts: RequestDetailOpts, do
   <div class="stack page-head"><a class="label" href="${REQUESTS_URL}">← requests</a><h2 class="page-title">request not found</h2></div>
   <div class="panel pad"><p class="label panel-note">No logged request has id <span class="c-heading">${entryId}</span>${
     doing === undefined ? "" : `, so there is nothing to ${doing}`
-  }. The log keeps the last 100 requests since the imposter started; this one may have aged out, or the log was cleared.</p></div>
+  }. The log keeps the last ${LOG_SIZE} requests since the imposter started; this one may have aged out, or the log was cleared.</p></div>
 </main>`
   return shell({ title: `${opts.config.name} · request not found`, prefix: "/_admin", theme: opts.theme }, body)
 }

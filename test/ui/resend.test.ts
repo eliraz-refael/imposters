@@ -194,10 +194,19 @@ describe("bodyText and hasUnloggedBody", () => {
   })
 
   it("an empty body declared with a length, or chunked, was not kept", () => {
-    expect(hasUnloggedBody(entry({ headers: { "content-length": "10" } }).request)).toBe(true)
-    expect(hasUnloggedBody(entry({ headers: { "transfer-encoding": "chunked" } }).request)).toBe(true)
-    expect(hasUnloggedBody(entry({ headers: { "content-length": "0" } }).request)).toBe(false)
-    expect(hasUnloggedBody(entry({ headers: { "content-length": "10" }, body: "0123456789" }).request)).toBe(false)
+    expect(hasUnloggedBody(entry({ method: "POST", headers: { "content-length": "10" } }).request)).toBe(true)
+    expect(hasUnloggedBody(entry({ method: "POST", headers: { "transfer-encoding": "chunked" } }).request)).toBe(true)
+    expect(hasUnloggedBody(entry({ method: "POST", headers: { "content-length": "0" } }).request)).toBe(false)
+    expect(
+      hasUnloggedBody(entry({ method: "POST", headers: { "content-length": "10" }, body: "0123456789" }).request)
+    ).toBe(false)
+  })
+
+  it("a GET or HEAD body is never read, so it is not one the log lost", () => {
+    expect(hasUnloggedBody(entry({ method: "GET", headers: { "content-length": "10" } }).request)).toBe(false)
+    expect(hasUnloggedBody(entry({ method: "HEAD", headers: { "transfer-encoding": "chunked" } }).request)).toBe(false)
+    expect(replayRequest(entry({ method: "GET", headers: { "content-length": "10" } }), "http://localhost:1")._tag)
+      .toBe("Ready")
   })
 })
 

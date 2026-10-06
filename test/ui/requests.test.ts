@@ -299,6 +299,14 @@ describe("bodies", () => {
     const image = detail({ entry: entry({ responseHeaders: { "content-length": "512" } }) })
     expect(image.response.body).toEqual({ kind: "binary", bytes: 512 })
 
+    // A HEAD answer or a 304 declares a length but never carries the body
+    const head = detail({ entry: entry({ method: "HEAD", responseHeaders: { "content-length": "512" } }) })
+    expect(head.response.body).toEqual({ kind: "none" })
+    const notModified = detail({ entry: entry({ status: 304, responseHeaders: { "content-length": "512" } }) })
+    expect(notModified.response.body).toEqual({ kind: "none" })
+    // The server never reads a GET body, so one declared is not a lost binary body
+    expect(detail({ entry: entry({ headers: { "content-length": "20" } }) }).body).toEqual({ kind: "none" })
+
     const cut = detail({
       entry: entry({ responseHeaders: { "content-length": "20000" }, responseBody: "x".repeat(10240) })
     })

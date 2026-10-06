@@ -25,10 +25,12 @@ const declaredLength = (headers: Readonly<Record<string, string>>): number | und
 /**
  * Whether the request had a body the log could not keep: the matcher keeps a body only when it
  * is UTF-8 text, so bytes that are not text leave it empty while the request declared a length
- * (or was chunked)
+ * (or was chunked). The server never reads a GET or HEAD body, so one of those has none to keep.
  */
 export const hasUnloggedBody = (request: LoggedRequest): boolean => {
   if (request.body !== undefined) return false
+  const method = request.method.toUpperCase()
+  if (method === "GET" || method === "HEAD") return false
   const length = declaredLength(request.headers)
   return (length !== undefined && length > 0) || request.headers["transfer-encoding"] !== undefined
 }
