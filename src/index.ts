@@ -155,6 +155,13 @@ export * as UuidLive from "./services/UuidLive.js"
 export * as LiveData from "./ui/LiveData.js"
 
 /**
+ * What the requests list (`/_admin/requests`) and a request's page (`/_admin/requests/:id`)
+ * show, built by pure functions, so the templates only format: the list's filters, and for one
+ * request what was asked and answered, what answered it, and why the stubs match it or not.
+ */
+export * as RequestsData from "./ui/RequestsData.js"
+
+/**
  * What the stubs page (`/_admin/stubs`) shows, built from the live page's data by pure
  * functions, so the template only formats: a card per stub in matching order, and what answers
  * a request none of them matches.
@@ -261,6 +268,8 @@ export * as formView from "./ui/editor/formView.js"
 
 export * as favicon from "./ui/favicon.js"
 
+export * as forms from "./ui/forms.js"
+
 export * as html from "./ui/html.js"
 
 /**
@@ -270,6 +279,12 @@ export * as html from "./ui/html.js"
  */
 export * as live from "./ui/pages/live.js"
 
+/**
+ * An imposter's request log (`/_admin/requests`): every logged request, newest first, in the
+ * live view's rows, each linking to its page; filters by method, path and status; clearing the
+ * log; and a form that sends a request to the imposter. Every form works without JS: the filters
+ * are a GET, clearing and sending are POSTs answered with a 303 (sending, to the new request's page).
+ */
 export * as requests from "./ui/pages/requests.js"
 
 /**
@@ -289,6 +304,14 @@ export * as stubForm from "./ui/pages/stubForm.js"
  * (data-action), and editor.js runs the editor (data-stub-editor).
  */
 export * as stubs from "./ui/pages/stubs.js"
+
+/**
+ * A logged request sent again: as a curl command to copy, or replayed to the imposter itself.
+ * Pure. The log keeps one value per header name (repeats arrive joined with ", ", as fetch joins
+ * them) and one per query key, and a JSON body as parsed, so what is sent again is the same
+ * request as far as matching can tell, not always the same bytes.
+ */
+export * as resend from "./ui/resend.js"
 
 /**
  * Stub drafts: what the stubs page's editor starts from. "Stub it" drafts a stub for a request no
