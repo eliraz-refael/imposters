@@ -92,7 +92,11 @@ interface Outcome {
   // The response's callback records (`after` ones pending), when it has callbacks
   readonly callbacks?: ReadonlyArray<CallbackRecord>
   // The `after` calls to fire once the entry is logged, and what their templates see
-  readonly after?: { readonly list: ReadonlyArray<AfterCallback>; readonly tctx: TemplateContext }
+  readonly after?: {
+    readonly list: ReadonlyArray<AfterCallback>
+    readonly tctx: TemplateContext
+    readonly run: CallbackRun
+  }
   // The run stopped during the `before` phase: the request is not logged
   readonly stopped?: true
 }
@@ -217,7 +221,7 @@ export const ImposterServerLive = Layer.effect(
               ...matched,
               response,
               callbacks: [...before.records, ...callbacks.after.map(pendingRecord)],
-              ...(callbacks.after.length > 0 ? { after: { list: callbacks.after, tctx } } : {})
+              ...(callbacks.after.length > 0 ? { after: { list: callbacks.after, tctx, run } } : {})
             }
           })
 
@@ -328,7 +332,6 @@ export const ImposterServerLive = Layer.effect(
             // this run is current; a set closed by a stop interrupts the fiber at once.
             const after = outcome.after
             if (logged && after !== undefined) {
-              const run: CallbackRun = { imposterId: id, hop: parseHop(ctx.headers[HOP_HEADER]), inFlight }
               const settle = (record: CallbackRecord) =>
                 Effect.flatMap(
                   isCurrentRun,
@@ -336,7 +339,7 @@ export const ImposterServerLive = Layer.effect(
                 )
               yield* FiberSet.run(
                 afterFibers,
-                runAfter(after.list, after.tctx, run, settle).pipe(Effect.provideService(OutboundHttp, outbound))
+                runAfter(after.list, after.tctx, after.run, settle).pipe(Effect.provideService(OutboundHttp, outbound))
               )
             }
 

@@ -24,11 +24,6 @@ export type Timeline = ReadonlyArray<TimelineBucket>
 
 export const zeroCounts: TimelineCounts = { requests: 0, serverErrors: 0, unmatched: 0 }
 
-// No real bucket starts here, so an empty slot never matches a lookup
-const EMPTY_SLOT: TimelineBucket = { start: Number.NEGATIVE_INFINITY, ...zeroCounts }
-
-export const emptyTimeline: Timeline = Array.from({ length: TIMELINE_BUCKETS }, () => EMPTY_SLOT)
-
 export const bucketStart = (ms: number): number => Math.floor(ms / TIMELINE_BUCKET_MS) * TIMELINE_BUCKET_MS
 
 const slotOf = (start: number): number => {
@@ -48,6 +43,9 @@ export type Ring<C> = ReadonlyArray<C & { readonly start: number }>
 
 export const emptyRing = <C>(zero: C): Ring<C> =>
   Array.from({ length: TIMELINE_BUCKETS }, () => ({ start: Number.NEGATIVE_INFINITY, ...zero }))
+
+// No real bucket starts at -Infinity, so an empty slot never matches a lookup
+export const emptyTimeline: Timeline = emptyRing(zeroCounts)
 
 // Adds `delta` to the slot holding `atMs`. A stale slot is recycled; a record older than what
 // its slot now holds (it fell out of the window while in flight) is dropped.

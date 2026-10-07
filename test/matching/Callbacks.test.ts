@@ -312,4 +312,28 @@ describe("runAfter", () => {
       expect(f.sent).toEqual([])
       expect(f.samples.map((s) => [s.host, s.status])).toEqual([["h", undefined]])
     }))
+
+  it.effect("a header fetch cannot send fails that call, and the next one still runs", () =>
+    Effect.gen(function*() {
+      const f = fake(() => ({ after: 1, response: jsonResponse({}) }))
+      const settled: Array<CallbackRecord> = []
+      const run = yield* makeRun()
+      const list = callbacks({
+        after: [
+          { name: "bad", url: "http://h/a", headers: { "not a header": "x" } },
+          { name: "good", url: "http://h/b" }
+        ]
+      }).after
+      const fiber = yield* Effect.forkChild(
+        runAfter(list, { request }, run, (r) => Effect.sync(() => void settled.push(r))).pipe(
+          Effect.provide(f.layer)
+        ),
+        { startImmediately: true }
+      )
+      yield* TestClock.adjust(1)
+      yield* Fiber.join(fiber)
+      expect(settled.map((r) => [r.name, r.state])).toEqual([["bad", "failed"], ["good", "answered"]])
+      expect(settled[0]?.error).toContain("invalid headers")
+      expect(f.sent.map((s) => s.url)).toEqual(["http://h/b"])
+    }))
 })

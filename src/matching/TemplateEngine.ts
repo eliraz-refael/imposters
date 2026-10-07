@@ -57,14 +57,21 @@ export const flattenRequestContext = (ctx: RequestContext): Record<string, strin
   return result
 }
 
+// Kept per context: one response (or callback) templates its url, every header and its body
+// against the same context, and flattening large callback bodies is not free
+const flattened = new WeakMap<TemplateContext, Readonly<Record<string, string>>>()
+
 // The `{{key}}` values: request.* as flattenRequestContext gives them, and callbacks.<name>.*
-export const flattenTemplateContext = (tctx: TemplateContext): Record<string, string> => {
+export const flattenTemplateContext = (tctx: TemplateContext): Readonly<Record<string, string>> => {
+  const cached = flattened.get(tctx)
+  if (cached !== undefined) return cached
   const result = flattenRequestContext(tctx.request)
   if (tctx.callbacks !== undefined) {
     for (const [name, callback] of Object.entries(tctx.callbacks)) {
       flattenObject(callback, `callbacks.${name}`, result)
     }
   }
+  flattened.set(tctx, result)
   return result
 }
 

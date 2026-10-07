@@ -87,9 +87,6 @@ export const ProxyServiceLive = Layer.effect(
         if (!URL.canParse(targetUrl)) {
           return yield* Effect.fail(new ProxyError({ targetUrl, reason: `Invalid target url: ${targetUrl}` }))
         }
-        // The client's hop is not forwarded as is: this forward is one more hop
-        headers.delete(HOP_HEADER)
-
         return yield* callOut({
           imposterId,
           via: "proxy",
@@ -98,6 +95,7 @@ export const ProxyServiceLive = Layer.effect(
             method: ctx.method,
             headers,
             ...(body !== undefined && ctx.method !== "GET" && ctx.method !== "HEAD" ? { body } : {}),
+            // The client's hop is not forwarded as is: callOut sends this one, a hop further
             hop: nextHop(parseHop(ctx.headers[HOP_HEADER])),
             redirect: config.followRedirects ? "follow" : "manual"
           },

@@ -111,14 +111,24 @@ const runCall = (
       return { outcome, record: recordOf(callback, phase, url, outcome) }
     }
 
-    const headers = new Headers()
-    yield* Effect.promise(() => renderHeaders(tctx, callback.headers, headers))
-    let body: string | undefined
-    if (callback.body !== undefined) {
-      const rendered = yield* Effect.promise(() => renderBody(tctx, callback.body))
-      body = rendered.text
-      if (!headers.has("content-type")) headers.set("content-type", rendered.contentType)
+    // A header name or templated value fetch cannot send (a space, a line break) throws: that
+    // fails this call, rather than dying and leaving the rest of the run unsent
+    const prepared = yield* Effect.tryPromise({
+      try: async () => {
+        const headers = new Headers()
+        await renderHeaders(tctx, callback.headers, headers)
+        if (callback.body === undefined) return { headers, body: undefined }
+        const rendered = await renderBody(tctx, callback.body)
+        if (!headers.has("content-type")) headers.set("content-type", rendered.contentType)
+        return { headers, body: rendered.text }
+      },
+      catch: (err) => `invalid headers: ${err instanceof Error ? err.message : String(err)}`
+    }).pipe(Effect.result)
+    if (Result.isFailure(prepared)) {
+      const outcome = failed(prepared.failure, 0)
+      return { outcome, record: recordOf(callback, phase, url, outcome) }
     }
+    const { body, headers } = prepared.success
 
     const start = yield* Clock.currentTimeMillis
     const elapsed = Clock.currentTimeMillis.pipe(Effect.map((now) => now - start))
