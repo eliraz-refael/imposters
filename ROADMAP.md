@@ -16,7 +16,7 @@ What is already shipped is in the [README](README.md). Maintenance work and inte
 - **Mountebank adapter**: accept Mountebank imposter JSON, a direct migration path for Mountebank users ([#30](https://github.com/eliraz-refael/imposters/issues/30))
 - **Record and replay**: binary stub bodies, then export recorded proxy traffic as a config file and re-import it ([#31](https://github.com/eliraz-refael/imposters/issues/31))
 - **S3 completeness**: list pagination and `delimiter`, bucket settings that read back, `aws-chunked` uploads, and keys with `.` or `..` segments ([#32](https://github.com/eliraz-refael/imposters/issues/32))
-- **Callbacks and a service graph**: stubs that call other services before answering (fan-out) or after (webhooks), so a few imposters can stand in for a whole system, plus a live graph of who calls whom in the web UI ([#48](https://github.com/eliraz-refael/imposters/issues/48))
+- **A service graph**: callbacks have shipped (stubs that call other services before answering or after, see the [README](README.md#callbacks)); next, the calls on the stub cards and the request page, then a live graph of who calls whom in the web UI ([#48](https://github.com/eliraz-refael/imposters/issues/48))
 
 ## Later
 

@@ -1,6 +1,11 @@
+import { Effect } from "effect"
 import { HttpRouter } from "effect/unstable/http"
+import { loadConfigFile } from "imposters/cli/ConfigLoader"
 import { makeFullLayer } from "imposters/server/AdminServer"
+import * as path from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+
+const EXAMPLE = path.join(__dirname, "../../examples/callbacks.json")
 
 // Stub callbacks over real ports: imposters calling imposters. This file owns 8901-8929
 // (8929 is never bound: a callback to it is refused).
@@ -325,6 +330,35 @@ describe("E2E: callbacks", () => {
       expect(replayed.status).toBe(303)
       const hits = await eventually(() => logged(d), (entries) => entries.length === 4)
       expect(hits).toHaveLength(4)
+    })
+  }, 15_000)
+
+  it("examples/callbacks.json loads through the CLI's config path and runs as described", async () => {
+    const config = await Effect.runPromise(loadConfigFile(EXAMPLE))
+    // The example, moved from 3301-3304 to 8921-8924 (its callback urls too)
+    const moved: Array<{ port: number; stubs: Array<Record<string, unknown>> }> = JSON.parse(
+      JSON.stringify(config.imposters).replaceAll(/\b330([1-4])\b/g, "892$1")
+    )
+    expect(moved.map((i) => i.port)).toEqual([8921, 8922, 8923, 8924])
+    await withImposters(moved, async ([checkout = "", , , events = ""]) => {
+      const response = await fetch(url(8921, "/checkout?cart=9"), { method: "POST" })
+      expect(response.status).toBe(201)
+      expect(await response.json()).toEqual({
+        cart: "9",
+        items: [{ sku: "tea", price: 4 }, { sku: "cake", price: 6 }],
+        total: 10
+      })
+      const notified = await eventually(() => logged(events), (entries) => entries.length > 0)
+      expect(notified[0]?.request.body).toEqual({ type: "checkout", cart: "9", total: 10 })
+      const settled = await eventually(
+        () => logged(checkout),
+        (entries) => entries[0]?.callbacks?.[2]?.state === "answered"
+      )
+      expect(settled[0]?.callbacks?.map((r) => [r.name, r.state, r.status])).toEqual([
+        ["cart", "answered", 200],
+        ["price", "answered", 200],
+        ["notify", "answered", 202]
+      ])
     })
   }, 15_000)
 })

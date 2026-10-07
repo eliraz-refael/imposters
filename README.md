@@ -35,6 +35,7 @@ Imposters lets you spin up fake HTTP servers ("imposters") that respond to reque
 - **Response templates** — Use `{{key}}` for simple substitution or `${expr}` for JSONata expressions that reference the incoming request
 - **Multiple responses** — Cycle through responses sequentially, randomly, or repeat the last one
 - **Delays** — Hold a response back for a fixed time, or a random time in a range, to exercise timeouts and jitter
+- **Callbacks** — A response can call other services: `before` it answers (their results feed its templates) and `after` (webhooks), with loop protection across imposters
 - **Proxy mode** — Passthrough to a real service or record responses as stubs
 - **S3 emulator** — An in-memory S3 imposter (`"protocol": "S3"`) for the AWS SDK, with stubs for fault injection
 - **Per-imposter admin UI** — a live view at each imposter's `/_admin` path: requests as they arrive, stub hits, and unmatched requests you can turn into a stub
@@ -111,6 +112,7 @@ imposters start [options]
 | `--config <path>` | `-c` | Path to a JSON config file |
 | `--host <address>` | | Address the admin server and every imposter bind to (default: `127.0.0.1`, or `IMPOSTERS_HOST` env var) |
 | `--runtime <node\|bun>` | | Server runtime for the admin server: `node` (default, `node:http`) or `bun` (`Bun.serve()`, needs Bun). Imposters themselves always use `node:http`, which Bun also provides |
+| `--max-hops <number>` | | How many hops a chain of [callbacks](#callbacks) and proxy forwards may take before an imposter answers `508` (default: `8`, or `IMPOSTERS_MAX_HOPS` env var; 1–100) |
 
 A flag wins over its environment variable. Settings with no flag come from the environment only:
 
@@ -118,10 +120,11 @@ A flag wins over its environment variable. Settings with no flag come from the e
 |---|---|---|
 | `ADMIN_PORT` | `2525` | Admin server port, when `--port` is not given |
 | `IMPOSTERS_HOST` | `127.0.0.1` | Bind address, when `--host` is not given |
+| `IMPOSTERS_MAX_HOPS` | `8` | Hop limit, when `--max-hops` is not given |
 | `PORT_RANGE_MIN` / `PORT_RANGE_MAX` | `3000` / `4000` | Range a port is allocated from when an imposter is created without one |
 | `MAX_IMPOSTERS` | `100` | Most imposters that can exist at once |
 
-Every server binds the loopback address by default, so nothing off the machine can reach it. The admin API has no authentication and can create proxies, so pass `--host 0.0.0.0` only where the network is trusted, such as inside a container.
+Every server binds the loopback address by default, so nothing off the machine can reach it. The admin API has no authentication, and through proxies and [callbacks](#callbacks) a stub can make this machine send requests to any URL it can reach: your intranet, or a cloud metadata address such as `169.254.169.254`. So pass `--host 0.0.0.0` only where the network is trusted, such as inside a container, and on an imposter reachable from the network never template a callback's host from request data, which would make it an open relay.
 
 ## Config File
 
@@ -167,6 +170,7 @@ The `admin` block is optional and reserved: it is validated, but the CLI current
 | [`fault-injection.json`](examples/fault-injection.json) | `/orders` alternates 200 and 503 (`"responseMode": "sequential"`); `/slow` answers after a 2 s `delay`; `/jittery` after a random 100–800 ms (`"delay": { "min": 100, "max": 800 }`) | `curl -w ' %{http_code}\n' localhost:3001/orders`, several times |
 | [`s3.json`](examples/s3.json) | An in-memory S3 on port 7070 | Point the AWS SDK at `http://localhost:7070` with `forcePathStyle: true` |
 | [`s3-fault-injection.json`](examples/s3-fault-injection.json) | An S3 on port 7071 where `GET /my-bucket/flaky.pdf` is throttled with a 503 `SlowDown`; every other request reaches the emulator | `curl localhost:7071/my-bucket/flaky.pdf` |
+| [`callbacks.json`](examples/callbacks.json) | A checkout on 3301 that calls carts (3302) and pricing (3303) before it answers, then posts an event to 3304 | `curl -X POST 'localhost:3301/checkout?cart=7'` → `{"cart":"7","items":[…],"total":10}`; `localhost:3304/_admin` shows the event |
 | [`ui-showcase.json`](examples/ui-showcase.json) | Five imposters for the web UIs: templated responses, a flaky API (`"responseMode": "random"` with a 503), a slow one (delay ranges), an S3 with a throttled key, and a spare (`bun run screenshots` stops it to show a stopped imposter) | Open `localhost:2525/_ui`, then `curl localhost:3201/users/42` |
 | [`vitest/users.test.ts`](examples/vitest/users.test.ts) | A vitest suite that mocks an API with `withImposter` | Copy it into a project with `imposters`, `effect` and `vitest`, then `npx vitest run` |
 
@@ -211,7 +215,7 @@ The `admin` block is optional and reserved: it is validated, but the CLI current
 
 `GET /imposters?stats=true` adds each imposter's `statistics` to the list.
 
-Each captured request records what answered it in `response.outcome`: `stub`, `extension`, `proxy` or `unmatched` (the 404). When a stub answered, `response.responseIndex` says which of its responses it gave.
+Each captured request records what answered it in `response.outcome`: `stub`, `extension`, `proxy` or `unmatched` (the 404). When a stub answered, `response.responseIndex` says which of its responses it gave. When that response has callbacks, `callbacks` lists each call it made (see [Callbacks](#callbacks)).
 
 Statistics count from the imposter's last start. They include:
 
@@ -224,6 +228,7 @@ Statistics count from the imposter's last start. They include:
 | `last15Minutes` | The timeline summed |
 | `stubs` | One row per stub, in matching order: `hits`, `byResponse` (hits per response), `lastHitAt`, and `nextResponseIndex` (absent in `random` mode) |
 | `unmatched` | Requests no stub, extension or proxy answered, grouped by `method` and `path` with a `count` and `lastSeenAt`. Most recently seen first. Up to 50 groups are kept; the least recently seen is dropped first |
+| `outbound` | The calls this imposter made (its [callbacks](#callbacks) and proxy forwards), one edge per target `host`: `via` (`callback`, `proxy` or `both`), `calls`, `failed` (no response), `serverErrors` (5xx), `lastAt`, `p50` / `p95` over the last 128 calls, and a `timeline` of `calls` and `failed` like the one above. Most recently called first, up to 50 hosts |
 
 Starting an imposter and `DELETE /imposters/:id/stats` reset all of these. Deleting a stub drops its row. Changing a stub's `responses` or `responseMode` restarts its counters and its response cycle. A change to its predicates only keeps both.
 
@@ -342,6 +347,66 @@ A response's `delay` holds it back before it is sent. A number is a fixed delay 
 
 Both forms take `0` to `60000`, and a range needs `min <= max` (otherwise a 400 names the field). `{ "min": 500, "max": 500 }` is the same as `500`. A stub reads back with `delay` in the form it was given.
 
+## Callbacks
+
+A response can call other services. `before` calls run before it is built, and their results feed its templates as `callbacks.<name>`. `after` calls fire once it is ready, like a webhook. Together they let a few imposters stand in for a system of services: a gateway that aggregates two backends, an order service that notifies a queue.
+
+```json
+{
+  "predicates": [{ "field": "path", "operator": "equals", "value": "/checkout" }],
+  "responses": [{
+    "status": 200,
+    "callbacks": {
+      "before": [
+        { "name": "cart", "url": "http://127.0.0.1:3002/carts/{{request.query.cart}}" },
+        { "name": "price", "method": "POST", "url": "http://127.0.0.1:3003/quote",
+          "body": { "items": "${callbacks.cart.body.items}" }, "timeout": 2000, "onError": "fail" }
+      ],
+      "after": [
+        { "name": "notify", "method": "POST", "url": "http://127.0.0.1:3004/events",
+          "body": { "type": "checkout", "total": "${callbacks.price.body.total}" } }
+      ]
+    },
+    "body": { "items": "${callbacks.cart.body.items}", "total": "${callbacks.price.body.total}" }
+  }]
+}
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `before`, `after` | `[]` | The calls, at most 10 in all |
+| `parallel` | `false` | Run the `before` calls at once instead of in order |
+| `name` | *(required)* | Letters, digits and `_`, starting with a letter or `_` (no hyphens: JSONata would read one as a minus). Unique within the response |
+| `method` | `GET` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` or `OPTIONS`. A `GET` or `HEAD` cannot have a `body` |
+| `url` | *(required)* | Must start with a literal `http://` or `https://`; the rest may be templated |
+| `headers`, `body` | — | Templated. A string body is sent as `text/plain`, anything else as JSON, unless `headers` names a `content-type` |
+| `timeout` | `5000` | Milliseconds, 100–60000 |
+| `onError` | `continue` | `before` calls only: `fail` answers `502` when the call gets no response or a 5xx |
+
+What a template sees of a call:
+
+| `callbacks.<name>.` | |
+|---|---|
+| `ok` | `true` for a 2xx status, `false` otherwise or when no response came back |
+| `status`, `headers` | When a response came back. Header names are lower-case |
+| `body` | JSON when the content-type says JSON and it parses, else text. A body over 1 MiB is an error |
+| `durationMs` | How long the call took |
+| `error` | Why no response came back: a timeout, a refused connection, an invalid url, the hop limit |
+
+`${callbacks.cart.body.items}` on its own keeps its type (the array), as any whole `${…}` expression does, and `{{callbacks.price.status}}` gives text. A failed call has no `body`, so `${callbacks.price.body.total}` stays as written; branch on `ok` instead: `"${callbacks.price.ok ? callbacks.price.body.total : 0}"`.
+
+**Order.** `before` calls run in order by default, and each sees the request and every call before it, so one can fetch a token the next one sends. With `parallel: true` they run at once and see only the request. Then the response's `delay` is waited out (it adds to the calls: it is this service's own think time), the response is built and sent, and the `after` calls run in order, seeing the request and every `before` result. A failing `after` call never changes an answer already sent. A response with no callbacks renders exactly as before.
+
+**Failures.** With `onError: "continue"` a failure is data: the template sees `ok: false` and the `error`. A 4xx is always data, so a stub can pass on an upstream 404. With `onError: "fail"`, no response or a 5xx answers `502` with `{ "error": "Callback failed", "callback", "status" | "reason" }`, the remaining calls are not sent, and the `after` calls do not run. A url that is still half-templated after templating, or is not `http`/`https`, fails without sending anything.
+
+**Loops.** Every outbound call, callback or proxy forward, sends `x-imposters-hop`: the hop the request arrived with, plus one. A request that arrives at the limit (`--max-hops`, default 8) and would have to call out is answered `508 Loop Detected` with `x-imposters-loop: <limit>`, and that 508 travels back up the chain whatever `onError` says. A request that needs no call is served at any hop, and an `after` call past the limit is skipped. An imposter calling itself is allowed: each level of the loop is its own request in the log. Each imposter also has at most 64 calls in flight; past that a call fails at once rather than queueing.
+
+**Where to see them.** Each request's log entry has `callbacks`: one record per call with its `name`, `phase`, `method`, templated `url`, `state` (`answered`, `failed`, `skipped`, or `pending` for an `after` call still running), `status` or `error`, `durationMs`, and the first 2 KiB of each body. An `after` record is logged `pending` and settles in place. Every call also counts toward the `outbound` edges of `GET /imposters/:id/stats`. Preview never runs callbacks: its sample shows `${callbacks.…}` as written. A replay from the request page does run them.
+
+**Security.** Callbacks reach any URL the machine can, as proxies do, and the admin API has no authentication. Keep the default loopback bind unless the network is trusted, and on an imposter others can reach, never template a callback's host from request data: that would make it an open relay. Incoming headers are never forwarded, so a client's credentials do not leak through a callback.
+
+The form editor has no callbacks section yet: a stub with callbacks opens in the JSON view. See [`examples/callbacks.json`](examples/callbacks.json).
+
 ## Proxy Mode
 
 Configure an imposter to forward unmatched requests to a real backend.
@@ -363,6 +428,8 @@ Configure an imposter to forward unmatched requests to a real backend.
 |---|---|
 | `passthrough` | Forward requests to the target and return the response as-is |
 | `record` | Forward requests and automatically save responses as new stubs |
+
+A forward is a hop, as a callback is: it sends the incoming `x-imposters-hop` plus one, and a request that arrives at the hop limit is answered `508` instead of being forwarded. A proxy pointed at itself therefore ends in a `508` rather than recursing. Forwards count toward the stats' `outbound` edges.
 
 ### Proxy options
 
