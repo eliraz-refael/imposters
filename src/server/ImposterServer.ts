@@ -194,7 +194,12 @@ export const ImposterServerLive = Layer.effect(
             if (callbacks === undefined) {
               return { ...matched, response: yield* serveResponse(responseConfig, requestOnly(ctx)) }
             }
-            const run: CallbackRun = { imposterId: id, hop: parseHop(ctx.headers[HOP_HEADER]), inFlight }
+            const run: CallbackRun = {
+              imposterId: id,
+              isCurrent: isCurrentRun,
+              hop: parseHop(ctx.headers[HOP_HEADER]),
+              inFlight
+            }
             // A stop does not wait out a slow call: the request then goes unlogged, as any in flight
             const before = yield* Effect.raceFirst(
               runBefore(callbacks, ctx, run).pipe(Effect.provideService(OutboundHttp, outbound)),
@@ -233,7 +238,7 @@ export const ImposterServerLive = Layer.effect(
           })
 
         const fromProxy = (proxyConfig: ProxyConfigDomain, ctx: RequestContext, url: URL): Effect.Effect<Outcome> =>
-          proxyService.forward(ctx, proxyConfig, url, id).pipe(
+          proxyService.forward(ctx, proxyConfig, url, id, isCurrentRun).pipe(
             Effect.catchTag("HopLimitError", (err) => Effect.succeed(loopResponse(err.hop, err.limit))),
             Effect.catchTag("ProxyError", (err) =>
               Effect.succeed(

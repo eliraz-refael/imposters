@@ -29,12 +29,13 @@ const HOP_BY_HOP_HEADERS = new Set([
 export interface ProxyServiceShape {
   // Forwards the request to the target, sending the incoming hop plus one. A request that
   // arrived at the hop limit is refused with HopLimitError (the imposter answers 508).
-  // The call counts into `imposterId`'s outbound edges.
+  // The call counts into `imposterId`'s outbound edges, if `isCurrent` still holds when it ends.
   readonly forward: (
     ctx: RequestContext,
     config: ProxyConfigDomain,
     originalUrl: URL,
-    imposterId: string
+    imposterId: string,
+    isCurrent?: Effect.Effect<boolean>
   ) => Effect.Effect<Response, ProxyError | HopLimitError>
   readonly recordAsStub: (
     request: RequestContext,
@@ -54,7 +55,8 @@ export const ProxyServiceLive = Layer.effect(
       ctx: RequestContext,
       config: ProxyConfigDomain,
       originalUrl: URL,
-      imposterId: string
+      imposterId: string,
+      isCurrent?: Effect.Effect<boolean>
     ): Effect.Effect<Response, ProxyError | HopLimitError> =>
       Effect.gen(function*() {
         // Build target URL preserving path and query
@@ -89,6 +91,7 @@ export const ProxyServiceLive = Layer.effect(
         }
         return yield* callOut({
           imposterId,
+          ...(isCurrent !== undefined ? { isCurrent } : {}),
           via: "proxy",
           request: {
             url: new URL(targetUrl),

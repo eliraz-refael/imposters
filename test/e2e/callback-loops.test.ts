@@ -185,4 +185,27 @@ describe("E2E: callback loops", () => {
       expect(records.filter((r) => r.state === "answered")).toHaveLength(64)
     })
   }, 15_000)
+
+  it("a forward still in flight from a stopped run never counts in the new run's outbound edges", async () => {
+    await withImposters([
+      { port: 8939, proxy: { targetUrl: url(8940) } },
+      { port: 8940, stubs: [{ predicates: [], responses: [{ status: 200, delay: 800, body: "late" }] }] }
+    ], async ([a = "", target = ""]) => {
+      // Sent, then the proxy's run is stopped under it: the client's socket closes with it
+      const inFlight = fetch(url(8939, "/slow")).catch(() => undefined)
+      // Nothing observable marks the forward as sent (the target logs only once it answers), so wait a little
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      await admin(`/imposters/${a}`, "PATCH", { status: "stopped" })
+      await admin(`/imposters/${a}`, "PATCH", { status: "running" })
+      await admin(`/imposters/${a}/stats`, "DELETE")
+      await inFlight
+      // The old forward gets its answer once the target has logged it; its sample (if any) follows at once
+      await eventually(() => logged(target), (entries) => entries.length === 1)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      const stats: { outbound: ReadonlyArray<unknown>; totalRequests: number } =
+        await (await admin(`/imposters/${a}/stats`)).json()
+      expect(stats.totalRequests).toBe(0)
+      expect(stats.outbound).toEqual([])
+    })
+  }, 15_000)
 })

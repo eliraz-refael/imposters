@@ -2,7 +2,7 @@ import { Clock, Effect, Ref } from "effect"
 import * as Result from "effect/Result"
 import type { CallbackPhase, CallbackRecord } from "../schemas/RequestLogSchema.js"
 import type { AfterCallback, BeforeCallback, Callback, Callbacks } from "../schemas/StubSchema.js"
-import { callOut, OutboundHttp } from "../services/OutboundHttp.js"
+import { alwaysCurrent, callOut, OutboundHttp } from "../services/OutboundHttp.js"
 import {
   answered,
   type CallbackResult,
@@ -46,6 +46,8 @@ export const makeInFlight = (cap: number = MAX_IN_FLIGHT): Effect.Effect<InFligh
 // The request the callbacks are made for
 export interface CallbackRun {
   readonly imposterId: string
+  // Whether the run is still the imposter's current one; its calls count in the stats only then
+  readonly isCurrent?: Effect.Effect<boolean>
   // The hop the request arrived with
   readonly hop: number
   readonly inFlight: InFlight
@@ -134,6 +136,7 @@ const runCall = (
     const elapsed = Clock.currentTimeMillis.pipe(Effect.map((now) => now - start))
     const send = callOut({
       imposterId: run.imposterId,
+      ...(run.isCurrent !== undefined ? { isCurrent: run.isCurrent } : {}),
       via: "callback",
       request: {
         url: checked.success,
@@ -153,12 +156,15 @@ const runCall = (
       Effect.catchTag("OutboundError", (err) => elapsed.pipe(Effect.map((ms) => failed(err.reason, ms))))
     )
     // Over the cap the call fails at once, and still counts as a failed call to its host
-    const refuse = outbound.record(run.imposterId, {
-      host: checked.success.host.toLowerCase(),
-      via: "callback",
-      atMs: start,
-      durationMs: 0
-    }).pipe(Effect.as(failed(TOO_MANY_IN_FLIGHT, 0)))
+    const refuse = Effect.flatMap(run.isCurrent ?? alwaysCurrent, (current) =>
+      current
+        ? outbound.record(run.imposterId, {
+          host: checked.success.host.toLowerCase(),
+          via: "callback",
+          atMs: start,
+          durationMs: 0
+        })
+        : Effect.void).pipe(Effect.as(failed(TOO_MANY_IN_FLIGHT, 0)))
     const outcome = yield* Effect.acquireUseRelease(
       run.inFlight.acquire,
       (slot) => slot ? send : refuse,
