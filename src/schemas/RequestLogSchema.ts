@@ -6,6 +6,32 @@ import { NonEmptyString, NonNegativeInt } from "./common.js"
 export const RequestOutcome = Schema.Literals(["stub", "extension", "proxy", "unmatched"])
 export type RequestOutcome = Schema.Schema.Type<typeof RequestOutcome>
 
+// Which phase a callback ran in: before the response was built, or after it was ready
+export const CallbackPhase = Schema.Literals(["before", "after"])
+export type CallbackPhase = Schema.Schema.Type<typeof CallbackPhase>
+
+// pending: an `after` call not settled yet; answered: a response came back (any status);
+// failed: none did (timeout, connection, invalid url, too many in flight); skipped: never sent
+export const CallbackState = Schema.Literals(["pending", "answered", "failed", "skipped"])
+export type CallbackState = Schema.Schema.Type<typeof CallbackState>
+
+// One callback a response made, as the request log keeps it. Bodies are the first 2 KiB as
+// text; no headers are kept.
+export const CallbackRecord = Schema.Struct({
+  name: Schema.String,
+  phase: CallbackPhase,
+  method: Schema.String,
+  // After templating, or the template itself when templating failed
+  url: Schema.String,
+  state: CallbackState,
+  status: Schema.optional(Schema.Number),
+  error: Schema.optional(Schema.String),
+  durationMs: Schema.optional(Schema.Number),
+  requestBody: Schema.optional(Schema.String),
+  responseBody: Schema.optional(Schema.String)
+})
+export type CallbackRecord = Schema.Schema.Type<typeof CallbackRecord>
+
 export const RequestLogEntry = Schema.Struct({
   id: NonEmptyString,
   imposterId: NonEmptyString,
@@ -27,7 +53,9 @@ export const RequestLogEntry = Schema.Struct({
     // Which of the matched stub's responses answered (only when `outcome` is "stub")
     responseIndex: Schema.optional(NonNegativeInt)
   }),
-  duration: Schema.Number
+  duration: Schema.Number,
+  // The response's callbacks, in order (`before`, then `after`); absent when it made none
+  callbacks: Schema.optional(Schema.Array(CallbackRecord))
 })
 export type RequestLogEntry = Schema.Schema.Type<typeof RequestLogEntry>
 

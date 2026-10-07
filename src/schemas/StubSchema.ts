@@ -69,6 +69,89 @@ export type DelayRange = Schema.Schema.Type<typeof DelayRange>
 export const Delay = Schema.Union([DelayMs, DelayRange])
 export type Delay = Schema.Schema.Type<typeof Delay>
 
+// --- Callbacks: the calls a response makes to other services -------------------
+
+// How many callbacks one response may make, `before` and `after` together
+export const MAX_CALLBACKS = 10
+
+// A callback's name: what templates call it (`callbacks.<name>`) and what labels its log record.
+// No hyphen: JSONata would read `callbacks.my-call` as a subtraction.
+export const CALLBACK_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+export const CallbackName = Schema.String.check(Schema.isPattern(CALLBACK_NAME_PATTERN))
+
+export const CallbackMethod = Schema.Literals(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+export type CallbackMethod = Schema.Schema.Type<typeof CallbackMethod>
+
+// What a failed `before` call does to the answer: nothing (its result says it failed), or a 502
+export const CallbackOnError = Schema.Literals(["continue", "fail"])
+export type CallbackOnError = Schema.Schema.Type<typeof CallbackOnError>
+
+// The scheme is literal: only the rest of the url may be templated
+export const CALLBACK_URL_PATTERN = /^https?:\/\//
+
+const callbackFields = {
+  name: CallbackName,
+  method: CallbackMethod.pipe(Schema.withDecodingDefault(Effect.succeed("GET" as const))),
+  url: Schema.String.check(Schema.isPattern(CALLBACK_URL_PATTERN)),
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  body: Schema.optional(Schema.Unknown),
+  timeout: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 60000 })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(5000))
+  )
+}
+
+// fetch throws on a GET or HEAD with a body, so it is refused here rather than at call time
+const noBodyOnGet = Schema.makeFilter((callback: { readonly method: CallbackMethod; readonly body?: unknown }) =>
+  callback.body !== undefined && (callback.method === "GET" || callback.method === "HEAD")
+    ? { path: ["body"], issue: `a ${callback.method} callback cannot send a body` }
+    : undefined
+)
+
+// A call made before the response is built; its result feeds the response's templates
+export const BeforeCallback = Schema.Struct({
+  ...callbackFields,
+  onError: CallbackOnError.pipe(Schema.withDecodingDefault(Effect.succeed("continue" as const)))
+}).check(noBodyOnGet)
+export type BeforeCallback = Schema.Schema.Type<typeof BeforeCallback>
+
+// A call fired once the response is ready. Its failure cannot change an answer already given,
+// so it has no `onError`: one is refused rather than silently dropped.
+export const AfterCallback = Schema.Struct({
+  ...callbackFields,
+  onError: Schema.optional(Schema.Never)
+}).check(noBodyOnGet)
+export type AfterCallback = Schema.Schema.Type<typeof AfterCallback>
+
+export type Callback = BeforeCallback | AfterCallback
+
+// Names are unique across both phases (templates and log records look calls up by name), and
+// the two lists hold at most MAX_CALLBACKS in all
+export const Callbacks = Schema.Struct({
+  before: Schema.Array(BeforeCallback).pipe(Schema.withDecodingDefault(Effect.sync(() => []))),
+  after: Schema.Array(AfterCallback).pipe(Schema.withDecodingDefault(Effect.sync(() => []))),
+  // Run the `before` calls at once instead of in order (each then sees only the request)
+  parallel: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false)))
+}).check(
+  Schema.makeFilter((callbacks) => {
+    const total = callbacks.before.length + callbacks.after.length
+    if (total > MAX_CALLBACKS) {
+      return `a response makes at most ${MAX_CALLBACKS} callbacks, before and after together, not ${total}`
+    }
+    const issues: Array<Schema.FilterIssue> = []
+    const seen = new Set<string>()
+    const check = (phase: "before" | "after") => (callback: { readonly name: string }, index: number) => {
+      if (seen.has(callback.name)) {
+        issues.push({ path: [phase, index, "name"], issue: `the name "${callback.name}" is already used` })
+      }
+      seen.add(callback.name)
+    }
+    callbacks.before.forEach(check("before"))
+    callbacks.after.forEach(check("after"))
+    return issues
+  })
+)
+export type Callbacks = Schema.Schema.Type<typeof Callbacks>
+
 // A single response configuration
 export const ResponseConfig = Schema.Struct({
   status: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 })).pipe(
@@ -76,7 +159,8 @@ export const ResponseConfig = Schema.Struct({
   ),
   headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   body: Schema.optional(Schema.Unknown),
-  delay: Schema.optional(Delay)
+  delay: Schema.optional(Delay),
+  callbacks: Schema.optional(Callbacks)
 })
 export type ResponseConfig = Schema.Schema.Type<typeof ResponseConfig>
 

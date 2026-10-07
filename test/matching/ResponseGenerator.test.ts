@@ -12,6 +12,7 @@ import {
   resolveDelay,
   serveResponse
 } from "imposters/matching/ResponseGenerator"
+import { requestOnly } from "imposters/matching/TemplateEngine"
 import type { ResponseConfig } from "imposters/schemas/StubSchema"
 import { describe, expect } from "vitest"
 
@@ -150,33 +151,33 @@ describe("peekIndex", () => {
 describe("buildResponse", () => {
   it("builds response with status and JSON body", async () => {
     const config = makeResponse({ status: 201, body: { message: "Created" } })
-    const resp = await buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, requestOnly(makeCtx()))
     expect(resp.status).toBe(201)
     expect(resp.headers.get("content-type")).toBe("application/json")
   })
 
   it("builds response with string body", async () => {
     const config = makeResponse({ body: "hello" })
-    const resp = await buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, requestOnly(makeCtx()))
     expect(resp.headers.get("content-type")).toBe("text/plain")
   })
 
   it("builds response with custom headers", async () => {
     const config = makeResponse({ headers: { "x-custom": "value", "x-id": "123" } })
-    const resp = await buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, requestOnly(makeCtx()))
     expect(resp.headers.get("x-custom")).toBe("value")
     expect(resp.headers.get("x-id")).toBe("123")
   })
 
   it("builds response with no body", async () => {
     const config = makeResponse({ status: 204 })
-    const resp = await buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, requestOnly(makeCtx()))
     expect(resp.status).toBe(204)
   })
 
   it.each([204, 205, 304])("drops a configured body for null-body status %i instead of throwing", async (status) => {
     const config = makeResponse({ status, body: { ignored: true } })
-    const resp = await buildResponse(config, makeCtx())
+    const resp = await buildResponse(config, requestOnly(makeCtx()))
     expect(resp.status).toBe(status)
     expect(resp.body).toBeNull()
   })
@@ -184,7 +185,7 @@ describe("buildResponse", () => {
   it("applies templates to body", async () => {
     const config = makeResponse({ body: { greeting: "Hello {{request.query.name}}" } })
     const ctx = makeCtx({ query: { name: "Alice" } })
-    const resp = await buildResponse(config, ctx)
+    const resp = await buildResponse(config, requestOnly(ctx))
     expect(resp.status).toBe(200)
     const text = await resp.text()
     const parsed = JSON.parse(text)
@@ -194,7 +195,7 @@ describe("buildResponse", () => {
   it("applies templates to header values", async () => {
     const config = makeResponse({ headers: { "x-method": "{{request.method}}" } })
     const ctx = makeCtx({ method: "POST" })
-    const resp = await buildResponse(config, ctx)
+    const resp = await buildResponse(config, requestOnly(ctx))
     expect(resp.headers.get("x-method")).toBe("POST")
   })
 })
@@ -251,7 +252,7 @@ describe("serveResponse", () => {
   // Forks the answer, then moves the clock: still waiting 1ms short of `ms`, answered at `ms`
   const expectWaits = (config: ResponseConfig, ms: number) =>
     Effect.gen(function*() {
-      const fiber = yield* Effect.forkChild(serveResponse(config, ctx), { startImmediately: true })
+      const fiber = yield* Effect.forkChild(serveResponse(config, requestOnly(ctx)), { startImmediately: true })
       if (ms > 0) {
         yield* TestClock.adjust(ms - 1)
         expect(fiber.pollUnsafe()).toBeUndefined()
@@ -285,7 +286,7 @@ describe("serveResponse", () => {
   it.effect("builds the response after the wait", () =>
     Effect.gen(function*() {
       const fiber = yield* Effect.forkChild(
-        serveResponse(makeResponse({ status: 202, body: { ok: true }, delay: 40 }), ctx),
+        serveResponse(makeResponse({ status: 202, body: { ok: true }, delay: 40 }), requestOnly(ctx)),
         { startImmediately: true }
       )
       yield* TestClock.adjust(40)

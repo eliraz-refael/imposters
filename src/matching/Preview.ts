@@ -6,6 +6,7 @@ import type { CreateStubRequest } from "../schemas/StubSchema.js"
 import { contextFromCaptured, explainPredicates } from "./Explain.js"
 import type { RequestContext } from "./RequestMatcher.js"
 import { buildResponse, isNullBodyStatus } from "./ResponseGenerator.js"
+import { requestOnly } from "./TemplateEngine.js"
 
 /** A group of like requests (the unmatched `METHOD path` groups): how many, and the latest one */
 export interface RequestSample {
@@ -24,7 +25,7 @@ const sampleResponse = (
   Effect.tryPromise({
     // The first response is the one a new stub gives first; its delay is not waited out
     try: async () => {
-      const response = await buildResponse(candidate.responses[0], ctx)
+      const response = await buildResponse(candidate.responses[0], requestOnly(ctx))
       const headers: Record<string, string> = {}
       response.headers.forEach((value, key) => {
         headers[key] = value

@@ -18,6 +18,7 @@ import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } fr
 import { type ExtensionInstance, Extensions, findExtension } from "../extensions/Extension.js"
 import { extractRequestContext, findMatchingStub, type RequestContext } from "../matching/RequestMatcher.js"
 import { makeResponseState, peekIndex, type ResponseState, serveResponse } from "../matching/ResponseGenerator.js"
+import { requestOnly } from "../matching/TemplateEngine.js"
 import {
   ImposterRepository,
   type StubIndexOutOfRangeError,
@@ -160,7 +161,7 @@ export const ImposterServerLive = Layer.effect(
             const next = yield* responseState.getNextIndex(id, stub.id, stub.responses.length, stub.responseMode)
             const responseIndex = next < stub.responses.length ? next : 0
             const responseConfig = stub.responses[responseIndex] ?? stub.responses[0]
-            const response = yield* serveResponse(responseConfig, ctx)
+            const response = yield* serveResponse(responseConfig, requestOnly(ctx))
             return { response, kind: "stub", matchedStubId: stub.id, responseIndex }
           })
 

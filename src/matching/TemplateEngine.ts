@@ -1,6 +1,17 @@
 import { substituteParams } from "../domain/route.js"
+import type { CallbackResult } from "./CallbackRules.js"
 import { processExpressions } from "./ExpressionEvaluator.js"
 import type { RequestContext } from "./RequestMatcher.js"
+
+// What a response's templates see: the request, and the results of the `before` callbacks that
+// ran (absent when the response has none, so a template without callbacks renders as it always has)
+export interface TemplateContext {
+  readonly request: RequestContext
+  readonly callbacks?: Readonly<Record<string, CallbackResult>>
+}
+
+// A template context holding only the request
+export const requestOnly = (request: RequestContext): TemplateContext => ({ request })
 
 const flattenObject = (obj: unknown, prefix: string, result: Record<string, string>): void => {
   if (obj === null || obj === undefined) return
@@ -46,9 +57,20 @@ export const flattenRequestContext = (ctx: RequestContext): Record<string, strin
   return result
 }
 
-export const applyTemplates = async (ctx: RequestContext, data: unknown): Promise<unknown> => {
+// The `{{key}}` values: request.* as flattenRequestContext gives them, and callbacks.<name>.*
+export const flattenTemplateContext = (tctx: TemplateContext): Record<string, string> => {
+  const result = flattenRequestContext(tctx.request)
+  if (tctx.callbacks !== undefined) {
+    for (const [name, callback] of Object.entries(tctx.callbacks)) {
+      flattenObject(callback, `callbacks.${name}`, result)
+    }
+  }
+  return result
+}
+
+export const applyTemplates = async (tctx: TemplateContext, data: unknown): Promise<unknown> => {
   // Step 1: Apply {{key}} substitution
-  const substituted = substituteParams(flattenRequestContext(ctx))(data)
+  const substituted = substituteParams(flattenTemplateContext(tctx))(data)
   // Step 2: Apply ${expr} JSONata evaluation
-  return processExpressions(ctx, substituted)
+  return processExpressions(tctx, substituted)
 }
