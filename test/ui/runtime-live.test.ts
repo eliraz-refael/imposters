@@ -245,6 +245,56 @@ describe("ui.ts on the live page", () => {
     liveRecent = []
   })
 
+  it("a poll leaves an unchanged out-of-band cell in place, keeping a selection inside it; a changed one is swapped", async () => {
+    const orders = Schema.decodeUnknownSync(Stub)({
+      id: "orders",
+      predicates: [{ field: "path", operator: "equals", value: "/orders" }],
+      responses: [{ status: 200 }]
+    })
+    const matched: RequestLogEntry = {
+      ...entry("k1", "/orders"),
+      response: {
+        status: 200,
+        headers: {},
+        proxied: false,
+        outcome: "stub",
+        matchedStubId: NonEmptyString.make("orders")
+      }
+    }
+    source().emit(requestRow(matched, { stubs: [orders], protocol: "HTTP" }).value)
+    const cell = (): HTMLElement | null => document.getElementById("answered-k1")
+    const before = cell()
+    if (before === null) throw new Error("no cell")
+    const range = document.createRange()
+    range.selectNodeContents(before)
+    const selection = window.getSelection()
+    if (selection === null) throw new Error("no selection")
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    // The poll resends the same cell: it stays the same node, and the selection survives
+    liveStubs = [orders]
+    liveRecent = [matched]
+    liveTotal = 7001
+    source().emit(row("k2", "/next"))
+    await vi.waitFor(() => expect(document.getElementById("live-stats")?.textContent).toContain("7,001"), {
+      timeout: 3000
+    })
+    expect(cell()).toBe(before)
+    expect(selection.rangeCount).toBe(1)
+    expect(selection.toString()).toBe("#1 /orders")
+
+    // A stub inserted above it: the cell is swapped for the renumbered one
+    liveStubs = [Schema.decodeUnknownSync(Stub)({ id: "first", predicates: [], responses: [{ status: 200 }] }), orders]
+    liveTotal = 7002
+    source().emit(row("k3", "/later"))
+    await vi.waitFor(() => expect(cell()?.textContent).toBe("#2 /orders"), { timeout: 3000 })
+    expect(cell()).not.toBe(before)
+    selection.removeAllRanges()
+    liveStubs = []
+    liveRecent = []
+  })
+
   it("after a reconnect, re-fetches the recent rows it may have missed", async () => {
     reloadRows = [entry("x2", "/missed-2"), entry("x1", "/missed-1")]
     source().dispatchEvent(new Event("error"))
