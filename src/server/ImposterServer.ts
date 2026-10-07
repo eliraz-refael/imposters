@@ -33,7 +33,7 @@ import { HttpProtocol, NonEmptyString } from "../schemas/common.js"
 import type { CallbackRecord, RequestLogEntry, RequestOutcome } from "../schemas/RequestLogSchema.js"
 import type { AfterCallback, Stub } from "../schemas/StubSchema.js"
 import { MetricsService } from "../services/MetricsService.js"
-import { OutboundHttp } from "../services/OutboundHttp.js"
+import { OutboundHttp, type OutboundHttpShape } from "../services/OutboundHttp.js"
 import { ProxyService } from "../services/ProxyService.js"
 import { RequestLogger } from "../services/RequestLogger.js"
 import { makeUiRouter } from "../ui/UiRouter.js"
@@ -161,6 +161,14 @@ export const ImposterServerLive = Layer.effect(
         const isCurrentRun = Ref.get(stateMapRef).pipe(
           Effect.map((map) => Option.exists(HashMap.get(map, id), (state) => state.stubsRef === stubsRef))
         )
+        // This run's outbound calls (callbacks and proxy forwards) go through its own OutboundHttp,
+        // which records an edge only while the run is current: a call still in flight from a
+        // stopped run must not land in the next run's stats, as its request does not land in its log
+        const runOutbound: OutboundHttpShape = {
+          ...outbound,
+          record: (imposterId, sample) =>
+            Effect.flatMap(isCurrentRun, (current) => current ? outbound.record(imposterId, sample) : Effect.void)
+        }
 
         // Capture the current services for running effects inside the fetch handler
         const services = yield* Effect.context<never>()
@@ -194,15 +202,10 @@ export const ImposterServerLive = Layer.effect(
             if (callbacks === undefined) {
               return { ...matched, response: yield* serveResponse(responseConfig, requestOnly(ctx)) }
             }
-            const run: CallbackRun = {
-              imposterId: id,
-              isCurrent: isCurrentRun,
-              hop: parseHop(ctx.headers[HOP_HEADER]),
-              inFlight
-            }
+            const run: CallbackRun = { imposterId: id, hop: parseHop(ctx.headers[HOP_HEADER]), inFlight }
             // A stop does not wait out a slow call: the request then goes unlogged, as any in flight
             const before = yield* Effect.raceFirst(
-              runBefore(callbacks, ctx, run).pipe(Effect.provideService(OutboundHttp, outbound)),
+              runBefore(callbacks, ctx, run).pipe(Effect.provideService(OutboundHttp, runOutbound)),
               Deferred.await(shutdown).pipe(Effect.as("stopped" as const))
             )
             if (before === "stopped") {
@@ -238,7 +241,8 @@ export const ImposterServerLive = Layer.effect(
           })
 
         const fromProxy = (proxyConfig: ProxyConfigDomain, ctx: RequestContext, url: URL): Effect.Effect<Outcome> =>
-          proxyService.forward(ctx, proxyConfig, url, id, isCurrentRun).pipe(
+          proxyService.forward(ctx, proxyConfig, url, id).pipe(
+            Effect.provideService(OutboundHttp, runOutbound),
             Effect.catchTag("HopLimitError", (err) => Effect.succeed(loopResponse(err.hop, err.limit))),
             Effect.catchTag("ProxyError", (err) =>
               Effect.succeed(
@@ -344,7 +348,9 @@ export const ImposterServerLive = Layer.effect(
                 )
               yield* FiberSet.run(
                 afterFibers,
-                runAfter(after.list, after.tctx, after.run, settle).pipe(Effect.provideService(OutboundHttp, outbound))
+                runAfter(after.list, after.tctx, after.run, settle).pipe(
+                  Effect.provideService(OutboundHttp, runOutbound)
+                )
               )
             }
 

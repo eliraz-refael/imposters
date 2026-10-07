@@ -336,23 +336,6 @@ describe("runAfter", () => {
       expect(settled[0]?.error).toContain("invalid headers")
       expect(f.sent.map((s) => s.url)).toEqual(["http://h/b"])
     }))
-
-  it.effect("a run that is no longer current records no outbound samples", () =>
-    Effect.gen(function*() {
-      const f = fake(() => ({ after: 1, response: jsonResponse({}) }))
-      const inFlight = yield* makeInFlight(1)
-      const run: CallbackRun = { imposterId: "imp", isCurrent: Effect.succeed(false), hop: 0, inFlight }
-      const settled: Array<CallbackRecord> = []
-      const list = callbacks({ after: [{ name: "a", url: "http://a/x" }] }).after
-      const fiber = yield* Effect.forkChild(
-        runAfter(list, { request }, run, (r) => Effect.sync(() => void settled.push(r))).pipe(Effect.provide(f.layer)),
-        { startImmediately: true }
-      )
-      yield* TestClock.adjust(1)
-      yield* Fiber.join(fiber)
-      expect(settled.map((r) => r.state)).toEqual(["answered"])
-      expect(f.samples).toEqual([])
-    }))
 })
 
 describe("a url template that throws", () => {

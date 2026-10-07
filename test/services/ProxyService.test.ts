@@ -62,10 +62,8 @@ afterAll(() => {
 })
 
 const Outbound = OutboundHttpLive.pipe(Layer.provide(MetricsServiceLive))
-const TestLayer = Layer.mergeAll(
-  ProxyServiceLive.pipe(Layer.provide(Layer.mergeAll(UuidLive, Outbound))),
-  MetricsServiceLive
-)
+// forward takes the OutboundHttp from its context, as ImposterServer provides a run's own
+const TestLayer = Layer.mergeAll(ProxyServiceLive.pipe(Layer.provide(UuidLive)), Outbound, MetricsServiceLive)
 const runtime = ManagedRuntime.make(TestLayer)
 afterAll(async () => {
   await runtime.dispose()

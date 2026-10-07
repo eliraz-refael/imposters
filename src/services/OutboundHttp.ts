@@ -90,14 +90,8 @@ export const OutboundHttpLive = Layer.effect(
   })
 )
 
-// Records an outbound sample only while it holds: a call still in flight from a stopped run
-// must not land in the next run's edges (ImposterServer passes its isCurrentRun)
-export const alwaysCurrent: Effect.Effect<boolean> = Effect.succeed(true)
-
 export interface CallOutOptions<A> {
   readonly imposterId: string
-  // Whether the run that made the call is still current when it ends (default: always)
-  readonly isCurrent?: Effect.Effect<boolean>
   readonly via: OutboundVia
   readonly request: OutboundRequest
   readonly timeoutMs: number
@@ -108,7 +102,8 @@ export interface CallOutOptions<A> {
 
 // One outbound call: refused past the hop limit, sent with `x-imposters-hop`, given up on after
 // `timeoutMs` (on the Clock), and counted into the imposter's outbound edge however it ends once sent
-// (unless it is interrupted, or its run is no longer current).
+// (unless it is interrupted). Recording is the given OutboundHttp's: ImposterServer gives each
+// run one that records only while the run is current.
 export const callOut = <A>(options: CallOutOptions<A>): Effect.Effect<A, OutboundError | HopLimitError, OutboundHttp> =>
   Effect.gen(function*() {
     const outbound = yield* OutboundHttp
@@ -116,17 +111,15 @@ export const callOut = <A>(options: CallOutOptions<A>): Effect.Effect<A, Outboun
     const atMs = yield* Clock.currentTimeMillis
     const host = request.url.host.toLowerCase()
     const record = (status: number | undefined) =>
-      Effect.all([options.isCurrent ?? alwaysCurrent, Clock.currentTimeMillis]).pipe(
-        Effect.flatMap(([current, end]) =>
-          current
-            ? outbound.record(imposterId, {
-              host,
-              via,
-              atMs,
-              durationMs: end - atMs,
-              ...(status !== undefined ? { status } : {})
-            })
-            : Effect.void
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((end) =>
+          outbound.record(imposterId, {
+            host,
+            via,
+            atMs,
+            durationMs: end - atMs,
+            ...(status !== undefined ? { status } : {})
+          })
         )
       )
     // Refused at the hop limit: never sent, so no edge

@@ -5,7 +5,7 @@ import { HOP_HEADER, nextHop, parseHop } from "../matching/Hops.js"
 import type { RequestContext } from "../matching/RequestMatcher.js"
 import { NonEmptyString } from "../schemas/common.js"
 import type { Stub } from "../schemas/StubSchema.js"
-import { callOut, type HopLimitError, OutboundHttp } from "./OutboundHttp.js"
+import { callOut, type HopLimitError, type OutboundHttp } from "./OutboundHttp.js"
 import { Uuid } from "./Uuid.js"
 
 export class ProxyError extends Data.TaggedError("ProxyError")<{
@@ -29,14 +29,14 @@ const HOP_BY_HOP_HEADERS = new Set([
 export interface ProxyServiceShape {
   // Forwards the request to the target, sending the incoming hop plus one. A request that
   // arrived at the hop limit is refused with HopLimitError (the imposter answers 508).
-  // The call counts into `imposterId`'s outbound edges, if `isCurrent` still holds when it ends.
+  // The call goes through the OutboundHttp it is given (the imposter run's own), which counts
+  // it into `imposterId`'s outbound edges.
   readonly forward: (
     ctx: RequestContext,
     config: ProxyConfigDomain,
     originalUrl: URL,
-    imposterId: string,
-    isCurrent?: Effect.Effect<boolean>
-  ) => Effect.Effect<Response, ProxyError | HopLimitError>
+    imposterId: string
+  ) => Effect.Effect<Response, ProxyError | HopLimitError, OutboundHttp>
   readonly recordAsStub: (
     request: RequestContext,
     response: Response
@@ -49,15 +49,13 @@ export const ProxyServiceLive = Layer.effect(
   ProxyService,
   Effect.gen(function*() {
     const uuid = yield* Uuid
-    const outbound = yield* OutboundHttp
 
     const forward = (
       ctx: RequestContext,
       config: ProxyConfigDomain,
       originalUrl: URL,
-      imposterId: string,
-      isCurrent?: Effect.Effect<boolean>
-    ): Effect.Effect<Response, ProxyError | HopLimitError> =>
+      imposterId: string
+    ): Effect.Effect<Response, ProxyError | HopLimitError, OutboundHttp> =>
       Effect.gen(function*() {
         // Build target URL preserving path and query
         const targetBase = config.targetUrl.replace(/\/$/, "")
@@ -91,7 +89,6 @@ export const ProxyServiceLive = Layer.effect(
         }
         return yield* callOut({
           imposterId,
-          ...(isCurrent !== undefined ? { isCurrent } : {}),
           via: "proxy",
           request: {
             url: new URL(targetUrl),
@@ -116,8 +113,7 @@ export const ProxyServiceLive = Layer.effect(
                   reason: `Failed to reach target: ${String(err.cause)}`,
                   cause: err.cause
                 })
-            )),
-          Effect.provideService(OutboundHttp, outbound)
+            ))
         )
       })
 

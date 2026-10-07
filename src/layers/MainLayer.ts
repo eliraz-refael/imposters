@@ -35,8 +35,8 @@ export const makeMainLayer = (
     Layer.provide(maxHops !== undefined ? Layer.succeed(MaxHops, maxHops) : Layer.empty)
   )
 
-  // ProxyServiceLive depends on Uuid + OutboundHttp
-  const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(Layer.mergeAll(UuidLive, OutboundHttpWithDeps)))
+  // ProxyServiceLive depends on Uuid (its forward takes the OutboundHttp the imposter run gives it)
+  const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
 
   // ImposterServerLive depends on FiberManager + ImposterRepository + ServerFactory + RequestLogger + Metrics
   // + Proxy + OutboundHttp + Extensions
