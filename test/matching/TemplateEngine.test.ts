@@ -5,8 +5,8 @@ import { buildResponse } from "imposters/matching/ResponseGenerator"
 import {
   applyTemplates,
   flattenRequestContext,
-  flattenTemplateContext,
   requestOnly,
+  resolveTemplateKey,
   type TemplateContext
 } from "imposters/matching/TemplateEngine"
 import { ResponseConfig } from "imposters/schemas/StubSchema"
@@ -159,20 +159,22 @@ describe("templates with callbacks", () => {
   const price: CallbackResult = { ok: false, error: "timed out after 2000 ms", durationMs: 2000 }
   const tctx: TemplateContext = { request: makeCtx(), callbacks: { cart, price } }
 
-  it("flattens callbacks.<name>.* beside request.*", () => {
-    const flat = flattenTemplateContext(tctx)
-    expect(flat["request.method"]).toBe("GET")
-    expect(flat["callbacks.cart.status"]).toBe("200")
-    expect(flat["callbacks.cart.ok"]).toBe("true")
-    expect(flat["callbacks.cart.body.total"]).toBe("42")
-    expect(flat["callbacks.cart.body.items.1.sku"]).toBe("b")
-    expect(flat["callbacks.cart.headers.content-type"]).toBe("application/json")
-    expect(flat["callbacks.price.error"]).toBe("timed out after 2000 ms")
-    expect(flat["callbacks.price.status"]).toBeUndefined()
+  it("resolves callbacks.<name>.* beside request.*", () => {
+    const key = (k: string) => resolveTemplateKey(tctx, k)
+    expect(key("request.method")).toBe("GET")
+    expect(key("callbacks.cart.status")).toBe("200")
+    expect(key("callbacks.cart.ok")).toBe("true")
+    expect(key("callbacks.cart.body.total")).toBe("42")
+    expect(key("callbacks.cart.body.items.1.sku")).toBe("b")
+    expect(key("callbacks.cart.body.items")).toBe("[{\"sku\":\"a\"},{\"sku\":\"b\"}]")
+    expect(key("callbacks.cart.headers.content-type")).toBe("application/json")
+    expect(key("callbacks.price.error")).toBe("timed out after 2000 ms")
+    expect(key("callbacks.price.status")).toBeUndefined()
+    expect(key("callbacks")).toBeUndefined()
   })
 
-  it("adds nothing to the flat context when there are no callbacks", () => {
-    expect(flattenTemplateContext(requestOnly(makeCtx()))).toEqual(flattenRequestContext(makeCtx()))
+  it("resolves no callbacks key when there are none", () => {
+    expect(resolveTemplateKey(requestOnly(makeCtx()), "callbacks.cart.status")).toBeUndefined()
   })
 
   it("{{callbacks.x}} substitutes text; ${callbacks.x} keeps the type", async () => {
