@@ -160,8 +160,8 @@ export const updateRoute = (updates: Partial<typeof CreateRouteRequestSchema.Typ
 /**
  * Substitutes parameters in a string using Effect's String utilities
  */
-// A string with no `{{` has nothing to substitute: skipping it spares a pass over every key,
-// and a callback's large JSON answer can flatten to tens of thousands of them
+// A string with no `{{` has nothing to substitute: skipping it spares a pass over every key
+// (legacy: templating resolves keys in TemplateEngine, which no longer calls this)
 const substituteInString = (params: Readonly<Record<string, string>>) => (str: string): string =>
   str.includes("{{")
     ? Object.entries(params).reduce((acc, [key, value]) => acc.replaceAll(`{{${key}}}`, value), str)

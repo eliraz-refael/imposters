@@ -313,6 +313,21 @@ describe("runAfter", () => {
       expect(f.samples).toEqual([])
     }))
 
+  it.effect("past the hop limit with no slot free, it is still skipped, not a failed call", () =>
+    Effect.gen(function*() {
+      const f = fake(() => ({ after: 1, response: jsonResponse({}) }), 2)
+      const settled: Array<CallbackRecord> = []
+      const run = yield* makeRun(2, 0)
+      yield* runAfter(
+        callbacks({ after: [{ name: "n", url: "http://h/e" }] }).after,
+        { request },
+        run,
+        (r) => Effect.sync(() => void settled.push(r))
+      ).pipe(Effect.provide(f.layer))
+      expect(settled.map((r) => [r.state, r.error])).toEqual([["skipped", "hop limit 2 reached"]])
+      expect(f.samples).toEqual([])
+    }))
+
   it.effect("a header fetch cannot send fails that call, and the next one still runs", () =>
     Effect.gen(function*() {
       const f = fake(() => ({ after: 1, response: jsonResponse({}) }))

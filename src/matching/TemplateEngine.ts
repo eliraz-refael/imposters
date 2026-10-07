@@ -101,19 +101,37 @@ const substituteInString = (tctx: TemplateContext, str: string): string => {
   if (!str.includes("{{")) return str
   let out = ""
   let at = 0
+  // The first `}}` at or after the current `{{` plus two, kept while it still is, so a run of
+  // `{{` with no key does not search the rest of the string once per brace
+  let close = -1
   for (;;) {
     const open = str.indexOf("{{", at)
     if (open === -1) break
-    const close = str.indexOf("}}", open + 2)
+    if (close < open + 2) close = str.indexOf("}}", open + 2)
     if (close === -1) break
-    const value = resolveTemplateKey(tctx, str.slice(open + 2, close))
+    let value: string | undefined
+    let end = close
+    // Every key starts `request.` or `callbacks.`; anything else is text, and is not sliced
+    if (str.startsWith("request.", open + 2) || str.startsWith("callbacks.", open + 2)) {
+      // A key may hold `}` itself (a body key `a}` in `{{request.body.a}}}`), so a later `}}`
+      // before the next `{{` can close it too; the first that names something wins
+      const nextOpen = str.indexOf("{{", open + 1)
+      const limit = nextOpen === -1 ? str.length : nextOpen
+      for (let c = close; c !== -1 && (c === close || c < limit); c = str.indexOf("}}", c + 1)) {
+        value = resolveTemplateKey(tctx, str.slice(open + 2, c))
+        if (value !== undefined) {
+          end = c
+          break
+        }
+      }
+    }
     if (value === undefined) {
       // Not a key: keep one brace and look again from the next, so `{{{a}}` still finds `{{a}}`
       out += str.slice(at, open + 1)
       at = open + 1
     } else {
       out += str.slice(at, open) + value
-      at = close + 2
+      at = end + 2
     }
   }
   return out + str.slice(at)

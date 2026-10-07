@@ -180,6 +180,38 @@ describe("{{key}} substitution: where it parts from the eager engine", () => {
   })
 })
 
+describe("{{key}} substitution: a key holding braces", () => {
+  const tctx: TemplateContext = {
+    request: {
+      method: "GET",
+      path: "/",
+      headers: {},
+      query: { "a}}b": "Q" },
+      body: { "a}": "X", "{{c": "Y" },
+      rawBody: new Uint8Array(0)
+    }
+  }
+  const both = (template: string) => {
+    const rendered = substituteTemplateKeys(tctx, template)
+    expect(rendered).toBe(oracleSubstitute(oracleFlatten(tctx))(template))
+    return rendered
+  }
+
+  it("a key ending in `}` or holding `}}` is closed by a later `}}`", () => {
+    expect(both("{{request.body.a}}}")).toBe("X")
+    expect(both("<{{request.query.a}}b}}>")).toBe("<Q>")
+  })
+
+  it("a key holding `{{` still resolves", () => {
+    expect(both("{{request.body.{{c}}")).toBe("Y")
+  })
+
+  it("a run of braces with no key is left as written", () => {
+    const braces = `${"{{".repeat(5000)}x}}`
+    expect(both(braces)).toBe(braces)
+  })
+})
+
 describe("{{key}} substitution: a large answer is never stringified whole", () => {
   // Nested deeper than JSON.stringify can go: the eager engine threw on any template at all
   const DEPTH = 100_000

@@ -140,6 +140,14 @@ const runCall = (
     }
     const { body, headers } = prepared.success
 
+    // Past the hop limit the call is skipped before it takes a slot, so a full cap cannot turn it
+    // into a failed call to its host (one refused at the limit records no edge)
+    const hop = nextHop(run.hop)
+    if (hop > outbound.maxHops) {
+      const outcome = skipped(hopLimitReason(outbound.maxHops))
+      return { outcome, record: recordOf(callback, phase, url, outcome, body) }
+    }
+
     const start = yield* Clock.currentTimeMillis
     const elapsed = Clock.currentTimeMillis.pipe(Effect.map((now) => now - start))
     const send = callOut({
@@ -150,7 +158,7 @@ const runCall = (
         method: callback.method,
         headers,
         ...(body !== undefined ? { body } : {}),
-        hop: nextHop(run.hop)
+        hop
       },
       timeoutMs: callback.timeout,
       read: readAnswer,
