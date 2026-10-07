@@ -62,7 +62,8 @@ const data = (totalRequests: number): LiveData =>
       timeline: timelineAt(emptyTimeline, NOW),
       last15Minutes: { requests: 0, serverErrors: 0, unmatched: 0 },
       stubs: new Map(),
-      unmatched: []
+      unmatched: [],
+      outbound: []
     },
     unmatched: [],
     nextIndex: new Map(),

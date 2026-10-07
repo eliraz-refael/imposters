@@ -346,3 +346,29 @@ describe("MetricsService: per-stub, unmatched and timeline", () => {
       expect(stats.totalRequests).toBe(3)
     }).pipe(Effect.provide(MetricsServiceLive)))
 })
+
+describe("MetricsService: outbound edges", () => {
+  it("records outbound calls apart from the inbound counters, and resetStats clears them", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const metrics = yield* MetricsService
+        const impId = "imp-outbound"
+        const atMs = Date.now()
+        yield* metrics.recordOutbound(impId, {
+          host: "127.0.0.1:3002",
+          via: "callback",
+          atMs,
+          durationMs: 5,
+          status: 200
+        })
+        yield* metrics.recordOutbound(impId, { host: "127.0.0.1:3002", via: "proxy", atMs, durationMs: 7 })
+        const stats = yield* metrics.getStats(impId)
+        expect(stats.totalRequests).toBe(0)
+        expect(stats.outbound).toHaveLength(1)
+        expect(stats.outbound[0]).toMatchObject({ host: "127.0.0.1:3002", via: "both", calls: 2, failed: 1 })
+        yield* metrics.resetStats(impId)
+        expect((yield* metrics.getStats(impId)).outbound).toEqual([])
+      })
+    )
+  })
+})

@@ -63,7 +63,8 @@ const data = (input: {
       timeline: timelineAt(emptyTimeline, NOW),
       last15Minutes: { requests: 0, serverErrors: 0, unmatched: 0 },
       stubs: new Map(input.counters ?? []),
-      unmatched: []
+      unmatched: [],
+      outbound: []
     },
     unmatched: [],
     nextIndex: new Map(input.nextIndex ?? []),

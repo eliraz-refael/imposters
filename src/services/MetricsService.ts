@@ -16,6 +16,14 @@ import {
   type UnmatchedGroup,
   type UnmatchedGroups
 } from "./MetricsAggregates.js"
+import {
+  emptyEdges,
+  type OutboundEdges,
+  type OutboundEdgeSnapshot,
+  type OutboundSample,
+  recordOutbound as recordEdge,
+  snapshotEdges
+} from "./OutboundEdges.js"
 
 const BUFFER_SIZE = 1000
 
@@ -65,6 +73,8 @@ export interface MetricsSnapshot {
   readonly stubs: ReadonlyMap<string, StubCounters>
   /** Unmatched groups, most recently seen first */
   readonly unmatched: ReadonlyArray<UnmatchedSummary>
+  /** Outbound calls (callbacks and proxy forwards) by target host, most recently called first */
+  readonly outbound: ReadonlyArray<OutboundEdgeSnapshot>
 }
 
 /** @deprecated Use MetricsSnapshot */
@@ -101,7 +111,7 @@ const toSummary = (group: UnmatchedGroup<RequestLogEntry>): UnmatchedSummary => 
   lastSeenAt: group.lastSeenAt
 })
 
-const computeStats = (metrics: ImposterMetrics, nowMs: number): MetricsSnapshot => {
+const computeStats = (metrics: ImposterMetrics, nowMs: number): Omit<MetricsSnapshot, "outbound"> => {
   const count = metrics.responseTimeCount
   const total = metrics.totalRequests
   const bufferLen = Math.min(count, BUFFER_SIZE)
@@ -144,7 +154,7 @@ const computeStats = (metrics: ImposterMetrics, nowMs: number): MetricsSnapshot 
   }
 }
 
-const emptySnapshot = (nowMs: number): MetricsSnapshot => {
+const emptySnapshot = (nowMs: number): Omit<MetricsSnapshot, "outbound"> => {
   const timeline = timelineAt(emptyTimeline, nowMs)
   return {
     totalRequests: 0,
@@ -211,6 +221,8 @@ const recordEntry = (metrics: ImposterMetrics, entry: RequestLogEntry): Imposter
 
 export interface MetricsServiceShape {
   readonly recordRequest: (entry: RequestLogEntry) => Effect.Effect<void>
+  /** Counts one outbound call into the imposter's edge for its host; inbound counters ignore it */
+  readonly recordOutbound: (imposterId: string, sample: OutboundSample) => Effect.Effect<void>
   /** The imposter's metrics as of the Clock's now (the timeline window ends there) */
   readonly getStats: (imposterId: string) => Effect.Effect<MetricsSnapshot>
   /** The unmatched groups with their latest request each, most recently seen first */
@@ -227,6 +239,16 @@ export const MetricsServiceLive = Layer.effect(
   MetricsService,
   Effect.gen(function*() {
     const storeRef = yield* Ref.make(HashMap.empty<string, ImposterMetrics>())
+    // Kept apart from the inbound metrics, which are created by the first request recorded
+    const outboundRef = yield* Ref.make(HashMap.empty<string, OutboundEdges>())
+
+    const recordOutbound = (imposterId: string, sample: OutboundSample): Effect.Effect<void> =>
+      Ref.update(outboundRef, (store) =>
+        HashMap.set(
+          store,
+          imposterId,
+          recordEdge(Option.getOrElse(HashMap.get(store, imposterId), () => emptyEdges), sample)
+        ))
 
     const recordRequest = (entry: RequestLogEntry): Effect.Effect<void> =>
       Ref.update(storeRef, (store) => {
@@ -238,10 +260,12 @@ export const MetricsServiceLive = Layer.effect(
       Effect.gen(function*() {
         const nowMs = yield* Clock.currentTimeMillis
         const store = yield* Ref.get(storeRef)
-        return Option.match(HashMap.get(store, imposterId), {
+        const edges = Option.getOrElse(HashMap.get(yield* Ref.get(outboundRef), imposterId), () => emptyEdges)
+        const inbound = Option.match(HashMap.get(store, imposterId), {
           onNone: () => emptySnapshot(nowMs),
           onSome: (metrics) => computeStats(metrics, nowMs)
         })
+        return { ...inbound, outbound: snapshotEdges(edges, nowMs) }
       })
 
     const getUnmatched = (imposterId: string): Effect.Effect<ReadonlyArray<UnmatchedGroup<RequestLogEntry>>> =>
@@ -254,7 +278,11 @@ export const MetricsServiceLive = Layer.effect(
         )
       )
 
-    const resetStats = (imposterId: string): Effect.Effect<void> => Ref.update(storeRef, HashMap.remove(imposterId))
+    const resetStats = (imposterId: string): Effect.Effect<void> =>
+      Effect.andThen(
+        Ref.update(storeRef, HashMap.remove(imposterId)),
+        Ref.update(outboundRef, HashMap.remove(imposterId))
+      )
 
     const resetStub = (imposterId: string, stubId: string): Effect.Effect<void> =>
       Ref.update(storeRef, (store) =>
@@ -268,6 +296,13 @@ export const MetricsServiceLive = Layer.effect(
           }
         }))
 
-    return { recordRequest, getStats, getUnmatched, resetStats, resetStub } satisfies MetricsServiceShape
+    return {
+      recordRequest,
+      recordOutbound,
+      getStats,
+      getUnmatched,
+      resetStats,
+      resetStub
+    } satisfies MetricsServiceShape
   })
 )
