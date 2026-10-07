@@ -354,3 +354,55 @@ describe("runAfter", () => {
       expect(f.samples).toEqual([])
     }))
 })
+
+describe("a url template that throws", () => {
+  // A JSON answer nested deeper than the stack: stringifying it (as `{{callbacks.deep.body}}`
+  // must) throws a RangeError
+  const DEPTH = 100_000
+  const deepJson = () =>
+    new Response(`${"{\"a\":".repeat(DEPTH)}1${"}".repeat(DEPTH)}`, { headers: { "content-type": "application/json" } })
+
+  it.effect("before: fails that call only; the others are still recorded, and the phase does not die", () =>
+    Effect.gen(function*() {
+      const f = fake((r) => ({ after: 1, response: r.url.host === "deep" ? deepJson : jsonResponse({ ok: 1 }) }))
+      const phase = continued(
+        yield* before(f, {
+          before: [
+            { name: "deep", url: "http://deep/x" },
+            { name: "uses", url: "http://h/{{callbacks.deep.body}}" },
+            { name: "after_it", url: "http://h/plain" }
+          ]
+        }, 10)
+      )
+      expect(phase.records.map((r) => r.name)).toEqual(["deep", "uses", "after_it"])
+      expect(phase.records[0]?.state).toBe("answered")
+      expect(phase.records[1]).toMatchObject({ state: "failed", url: "http://h/{{callbacks.deep.body}}" })
+      expect(phase.records[1]?.error).toMatch(/^the url template failed: /)
+      expect(phase.records.every((r) => r.state !== "pending")).toBe(true)
+    }))
+
+  it.effect("after: every record settles, none is left pending", () =>
+    Effect.gen(function*() {
+      const f = fake(() => ({ after: 1, response: jsonResponse({}) }))
+      const deep = yield* Effect.promise(() => deepJson().json())
+      const settled: Array<CallbackRecord> = []
+      const run = yield* makeRun()
+      const list = callbacks({
+        after: [{ name: "uses", url: "http://h/{{callbacks.deep.body}}" }, { name: "next", url: "http://h/plain" }]
+      }).after
+      const fiber = yield* Effect.forkChild(
+        runAfter(
+          list,
+          { request, callbacks: { deep: { ok: true, status: 200, body: deep, durationMs: 1 } } },
+          run,
+          (r) => Effect.sync(() => void settled.push(r))
+        ).pipe(Effect.provide(f.layer)),
+        { startImmediately: true }
+      )
+      yield* TestClock.adjust(10)
+      yield* Fiber.join(fiber)
+      expect(settled.map((r) => r.name)).toEqual(["uses", "next"])
+      expect(settled[0]?.error).toMatch(/^the url template failed: /)
+      expect(settled.every((r) => r.state !== "pending")).toBe(true)
+    }))
+})

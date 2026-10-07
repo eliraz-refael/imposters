@@ -105,7 +105,17 @@ const runCall = (
 ): Effect.Effect<Ran, never, OutboundHttp> =>
   Effect.gen(function*() {
     const outbound = yield* OutboundHttp
-    const templated = yield* Effect.promise(() => applyTemplates(tctx, callback.url))
+    // A template that throws (a callback body too deeply nested to flatten) fails this call
+    // rather than dying, which would leave the rest of the run unsent and its records pending
+    const templatedUrl = yield* Effect.tryPromise({
+      try: () => applyTemplates(tctx, callback.url),
+      catch: (err) => `the url template failed: ${err instanceof Error ? err.message : String(err)}`
+    }).pipe(Effect.result)
+    if (Result.isFailure(templatedUrl)) {
+      const outcome = failed(templatedUrl.failure, 0)
+      return { outcome, record: recordOf(callback, phase, callback.url, outcome) }
+    }
+    const templated = templatedUrl.success
     const url = typeof templated === "string" ? templated : callback.url
     const checked = checkCallbackUrl(templated)
     if (Result.isFailure(checked)) {
