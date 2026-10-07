@@ -356,9 +356,34 @@ describe("livePage", () => {
 
 describe("liveFragment", () => {
   it("answers the side panels with the stats and the stubs count out of band", () => {
-    const fragment = liveFragment(liveData({ stubs: [stub({})] })).value
+    const fragment = liveFragment(liveData({ stubs: [stub({})] }), []).value
     expect(fragment).toContain(`id="live-stats" aria-label="Stats" data-oob`)
     expect(fragment).toContain(`id="tab-stubs-count" data-oob>1<`)
     expect(fragment).toContain("stub hits")
+  })
+
+  it("renumbers the listed rows' stubs out of band, so a row agrees with the panel after an insert or a delete", () => {
+    const orders = stub({ id: "b", predicates: methodPath("GET", "/orders") })
+    const logged = entry({ id: "r1", matchedStubId: "b" })
+    // Logged while GET /orders was the only stub
+    expect(requestRow(logged, { stubs: [orders], protocol: "HTTP" }).value).toContain(`id="answered-r1">#1 /orders<`)
+    // A stub inserted above it: the next poll's answer replaces the row's cell, by id, and the panel agrees
+    const stubs = [stub({ id: "a" }), orders]
+    const data = buildLiveData({
+      config: config(),
+      stubs,
+      snapshot: snapshot(),
+      unmatched: [],
+      nextIndex: new Map(),
+      nowMs: NOW
+    })
+    const inserted = liveFragment(data, [logged]).value
+    expect(inserted).toContain(`id="answered-r1" data-oob>#2 /orders<`)
+    expect(inserted).toContain("#2 GET /orders")
+    // Deleted: the row says so
+    expect(liveFragment(liveData({ stubs: [] }), [logged]).value).toContain(`id="answered-r1" data-oob>removed stub<`)
+    // What answered an unmatched, proxied or extension request never changes, so it is not resent
+    const unmatched = liveFragment(liveData({ stubs: [orders] }), [entry({ id: "r2" })]).value
+    expect(unmatched).not.toContain("answered-r2")
   })
 })

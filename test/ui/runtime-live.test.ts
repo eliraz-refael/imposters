@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import * as DateTime from "effect/DateTime"
+import * as Schema from "effect/Schema"
 import { ImposterConfig } from "imposters/domain/imposter"
 import { NonEmptyString } from "imposters/schemas/common"
 import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
+import { Stub } from "imposters/schemas/StubSchema"
 import { emptyTimeline, timelineAt } from "imposters/services/MetricsAggregates"
 import { buildLiveData, type LiveData } from "imposters/ui/LiveData"
 import { liveFragment, livePage, requestRow } from "imposters/ui/pages/live"
@@ -75,6 +77,9 @@ let releaseReload: (() => void) | undefined
 // Set to fail the next rows re-fetch with a 500
 let failReload = false
 let liveTotal = 0
+// The rows the live fragment resends the stub cells of, and the stubs it numbers them by
+let liveRecent: ReadonlyArray<RequestLogEntry> = []
+let liveStubs: ReadonlyArray<Stub> = []
 
 const rowsEl = (): HTMLElement => {
   const el = document.getElementById("live-rows")
@@ -129,7 +134,7 @@ beforeAll(async () => {
         releaseReload = () => resolve(new Response(body))
       })
     }
-    return Promise.resolve(new Response(liveFragment(data(liveTotal)).value))
+    return Promise.resolve(new Response(liveFragment({ ...data(liveTotal), stubs: liveStubs }, liveRecent).value))
   })
   const page = livePage(data(1), { theme: null, recent: [{ entry: entry("r0", "/first"), seq: 1 }] }).value
   // Beside the page: a list with no data-sse-reload, so nothing to re-fetch from
@@ -210,6 +215,34 @@ describe("ui.ts on the live page", () => {
     expect(fetched).toContain("/_admin/fragments/live")
     // The request list itself is never polled away
     expect(paths()[0]).toBe("/numbers")
+  })
+
+  it("a poll renumbers a listed row's stub, so it reads as the stub's current position", async () => {
+    const orders = Schema.decodeUnknownSync(Stub)({
+      id: "orders",
+      predicates: [{ field: "path", operator: "equals", value: "/orders" }],
+      responses: [{ status: 200 }]
+    })
+    const matched: RequestLogEntry = {
+      ...entry("s1", "/orders"),
+      response: {
+        status: 200,
+        headers: {},
+        proxied: false,
+        outcome: "stub",
+        matchedStubId: NonEmptyString.make("orders")
+      }
+    }
+    source().emit(requestRow(matched, { stubs: [orders], protocol: "HTTP" }).value)
+    const cell = (): string => document.getElementById("answered-s1")?.textContent ?? ""
+    expect(cell()).toBe("#1 /orders")
+    // A stub is inserted above it; the next arrival's poll brings the new numbering
+    liveStubs = [Schema.decodeUnknownSync(Stub)({ id: "first", predicates: [], responses: [{ status: 200 }] }), orders]
+    liveRecent = [matched]
+    source().emit(row("s2", "/next"))
+    await vi.waitFor(() => expect(cell()).toBe("#2 /orders"), { timeout: 3000 })
+    liveStubs = []
+    liveRecent = []
   })
 
   it("after a reconnect, re-fetches the recent rows it may have missed", async () => {
