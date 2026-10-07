@@ -220,7 +220,9 @@ const readResponse = (input: unknown, index: number, reasons: Array<string>): Re
     return undefined
   }
   const before = reasons.length
-  const extra = unknownKeys(input, ["status", "headers", "body", "delay"])
+  // Callbacks are a response field the form has no section for yet: the stub opens in JSON
+  if (Object.hasOwn(input, "callbacks")) reasons.push(`${where} has callbacks, which the form can't show yet`)
+  const extra = unknownKeys(input, ["status", "headers", "body", "delay", "callbacks"])
   if (extra.length > 0) reasons.push(`${where} has ${keyList(extra)}, which a response doesn't have`)
   const { body, status } = input
   if (status !== undefined && typeof status !== "number") {

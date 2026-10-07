@@ -60,8 +60,12 @@ describe("readForm", () => {
       `response 1's header "a" isn't text`,
       `response 1's delay isn't a number or a { "min", "max" } range`
     ])
-    expect(reasonsFor({ responses: [{ status: 200, callbacks: [] }] })).toEqual([
-      `response 1 has "callbacks", which a response doesn't have`
+    // Callbacks are real, but the form has no section for them yet: the stub opens in JSON
+    expect(reasonsFor({ responses: [{ status: 200 }, { status: 200, callbacks: { after: [] } }] })).toEqual([
+      `response 2 has callbacks, which the form can't show yet`
+    ])
+    expect(reasonsFor({ responses: [{ status: 200, extra: 1 }] })).toEqual([
+      `response 1 has "extra", which a response doesn't have`
     ])
     expect(reasonsFor({ ...ONE, responseMode: "loop" })).toEqual([`the response mode "loop" isn't one the form offers`])
   })
