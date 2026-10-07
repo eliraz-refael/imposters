@@ -24,6 +24,8 @@ import {
   parseHop,
   resolveMaxHops
 } from "imposters/matching/Hops"
+import type { RequestContext } from "imposters/matching/RequestMatcher"
+import { applyTemplates, requestOnly } from "imposters/matching/TemplateEngine"
 import { AfterCallback, BeforeCallback } from "imposters/schemas/StubSchema"
 import { describe, expect, it } from "vitest"
 
@@ -32,6 +34,33 @@ const before = (extra: Record<string, unknown> = {}) =>
 const after = Schema.decodeUnknownSync(AfterCallback)({ name: "notify", method: "POST", url: "http://h/e" })
 const text = (s: string) => new TextEncoder().encode(s)
 const json = { "content-type": "application/json" }
+
+describe("templated urls", () => {
+  const ctx: RequestContext = {
+    method: "GET",
+    path: "/",
+    headers: {},
+    query: { name: "a/b?x=1" },
+    body: undefined,
+    rawBody: new Uint8Array(0)
+  }
+  const templatedUrl = async (template: string) => {
+    const templated = await applyTemplates(requestOnly(ctx), template)
+    return Result.getOrThrow(checkCallbackUrl(templated))
+  }
+
+  it("inserts a value as is, so it can change the path and the query", async () => {
+    const url = await templatedUrl("http://127.0.0.1:3002/items/{{request.query.name}}")
+    expect([url.pathname, url.search]).toEqual(["/items/a/b", "?x=1"])
+  })
+
+  it("$encodeUrlComponent makes it one encoded path segment, and passes the leftover-template check", async () => {
+    const url = await templatedUrl("http://127.0.0.1:3002/items/${$encodeUrlComponent(request.query.name)}")
+    expect(url.href).toBe("http://127.0.0.1:3002/items/a%2Fb%3Fx%3D1")
+    expect(url.pathname.split("/")).toEqual(["", "items", "a%2Fb%3Fx%3D1"])
+    expect(url.search).toBe("")
+  })
+})
 
 describe("checkCallbackUrl", () => {
   it("accepts a templated http or https url", () => {

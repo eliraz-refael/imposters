@@ -378,7 +378,7 @@ A response can call other services. `before` calls run before it is built, and t
 | `parallel` | `false` | Run the `before` calls at once instead of in order |
 | `name` | *(required)* | Letters, digits and `_`, starting with a letter or `_` (no hyphens: JSONata would read one as a minus). Unique within the response |
 | `method` | `GET` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` or `OPTIONS`. A `GET` or `HEAD` cannot have a `body` |
-| `url` | *(required)* | Must start with a literal `http://` or `https://`; the rest may be templated |
+| `url` | *(required)* | Must start with a literal `http://` or `https://`; the rest may be templated. Values are inserted as is, so a `/` or `?` in one changes the path or query; encode a value with JSONata, e.g. `http://127.0.0.1:3002/items/${$encodeUrlComponent(request.query.name)}` |
 | `headers`, `body` | — | Templated. A string body is sent as `text/plain`, anything else as JSON, unless `headers` names a `content-type` |
 | `timeout` | `5000` | Milliseconds, 100–60000 |
 | `onError` | `continue` | `before` calls only: `fail` answers `502` when the call gets no response or a 5xx |
