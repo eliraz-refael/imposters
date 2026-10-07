@@ -101,6 +101,8 @@ export interface Summary {
   readonly slowest?: { readonly row: ImposterRow; readonly p95: number }
   // The imposter with the most unmatched requests, if any had one
   readonly mostUnmatched?: ImposterRow
+  // How many imposters had one, so the strip does not read as if the leader were the only one
+  readonly unmatchedImposters: number
 }
 
 const addCounts = (a: Counts, b: Counts): Counts => ({
@@ -127,7 +129,8 @@ export const summarize = (rows: ReadonlyArray<ImposterRow>): Summary => {
   const running = rows.filter((row) => row.running)
   const slowRow = maxBy(running, (row) => row.p95 ?? 0)
   const mostServerErrors = maxBy(running, (row) => row.last15.serverErrors)
-  const mostUnmatched = maxBy(running.filter(countsUnmatched), (row) => row.last15.unmatched)
+  const canMiss = running.filter(countsUnmatched)
+  const mostUnmatched = maxBy(canMiss, (row) => row.last15.unmatched)
   return {
     total: rows.length,
     running: running.length,
@@ -136,7 +139,8 @@ export const summarize = (rows: ReadonlyArray<ImposterRow>): Summary => {
     timeline: running.map((row) => row.timeline).reduce(addTimelines, []),
     ...(mostServerErrors !== undefined ? { mostServerErrors } : {}),
     ...(slowRow?.p95 !== undefined ? { slowest: { row: slowRow, p95: slowRow.p95 } } : {}),
-    ...(mostUnmatched !== undefined ? { mostUnmatched } : {})
+    ...(mostUnmatched !== undefined ? { mostUnmatched } : {}),
+    unmatchedImposters: canMiss.filter((row) => row.last15.unmatched > 0).length
   }
 }
 

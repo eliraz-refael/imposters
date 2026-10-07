@@ -60,8 +60,13 @@ const strip = (data: Overview): SafeHtml => {
     ? html`no 5xx answers`
     : html`no traffic yet`
 
+  // One imposter: all of them are there. Several: how many, and a link to the one with the most
   const unmatchedNote = summary.mostUnmatched !== undefined
-    ? html`<a href="${summary.mostUnmatched.uiUrl}">see them on ${summary.mostUnmatched.name} →</a>`
+    ? summary.unmatchedImposters > 1
+      ? html`${
+        count(summary.unmatchedImposters)
+      } imposters · <a href="${summary.mostUnmatched.uiUrl}">most on ${summary.mostUnmatched.name} →</a>`
+      : html`<a href="${summary.mostUnmatched.uiUrl}">see them on ${summary.mostUnmatched.name} →</a>`
     : requests > 0
     ? html`every request matched`
     : html`nothing to match yet`

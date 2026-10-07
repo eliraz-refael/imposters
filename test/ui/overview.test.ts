@@ -146,6 +146,7 @@ describe("summarize", () => {
     expect(summary.timeline).toEqual([11, 2, 3])
     expect(summary.mostServerErrors?.id).toBe("b")
     expect(summary.mostUnmatched?.id).toBe("a")
+    expect(summary.unmatchedImposters).toBe(1)
   })
 
   it("names the slowest p95 by imposter, and only among running ones", () => {
@@ -161,6 +162,7 @@ describe("summarize", () => {
     const summary = summarize([row({ protocol: "S3", last15: { requests: 3, serverErrors: 0, unmatched: 3 } })])
     expect(summary.mostServerErrors).toBeUndefined()
     expect(summary.mostUnmatched).toBeUndefined()
+    expect(summary.unmatchedImposters).toBe(0)
     expect(summary.slowest).toBeUndefined()
     expect(summarize([]).timeline).toEqual([])
   })
@@ -233,6 +235,25 @@ describe("overview page", () => {
     expect(page).toContain("<span class=\"tile-value\">2,004 <span class=\"tile-unit\">ms</span></span>")
     expect(page).toContain("see them on flaky →")
     expect(page).toContain("imposters v1.2.3 · binds 127.0.0.1")
+  })
+
+  it("the unmatched tile counts every imposter with unmatched requests, not just the top one", () => {
+    const unmatched = (n: number) => ({ requests: 10, serverErrors: 0, unmatched: n })
+    const data = overview([
+      row({ id: "a", name: "users-api", last15: unmatched(2) }),
+      row({ id: "b", name: "orders-api", uiUrl: "http://h:3001/_admin", last15: unmatched(9) }),
+      row({ id: "c", name: "carts-api", last15: unmatched(1) }),
+      row({ id: "d", name: "quiet-api", last15: unmatched(0) }),
+      row({ id: "e", name: "stopped-api", running: false, last15: unmatched(4) }),
+      row({ id: "f", name: "s3", protocol: "S3", last15: unmatched(5) })
+    ])
+    expect(data.summary.unmatchedImposters).toBe(3)
+    const page = overviewFragment(data).value
+    expect(page).toContain("3 imposters · <a href=\"http://h:3001/_admin\">most on orders-api →</a>")
+    expect(page).not.toContain("see them on")
+    // One imposter: the note names it alone
+    expect(overviewFragment(overview([row({ name: "solo", last15: unmatched(3) })])).value)
+      .toContain("see them on solo →")
   })
 
   it("labels each value cell with its column name, for the stacked cards on a narrow screen", () => {
