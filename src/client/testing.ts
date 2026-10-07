@@ -24,6 +24,21 @@ interface ResponseConfigInput {
   readonly body?: unknown
   /** Milliseconds, or a range to draw a whole number of milliseconds from on each answer */
   readonly delay?: number | { readonly min: number; readonly max: number }
+  /** Calls to other services: `before` ones feed the templates as callbacks.<name>, `after` ones fire once answered */
+  readonly callbacks?: {
+    readonly before?: ReadonlyArray<CallbackInput & { readonly onError?: "continue" | "fail" }>
+    readonly after?: ReadonlyArray<CallbackInput>
+    readonly parallel?: boolean
+  }
+}
+
+interface CallbackInput {
+  readonly name: string
+  readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+  readonly url: string
+  readonly headers?: Record<string, string>
+  readonly body?: unknown
+  readonly timeout?: number
 }
 
 export interface WithImposterConfig {
@@ -37,6 +52,8 @@ export interface WithImposterConfig {
 export interface TestServerOptions {
   /** Extensions to register, as the CLI's registration point would */
   readonly extensions?: ReadonlyArray<ImposterExtension>
+  /** The hop limit of callbacks and proxy forwards, as --max-hops would set it (default 8) */
+  readonly maxHops?: number
 }
 
 export interface ImposterTestContext {
@@ -58,7 +75,8 @@ const toStubPayload = (stub: StubConfig): CreateStubRequest => ({
     status: r.status ?? 200,
     ...(r.headers !== undefined ? { headers: r.headers } : {}),
     ...(r.body !== undefined ? { body: r.body } : {}),
-    ...(r.delay !== undefined ? { delay: r.delay } : {})
+    ...(r.delay !== undefined ? { delay: r.delay } : {}),
+    ...(r.callbacks !== undefined ? { callbacks: r.callbacks } : {})
   })) as unknown as CreateStubRequest["responses"],
   responseMode: stub.responseMode ?? "sequential"
 })
@@ -106,9 +124,12 @@ export const withImposter = <A, E>(
 
 /** An in-process admin API (no admin socket) with the full imposter runtime behind it */
 export const makeTestServer = (options: TestServerOptions = {}) => {
-  const { dispose, handler } = HttpRouter.toWebHandler(makeFullLayer(options.extensions ?? []), {
-    disableLogger: true
-  })
+  const { dispose, handler } = HttpRouter.toWebHandler(
+    makeFullLayer(options.extensions ?? [], undefined, undefined, options.maxHops),
+    {
+      disableLogger: true
+    }
+  )
   const clientLayer = ImpostersClientLive().pipe(
     Layer.provide(HandlerHttpClientLive(handler))
   )

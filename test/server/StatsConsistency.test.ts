@@ -15,6 +15,7 @@ import { ImposterServer, ImposterServerLive, type ImposterServerShape } from "im
 import { ServerFactory } from "imposters/server/ServerFactory"
 import { StubChange } from "imposters/server/StubChange"
 import { MetricsService, MetricsServiceLive } from "imposters/services/MetricsService"
+import { OutboundHttpLive } from "imposters/services/OutboundHttp"
 import { ProxyServiceLive } from "imposters/services/ProxyService"
 import { RequestLogger, RequestLoggerLive } from "imposters/services/RequestLogger"
 import { UuidLive } from "imposters/services/UuidLive"
@@ -159,7 +160,10 @@ const TestLayer = ImposterServerLive.pipe(
       CapturingServerFactory,
       GatedRequestLogger,
       GatedMetricsService,
-      ProxyServiceLive.pipe(Layer.provide(UuidLive)),
+      ProxyServiceLive.pipe(
+        Layer.provide(Layer.mergeAll(UuidLive, OutboundHttpLive.pipe(Layer.provide(GatedMetricsService))))
+      ),
+      OutboundHttpLive.pipe(Layer.provide(GatedMetricsService)),
       Extensions.layer([GatedExtension])
     )
   )

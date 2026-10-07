@@ -1,6 +1,6 @@
 import type { Scope } from "effect"
 import { Context, Effect, HashMap, Layer, Option, PubSub, Ref, Stream } from "effect"
-import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
+import type { CallbackRecord, RequestLogEntry } from "../schemas/RequestLogSchema.js"
 
 // How many entries the log keeps per imposter
 export const MAX_ENTRIES = 100
@@ -36,6 +36,11 @@ export interface RequestLoggerShape {
   readonly followers: (imposterId: string) => Effect.Effect<number>
   readonly getEntryById: (imposterId: string, entryId: string) => Effect.Effect<RequestLogEntry | null>
   readonly removeImposter: (imposterId: string) => Effect.Effect<void>
+  // Settles an `after` callback logged as pending: replaces the entry's pending record of that
+  // name with `record`, atomically. A settled record never changes again, the entry keeps its
+  // `seq`, and nothing is published. A no-op when the entry is gone (evicted, cleared, or its
+  // imposter restarted), when it has no pending record of that name, or when `record` is pending.
+  readonly settleCallback: (imposterId: string, entryId: string, record: CallbackRecord) => Effect.Effect<void>
 }
 
 export class RequestLogger extends Context.Service<RequestLogger, RequestLoggerShape>()("RequestLogger") {}
@@ -121,7 +126,30 @@ export const RequestLoggerLive = Layer.effect(
     const removeImposter = (imposterId: string): Effect.Effect<void> =>
       Ref.update(storeRef, (store) => ({ ...store, entries: HashMap.remove(store.entries, imposterId) }))
 
+    const settleRecords = (
+      records: ReadonlyArray<CallbackRecord>,
+      record: CallbackRecord
+    ): ReadonlyArray<CallbackRecord> | undefined => {
+      const index = records.findIndex((r) => r.name === record.name && r.phase === "after" && r.state === "pending")
+      if (index === -1) return undefined
+      return records.map((r, i) => i === index ? record : r)
+    }
+
+    const settleCallback = (imposterId: string, entryId: string, record: CallbackRecord): Effect.Effect<void> =>
+      record.state === "pending" ? Effect.void : Ref.update(storeRef, (store) => {
+        const items = logged(store, imposterId)
+        const at = items.findIndex((item) => item.entry.id === entryId)
+        const item = items[at]
+        const records = item?.entry.callbacks
+        if (item === undefined || records === undefined) return store
+        const settled = settleRecords(records, record)
+        if (settled === undefined) return store
+        const updated = items.map((x, i) => i === at ? { seq: x.seq, entry: { ...x.entry, callbacks: settled } } : x)
+        return { ...store, entries: HashMap.set(store.entries, imposterId, updated) }
+      })
+
     return {
+      settleCallback,
       log,
       getEntries,
       getRecent,

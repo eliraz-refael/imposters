@@ -10,8 +10,9 @@ import { DEFAULT_HOST } from "./ServerFactory.js"
 export const makeFullLayer = (
   extensions: ReadonlyArray<ImposterExtension> = [],
   host: string = DEFAULT_HOST,
-  adminPort?: number
-) => ApiLayer.pipe(Layer.provide(makeMainLayer(extensions, host, adminPort)))
+  adminPort?: number,
+  maxHops?: number
+) => ApiLayer.pipe(Layer.provide(makeMainLayer(extensions, host, adminPort, maxHops)))
 
 // Plain HTTP only, as before extensions existed
 export const FullLayer = makeFullLayer()
@@ -20,15 +21,17 @@ export const FullLayer = makeFullLayer()
 export const makeWebHandler = (
   extensions: ReadonlyArray<ImposterExtension> = [],
   host: string = DEFAULT_HOST,
-  adminPort?: number
-) => HttpRouter.toWebHandler(makeFullLayer(extensions, host, adminPort), { disableLogger: true })
+  adminPort?: number,
+  maxHops?: number
+) => HttpRouter.toWebHandler(makeFullLayer(extensions, host, adminPort, maxHops), { disableLogger: true })
 
 export const makeCompositeHandler = (
   adminPort: number,
   extensions: ReadonlyArray<ImposterExtension> = [],
-  host: string = DEFAULT_HOST
+  host: string = DEFAULT_HOST,
+  maxHops?: number
 ) => {
-  const { dispose, handler: apiHandler } = makeWebHandler(extensions, host, adminPort)
+  const { dispose, handler: apiHandler } = makeWebHandler(extensions, host, adminPort, maxHops)
   const adminUiRouter = makeAdminUiRouter({ apiHandler, adminPort, host })
 
   const handler = async (request: Request): Promise<Response> => {

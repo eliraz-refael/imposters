@@ -10,6 +10,7 @@ import { Stub } from "imposters/schemas/StubSchema"
 import { FiberManagerLive } from "imposters/server/FiberManager"
 import { ImposterServer, ImposterServerLive } from "imposters/server/ImposterServer"
 import { MetricsServiceLive } from "imposters/services/MetricsService"
+import { OutboundHttpLive } from "imposters/services/OutboundHttp"
 import { ProxyServiceLive } from "imposters/services/ProxyService"
 import { RequestLoggerLive } from "imposters/services/RequestLogger"
 import { UuidLive } from "imposters/services/UuidLive"
@@ -37,7 +38,8 @@ const makeStub = (id: string, method: string, path: string, status = 200, body?:
     responses: [{ status, body }]
   })
 
-const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(UuidLive))
+const OutboundWithDeps = OutboundHttpLive.pipe(Layer.provide(MetricsServiceLive))
+const ProxyServiceWithDeps = ProxyServiceLive.pipe(Layer.provide(Layer.mergeAll(UuidLive, OutboundWithDeps)))
 
 const TestLayer = ImposterServerLive.pipe(
   Layer.provide(
@@ -48,6 +50,7 @@ const TestLayer = ImposterServerLive.pipe(
       RequestLoggerLive,
       MetricsServiceLive,
       ProxyServiceWithDeps,
+      OutboundWithDeps,
       Extensions.layer([])
     )
   )

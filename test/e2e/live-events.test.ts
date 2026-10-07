@@ -11,6 +11,7 @@ import { FiberManagerLive } from "imposters/server/FiberManager"
 import { ImposterServer, ImposterServerLive } from "imposters/server/ImposterServer"
 import { NodeServerFactoryLive, ServerFactory } from "imposters/server/ServerFactory"
 import { MetricsServiceLive } from "imposters/services/MetricsService"
+import { OutboundHttpLive } from "imposters/services/OutboundHttp"
 import { ProxyServiceLive } from "imposters/services/ProxyService"
 import { RequestLogger, RequestLoggerLive } from "imposters/services/RequestLogger"
 import { UuidLive } from "imposters/services/UuidLive"
@@ -51,7 +52,15 @@ const makeRuntime = (factory: Layer.Layer<ServerFactory>) => {
   const shared = Layer.mergeAll(ImposterRepositoryLive, RequestLoggerLive, MetricsServiceLive)
   const server = ImposterServerLive.pipe(
     Layer.provide(
-      Layer.mergeAll(FiberManagerLive, factory, ProxyServiceLive.pipe(Layer.provide(UuidLive)), Extensions.layer([]))
+      Layer.mergeAll(
+        FiberManagerLive,
+        factory,
+        ProxyServiceLive.pipe(
+          Layer.provide(Layer.mergeAll(UuidLive, OutboundHttpLive.pipe(Layer.provide(MetricsServiceLive))))
+        ),
+        OutboundHttpLive.pipe(Layer.provide(MetricsServiceLive)),
+        Extensions.layer([])
+      )
     ),
     Layer.provideMerge(shared)
   )
