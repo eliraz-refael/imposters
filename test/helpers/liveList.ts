@@ -261,7 +261,7 @@ const fakeFetch = (input: RequestInfo | URL): Promise<Response> => {
     const rows = newest(world.log)
     return new Promise((resolve) => world.inFlight.push({ rows, answer: resolve }))
   }
-  return Promise.resolve(new Response(liveFragment(liveData).value))
+  return Promise.resolve(new Response(liveFragment(liveData, []).value))
 }
 
 // ---------------------------------------------------------------- driving the page

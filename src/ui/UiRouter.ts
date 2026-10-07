@@ -609,7 +609,9 @@ export const makeUiRouter = (deps: UiDeps) => {
     if (method === "GET" && path === "/events") return Effect.sync(events)
 
     if (method === "GET" && path === "/fragments/live") {
-      return loadLive.pipe(Effect.map((data) => pageResponse(liveFragment(data))))
+      return Effect.all([loadLive, recentRows]).pipe(
+        Effect.map(([data, recent]) => pageResponse(liveFragment(data, recent.map((row) => row.entry))))
+      )
     }
 
     if (method === "GET" && path === "/fragments/requests") {

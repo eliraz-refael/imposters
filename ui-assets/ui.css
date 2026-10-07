@@ -992,8 +992,8 @@ a.imp-name:hover {
     width: 40px;
   }
 }
-/* A phone: one stack, with the traffic line and the action row full width and the stubs left to
-   the status line of a stopped imposter (and the imposter's own page) */
+/* A phone: one stack, with the traffic line and the action row full width, and the five numbers
+   (stubs first) in a row */
 @media (max-width: 720px) {
   .row-imposters {
     gap: 14px 12px;
@@ -1004,9 +1004,6 @@ a.imp-name:hover {
   }
   .row-imposters > .actions {
     order: 4;
-  }
-  .row-imposters > .cell-stubs {
-    display: none;
   }
   .row-imposters > .cell-spark,
   .row-imposters > .actions {
@@ -1023,7 +1020,9 @@ a.imp-name:hover {
     flex: 0 0 44px;
   }
 }
-/* Too narrow for the pill and port beside the name and its status line: they go under it */
+/* Too narrow for the pill and port beside the name and its status line: they go under it. Too
+   narrow for five labels in a row ("unmatched" is the widest): three, then two under the first
+   two, without growing, so the columns line up */
 @media (max-width: 480px) {
   .row-imposters > .cell-name {
     flex-basis: 100%;
@@ -1031,11 +1030,8 @@ a.imp-name:hover {
   .row-imposters > .cell-protocol {
     margin-left: 21px;
   }
-}
-/* Too narrow for four labels in a row ("unmatched" is the widest): two by two */
-@media (max-width: 374px) {
   .row-imposters > .num {
-    flex-basis: calc(50% - 6px);
+    flex: 0 0 calc((100% - 24px) / 3);
   }
 }
 

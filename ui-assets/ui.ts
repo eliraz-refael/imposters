@@ -8,8 +8,9 @@
  *   `data-target` (a selector, `this`, or `closest <selector>`), swapped per `data-swap`
  *   (`inner`, the default, `outer` or `none`). With no target the page follows a redirect or
  *   reloads. `data-confirm` asks first. Any element in an answer with `data-oob` and an id
- *   replaces the page's element with that id. A failed answer's HTML goes into the action's own
- *   `[data-error-slot]` (one inside its form), else the page's first; a new action clears them all.
+ *   replaces the page's element with that id, unless it is unchanged (so a selection in it
+ *   survives). A failed answer's HTML goes into the action's own `[data-error-slot]` (one
+ *   inside its form), else the page's first; a new action clears them all.
  * - `data-poll="ms"` with `data-url`: re-fetch into the element while the tab is visible.
  *   `data-poll-throttle="ms"` also refreshes on each SSE arrival, at most that often; an arrival
  *   during a refresh gets one more once it completes, since that answer may predate it.
@@ -90,12 +91,24 @@ const resolveTarget = (el: Element, spec: string | undefined): Element | null =>
   return document.querySelector(spec)
 }
 
+// Whether two elements are the same but for the `data-oob` marker, which only the answer's copy
+// may carry (or both, once one has been swapped in)
+const sameButMarker = (a: Element, b: Element): boolean => {
+  const strip = (el: Element): Node => {
+    const copy = el.cloneNode(true)
+    if (copy instanceof Element) copy.removeAttribute("data-oob")
+    return copy
+  }
+  return strip(a).isEqualNode(strip(b))
+}
+
 const swap = (target: Element | null, text: string, mode: string): void => {
   const fragment = parse(text)
   for (const oob of Array.from(fragment.querySelectorAll("[data-oob][id]"))) {
     oob.remove()
     const current = document.getElementById(oob.id)
-    if (current !== null) {
+    // An unchanged element stays: replacing it would drop a selection inside it, for nothing
+    if (current !== null && !sameButMarker(current, oob)) {
       current.replaceWith(oob)
       init(oob)
     }

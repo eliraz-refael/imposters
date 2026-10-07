@@ -359,6 +359,25 @@ describe("E2E: Imposter UI fixes", () => {
     })
   }, 10000)
 
+  it("the live fragment renumbers a listed request's stub after a stub is inserted above it", async () => {
+    await withRunningImposter(9634, async (id) => {
+      const orders = { field: "path", operator: "equals", value: "/orders" }
+      await addStub(id, { predicates: [orders], responses: [{ status: 200 }] })
+      await (await fetch("http://localhost:9634/orders")).arrayBuffer()
+      const entries: Array<{ id: string }> = await (await admin(`/imposters/${id}/requests`)).json()
+      const cell = `id="answered-${entries[0]?.id ?? "none"}"`
+      expect(await (await fetch("http://localhost:9634/_admin")).text()).toContain(`${cell}>#1 /orders<`)
+
+      await admin(`/imposters/${id}/stubs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ predicates: [{ ...orders, value: "/health" }], responses: [{ status: 200 }], index: 0 })
+      })
+      const fragment = await (await fetch("http://localhost:9634/_admin/fragments/live")).text()
+      expect(fragment).toContain(`${cell} data-oob>#2 /orders<`)
+    })
+  }, 10000)
+
   it("the recent-rows fragment lists the latest requests, newest first", async () => {
     await withRunningImposter(9639, async () => {
       for (const path of ["/one", "/two", "/three"]) await (await fetch(`http://localhost:9639${path}`)).arrayBuffer()

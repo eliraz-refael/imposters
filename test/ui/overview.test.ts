@@ -11,7 +11,10 @@ import { emptyCreateForm, overviewFragment, overviewPage } from "imposters/ui/ad
 import { liveLabel, mark, themeToggle } from "imposters/ui/components/header"
 import { linkButton, pill, postButton, protocolPill, statTile } from "imposters/ui/components/primitives"
 import { html } from "imposters/ui/html"
+import * as fs from "node:fs"
+import * as path from "node:path"
 import { describe, expect, it } from "vitest"
+import { rootDir } from "../../scripts/ui-assets"
 
 const HOSTILE = "<script>alert(\"x\")</script>'&"
 const ESCAPED = "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&#39;&amp;"
@@ -146,6 +149,7 @@ describe("summarize", () => {
     expect(summary.timeline).toEqual([11, 2, 3])
     expect(summary.mostServerErrors?.id).toBe("b")
     expect(summary.mostUnmatched?.id).toBe("a")
+    expect(summary.unmatchedImposters).toBe(1)
   })
 
   it("names the slowest p95 by imposter, and only among running ones", () => {
@@ -161,6 +165,7 @@ describe("summarize", () => {
     const summary = summarize([row({ protocol: "S3", last15: { requests: 3, serverErrors: 0, unmatched: 3 } })])
     expect(summary.mostServerErrors).toBeUndefined()
     expect(summary.mostUnmatched).toBeUndefined()
+    expect(summary.unmatchedImposters).toBe(0)
     expect(summary.slowest).toBeUndefined()
     expect(summarize([]).timeline).toEqual([])
   })
@@ -235,6 +240,25 @@ describe("overview page", () => {
     expect(page).toContain("imposters v1.2.3 · binds 127.0.0.1")
   })
 
+  it("the unmatched tile counts every imposter with unmatched requests, not just the top one", () => {
+    const unmatched = (n: number) => ({ requests: 10, serverErrors: 0, unmatched: n })
+    const data = overview([
+      row({ id: "a", name: "users-api", last15: unmatched(2) }),
+      row({ id: "b", name: "orders-api", uiUrl: "http://h:3001/_admin", last15: unmatched(9) }),
+      row({ id: "c", name: "carts-api", last15: unmatched(1) }),
+      row({ id: "d", name: "quiet-api", last15: unmatched(0) }),
+      row({ id: "e", name: "stopped-api", running: false, last15: unmatched(4) }),
+      row({ id: "f", name: "s3", protocol: "S3", last15: unmatched(5) })
+    ])
+    expect(data.summary.unmatchedImposters).toBe(3)
+    const page = overviewFragment(data).value
+    expect(page).toContain("3 imposters · <a href=\"http://h:3001/_admin\">most on orders-api →</a>")
+    expect(page).not.toContain("see them on")
+    // One imposter: the note names it alone
+    expect(overviewFragment(overview([row({ name: "solo", last15: unmatched(3) })])).value)
+      .toContain("see them on solo →")
+  })
+
   it("labels each value cell with its column name, for the stacked cards on a narrow screen", () => {
     const page = overviewPage(overview([row({ p95: 12 }), row({ id: "imp-2", running: false })]), {
       theme: null,
@@ -265,5 +289,16 @@ describe("overview page", () => {
   it("renders an html fragment, not a document, for the poll", () => {
     expect(overviewFragment(overview([row()])).value).not.toContain("<!DOCTYPE")
     expect(html`${overviewFragment(overview([]))}`.value).toContain("Traffic, last 15 minutes")
+  })
+})
+
+describe("overview cards (ui.css)", () => {
+  const css = fs.readFileSync(path.join(rootDir, "ui-assets", "ui.css"), "utf8").replaceAll(/\/\*[\s\S]*?\*\//g, "")
+
+  it("never hide a running imposter's stub count: no rule, at any width, hides the stubs cell", () => {
+    const hiding = Array.from(css.matchAll(/([^{}]*\bcell-stubs\b[^{}]*)\{([^{}]*)\}/g))
+      .filter(([, , block]) => /display\s*:\s*none/.test(block ?? ""))
+      .map(([, selector]) => selector?.trim())
+    expect(hiding).toEqual([])
   })
 })

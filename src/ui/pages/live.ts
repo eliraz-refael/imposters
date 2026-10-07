@@ -45,7 +45,7 @@ const UNMATCHED_SHOWN = 8
 
 // ---------------------------------------------------------------- request rows
 
-/** What a request row needs besides the entry: the current stubs, for "#1 /orders" */
+/** What a request row needs besides the entry: the current stubs, for "#1 /orders" (the current position) */
 export interface RowContext {
   readonly stubs: ReadonlyArray<Stub>
   readonly protocol: string
@@ -66,23 +66,32 @@ export const methodClass = (method: string): string => METHOD_CLASS[method.toUpp
 /** A status's colour class: 5xx red, 4xx amber, else lime */
 export const statusClass = (status: number): string => status >= 500 ? "c-error" : status >= 400 ? "c-caution" : "c-ok"
 
-// Which stub answered, "no match", the proxy, or the extension (by its protocol)
-const answeredBy = (entry: RequestLogEntry, ctx: RowContext): SafeHtml => {
+// Which stub answered, "no match", the proxy, or the extension (by its protocol). A stub is named
+// by its current position, which an insert or a delete changes: see `liveFragment`.
+const answeredBy = (entry: RequestLogEntry, ctx: RowContext): { readonly tone: string; readonly text: string } => {
   switch (entry.response.outcome) {
     case "stub": {
       const position = ctx.stubs.findIndex((stub) => stub.id === entry.response.matchedStubId)
       const stub = ctx.stubs[position]
       return stub === undefined
-        ? html`<span class="req-stub ellipsis c-muted">removed stub</span>`
-        : html`<span class="req-stub ellipsis c-text-2">#${position + 1} ${stubPath(stub)}</span>`
+        ? { tone: "c-muted", text: "removed stub" }
+        : { tone: "c-text-2", text: `#${String(position + 1)} ${stubPath(stub)}` }
     }
     case "extension":
-      return html`<span class="req-stub ellipsis c-info">${ctx.protocol}</span>`
+      return { tone: "c-info", text: ctx.protocol }
     case "proxy":
-      return html`<span class="req-stub ellipsis c-info">proxy</span>`
+      return { tone: "c-info", text: "proxy" }
     case "unmatched":
-      return html`<span class="req-stub ellipsis c-caution">no match</span>`
+      return { tone: "c-caution", text: "no match" }
   }
+}
+
+// The row's stub cell. Its id never starts with "req-", so it cannot take a row's.
+const answeredCell = (entry: RequestLogEntry, ctx: RowContext, oob: boolean): SafeHtml => {
+  const { text, tone } = answeredBy(entry, ctx)
+  return html`<span class="req-stub ellipsis ${tone}" id="answered-${entry.id}"${
+    oob ? html` data-oob` : html``
+  }>${text}</span>`
 }
 
 const queryString = (query: Readonly<Record<string, string>>): string => {
@@ -105,7 +114,7 @@ export const requestRow = (entry: RequestLogEntry, ctx: RowContext, seq?: number
     methodClass(method)
   }">${method}</span><span class="req-path ellipsis" title="${fullPath}">${entry.request.path}</span><span class="req-status num ${
     statusClass(entry.response.status)
-  }">${entry.response.status}</span>${answeredBy(entry, ctx)}<span class="req-ms num ${
+  }">${entry.response.status}</span>${answeredCell(entry, ctx, false)}<span class="req-ms num ${
     entry.duration >= 1000 ? "c-warn" : "c-muted"
   }">${ms(entry.duration)}</span></a>`
 }
@@ -245,9 +254,19 @@ const unmatchedPanel = (data: LiveData): SafeHtml => {
 
 const side = (data: LiveData): SafeHtml => html`${stubHitsPanel(data)}${unmatchedPanel(data)}`
 
-/** What the poll answers with: the side panels, plus the stats and the stubs tab's count out of band */
-export const liveFragment = (data: LiveData): SafeHtml =>
-  html`${side(data)}${stats(data, true)}${tabCount(data.stubs.length, STUB_COUNT_ID, true)}`
+/**
+ * What the poll answers with: the side panels, plus the stats, the stubs tab's count and the stub
+ * cell of each recent request a stub answered out of band. The rows stay on the page between
+ * polls, so a row rendered as "#2 /orders" would go stale once a stub is inserted above it or
+ * removed; resending its cell with the panel keeps every "#n" on the page the current position.
+ */
+export const liveFragment = (data: LiveData, recent: ReadonlyArray<RequestLogEntry>): SafeHtml => {
+  const ctx: RowContext = { stubs: data.stubs, protocol: data.config.protocol }
+  const stubCells = recent.filter((entry) => entry.response.outcome === "stub")
+  return html`${side(data)}${stats(data, true)}${tabCount(data.stubs.length, STUB_COUNT_ID, true)}${
+    concat(stubCells.map((entry) => answeredCell(entry, ctx, true)))
+  }`
+}
 
 export interface LivePageOpts {
   readonly theme: Theme | null
