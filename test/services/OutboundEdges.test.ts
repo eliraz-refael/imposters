@@ -10,21 +10,27 @@ import { describe, expect, it } from "vitest"
 
 const NOW = 10 * TIMELINE_BUCKET_MS
 
-const sample = (overrides: Partial<OutboundSample> = {}): OutboundSample => ({
-  host: "127.0.0.1:3002",
-  via: "callback",
-  atMs: NOW,
-  durationMs: 10,
-  status: 200,
-  ...overrides
-})
+// `status: null` makes a call that got no response
+const sample = (
+  overrides: Partial<Omit<OutboundSample, "status">> & { readonly status?: number | null } = {}
+): OutboundSample => {
+  const { status = 200, ...rest } = overrides
+  return {
+    host: "127.0.0.1:3002",
+    via: "callback",
+    atMs: NOW,
+    durationMs: 10,
+    ...rest,
+    ...(status !== null ? { status } : {})
+  }
+}
 
 const fold = (samples: ReadonlyArray<OutboundSample>, cap?: number) =>
   samples.reduce((edges, s) => recordOutbound(edges, s, cap), emptyEdges)
 
 describe("recordOutbound", () => {
   it("counts calls, failures (no response) and 5xx per host", () => {
-    const edges = fold([sample(), sample({ status: 503 }), sample({ status: undefined }), sample({ status: 404 })])
+    const edges = fold([sample(), sample({ status: 503 }), sample({ status: null }), sample({ status: 404 })])
     const [edge] = snapshotEdges(edges, NOW)
     expect(edge).toMatchObject({ host: "127.0.0.1:3002", via: "callback", calls: 4, failed: 1, serverErrors: 1 })
   })
@@ -50,7 +56,7 @@ describe("recordOutbound", () => {
   it("counts { calls, failed } into the 30 s timeline ending now", () => {
     const edges = fold([
       sample({ atMs: NOW }),
-      sample({ atMs: NOW, status: undefined }),
+      sample({ atMs: NOW, status: null }),
       sample({ atMs: NOW - TIMELINE_BUCKET_MS })
     ])
     const timeline = snapshotEdges(edges, NOW)[0]?.timeline ?? []
