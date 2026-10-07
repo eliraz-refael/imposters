@@ -107,7 +107,7 @@ export interface CallOutOptions<A> {
 }
 
 // One outbound call: refused past the hop limit, sent with `x-imposters-hop`, given up on after
-// `timeoutMs` (on the Clock), and counted into the imposter's outbound edge however it ends
+// `timeoutMs` (on the Clock), and counted into the imposter's outbound edge however it ends once sent
 // (unless it is interrupted, or its run is no longer current).
 export const callOut = <A>(options: CallOutOptions<A>): Effect.Effect<A, OutboundError | HopLimitError, OutboundHttp> =>
   Effect.gen(function*() {
@@ -129,8 +129,8 @@ export const callOut = <A>(options: CallOutOptions<A>): Effect.Effect<A, Outboun
             : Effect.void
         )
       )
+    // Refused at the hop limit: never sent, so no edge
     if (request.hop > outbound.maxHops) {
-      yield* record(undefined)
       return yield* Effect.fail(new HopLimitError({ hop: request.hop - 1, limit: outbound.maxHops }))
     }
     const headers = new Headers(request.headers)

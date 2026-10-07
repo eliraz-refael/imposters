@@ -148,7 +148,8 @@ export const OutboundEdge = Schema.Struct({
   host: Schema.String,
   via: Schema.Literals(["callback", "proxy", "both"]),
   calls: NonNegativeInt,
-  // Calls that got no response (a timeout, a refused connection, a hop limit, too many in flight)
+  // Calls that got no response (a timeout, a refused connection, too many in flight). A call
+  // refused at the hop limit was never sent and is not counted
   failed: NonNegativeInt,
   // Calls answered 5xx
   serverErrors: NonNegativeInt,

@@ -292,7 +292,7 @@ describe("runAfter", () => {
       expect(f.sent.map((s) => s.hop)).toEqual(["2", "2"])
     }))
 
-  it.effect("past the hop limit each is skipped, and still counts as a failed call", () =>
+  it.effect("past the hop limit each is skipped, and records no outbound edge", () =>
     Effect.gen(function*() {
       const f = fake(() => ({ after: 1, response: jsonResponse({}) }), 2)
       const settled: Array<CallbackRecord> = []
@@ -310,7 +310,7 @@ describe("runAfter", () => {
         error: "hop limit 2 reached"
       }])
       expect(f.sent).toEqual([])
-      expect(f.samples.map((s) => [s.host, s.status])).toEqual([["h", undefined]])
+      expect(f.samples).toEqual([])
     }))
 
   it.effect("a header fetch cannot send fails that call, and the next one still runs", () =>

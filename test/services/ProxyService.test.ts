@@ -288,7 +288,8 @@ describe("ProxyService", () => {
           expect(refused._tag).toBe("HopLimitError")
           expect(refused).toMatchObject({ hop: 8, limit: 8 })
           const stats = yield* metrics.getStats("imp-limit")
-          expect(stats.outbound[0]).toMatchObject({ host: `localhost:${testPort}`, via: "proxy", calls: 1, failed: 1 })
+          // Never sent, so no edge
+          expect(stats.outbound).toEqual([])
         })
       )
     })

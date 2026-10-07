@@ -149,7 +149,14 @@ describe("E2E: callback loops", () => {
       const stats: { outbound: ReadonlyArray<{ host: string; via: string; calls: number; failed: number }> } =
         await (await admin(`/imposters/${a}/stats`)).json()
       expect(stats.outbound).toEqual([
-        expect.objectContaining({ host: "127.0.0.1:8935", via: "proxy", calls: MAX_HOPS + 1, failed: 1 })
+        // The forwards from hop 0 to 7, each answered 508; the one refused at hop 8 was never sent
+        expect.objectContaining({
+          host: "127.0.0.1:8935",
+          via: "proxy",
+          calls: MAX_HOPS,
+          failed: 0,
+          serverErrors: MAX_HOPS
+        })
       ])
     })
   }, 15_000)
