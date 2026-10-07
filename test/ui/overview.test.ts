@@ -11,7 +11,10 @@ import { emptyCreateForm, overviewFragment, overviewPage } from "imposters/ui/ad
 import { liveLabel, mark, themeToggle } from "imposters/ui/components/header"
 import { linkButton, pill, postButton, protocolPill, statTile } from "imposters/ui/components/primitives"
 import { html } from "imposters/ui/html"
+import * as fs from "node:fs"
+import * as path from "node:path"
 import { describe, expect, it } from "vitest"
+import { rootDir } from "../../scripts/ui-assets"
 
 const HOSTILE = "<script>alert(\"x\")</script>'&"
 const ESCAPED = "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&#39;&amp;"
@@ -286,5 +289,16 @@ describe("overview page", () => {
   it("renders an html fragment, not a document, for the poll", () => {
     expect(overviewFragment(overview([row()])).value).not.toContain("<!DOCTYPE")
     expect(html`${overviewFragment(overview([]))}`.value).toContain("Traffic, last 15 minutes")
+  })
+})
+
+describe("overview cards (ui.css)", () => {
+  const css = fs.readFileSync(path.join(rootDir, "ui-assets", "ui.css"), "utf8").replaceAll(/\/\*[\s\S]*?\*\//g, "")
+
+  it("never hide a running imposter's stub count: no rule, at any width, hides the stubs cell", () => {
+    const hiding = Array.from(css.matchAll(/([^{}]*\bcell-stubs\b[^{}]*)\{([^{}]*)\}/g))
+      .filter(([, , block]) => /display\s*:\s*none/.test(block ?? ""))
+      .map(([, selector]) => selector?.trim())
+    expect(hiding).toEqual([])
   })
 })
