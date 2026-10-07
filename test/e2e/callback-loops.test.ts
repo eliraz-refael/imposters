@@ -1,5 +1,6 @@
 import { HttpRouter } from "effect/unstable/http"
 import { makeFullLayer } from "imposters/server/AdminServer"
+import * as http from "node:http"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 // Loop protection over real ports: the hop header, the 508 that travels up, the proxy joining
@@ -80,6 +81,15 @@ const eventually = async <A>(read: () => Promise<A>, check: (a: A) => boolean, t
     if (check(value) || Date.now() > deadline) return value
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
+}
+
+// A promise and the function that resolves it
+const signal = () => {
+  let done = () => {}
+  const promise = new Promise<void>((resolve) => {
+    done = resolve
+  })
+  return { promise, resolve: () => done() }
 }
 
 const calling = (target: string, extra: Record<string, unknown> = {}) => ({
@@ -187,25 +197,42 @@ describe("E2E: callback loops", () => {
   }, 15_000)
 
   it("a forward still in flight from a stopped run never counts in the new run's outbound edges", async () => {
-    await withImposters([
-      { port: 8939, proxy: { targetUrl: url(8940) } },
-      { port: 8940, stubs: [{ predicates: [], responses: [{ status: 200, delay: 800, body: "late" }] }] }
-    ], async ([a = "", target = ""]) => {
-      // Sent, then the proxy's run is stopped under it: the client's socket closes with it
-      const inFlight = fetch(url(8939, "/slow")).catch(() => undefined)
-      // Nothing observable marks the forward as sent (the target logs only once it answers), so wait a little
-      await new Promise((resolve) => setTimeout(resolve, 150))
-      await admin(`/imposters/${a}`, "PATCH", { status: "stopped" })
-      await admin(`/imposters/${a}`, "PATCH", { status: "running" })
-      await admin(`/imposters/${a}/stats`, "DELETE")
-      await inFlight
-      // The old forward gets its answer once the target has logged it; its sample (if any) follows at once
-      await eventually(() => logged(target), (entries) => entries.length === 1)
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      const stats: { outbound: ReadonlyArray<unknown>; totalRequests: number } =
-        await (await admin(`/imposters/${a}/stats`)).json()
-      expect(stats.totalRequests).toBe(0)
-      expect(stats.outbound).toEqual([])
+    // A target owned by the test: it says when the forward arrived, and answers only when released
+    const arrived = signal()
+    const released = signal()
+    const sent = signal()
+    const target = http.createServer((_req, res) => {
+      arrived.resolve()
+      void released.promise.then(() => {
+        res.on("finish", () => sent.resolve())
+        res.writeHead(200, { "content-type": "text/plain" })
+        res.end("late")
+      })
     })
+    await new Promise<void>((resolve) => target.listen(8940, "127.0.0.1", resolve))
+    try {
+      await withImposters([{ port: 8939, proxy: { targetUrl: url(8940) } }], async ([a = ""]) => {
+        // Sent, then the proxy's run is stopped under it: the client's socket closes with it
+        const inFlight = fetch(url(8939, "/slow")).catch(() => undefined)
+        await arrived.promise
+        await admin(`/imposters/${a}`, "PATCH", { status: "stopped" })
+        await admin(`/imposters/${a}`, "PATCH", { status: "running" })
+        await admin(`/imposters/${a}/stats`, "DELETE")
+        await inFlight
+        released.resolve()
+        await sent.promise
+        // The old forward records its sample (if it does) just after the answer reaches it, and
+        // nothing signals that, so the absence can only be checked after a short settle
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        const stats: { outbound: ReadonlyArray<unknown>; totalRequests: number } =
+          await (await admin(`/imposters/${a}/stats`)).json()
+        expect(stats.totalRequests).toBe(0)
+        expect(stats.outbound).toEqual([])
+      })
+    } finally {
+      released.resolve()
+      target.closeAllConnections()
+      await new Promise((resolve) => target.close(resolve))
+    }
   }, 15_000)
 })
