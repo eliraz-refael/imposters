@@ -56,11 +56,12 @@ const callLine = (call: CallView): SafeHtml =>
     call.failsAnswer ? html` <span class="c-caution">onError fail</span>` : html``
   }`
 
-// The calls a response makes: which run before and after it, then each one's method and host
+// The calls a response makes: which run before and after it, then a line per call with its
+// method and host, so a phone wraps a long host rather than splitting one call across two
 const callsBlock = (calls: CallsView): SafeHtml =>
-  html`<div class="stack answer-calls" data-calls><span class="label c-text-2">${calls.summary}</span><span class="label">${
-    concat(calls.calls.map((call, i) => i === 0 ? callLine(call) : html` · ${callLine(call)}`))
-  }</span></div>`
+  html`<div class="stack answer-calls" data-calls><span class="label c-text-2">${calls.summary}</span>${
+    concat(calls.calls.map((call) => html`<span class="label">${callLine(call)}</span>`))
+  }</div>`
 
 const answer = (response: ResponseView): SafeHtml =>
   html`<div class="answer">

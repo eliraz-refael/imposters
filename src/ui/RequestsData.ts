@@ -140,7 +140,7 @@ export interface OutboundCall {
   // ✓ answered with a 2xx or 3xx, ✗ answered with a 4xx or 5xx or not at all, – never sent, … not settled yet
   readonly mark: string
   readonly tone: "ok" | "caution" | "error" | "muted"
-  // "200 OK", "failed: timed out after 5000 ms", "skipped: …", "pending"
+  // "200 OK", the error of a failed call ("timed out after 5000 ms"), "skipped: …", "pending"
   readonly result: string
   readonly durationMs?: number
   readonly requestBody?: CallBody
@@ -435,7 +435,8 @@ const callResult = (record: CallbackRecord): Pick<OutboundCall, "mark" | "tone" 
       return { mark: status >= 400 ? "✗" : "✓", tone, result: reason === "" ? String(status) : `${status} ${reason}` }
     }
     case "failed":
-      return { mark: "✗", tone: "error", result: `failed: ${record.error ?? "no answer"}` }
+      // The ✗ says it failed; the error says why ("connection failed: …", "timed out after 2000 ms")
+      return { mark: "✗", tone: "error", result: record.error ?? "no answer" }
     case "skipped":
       return { mark: "–", tone: "muted", result: `skipped: ${record.error ?? "not sent"}` }
     case "pending":

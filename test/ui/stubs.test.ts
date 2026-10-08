@@ -467,9 +467,11 @@ describe("callbacks on the cards", () => {
     const answers = document.querySelectorAll(".answer")
     const calls = answers[0]?.querySelector("[data-calls]")
     expect(calls?.children[0]?.textContent).toBe("before (parallel) → cart, price · after → notify")
-    expect(calls?.children[1]?.textContent).toBe(
-      "cart GET 127.0.0.1:3302 · price POST pricing.example.com:8443 onError fail · notify POST {{request.query.hook}}"
-    )
+    expect(Array.from(calls?.children ?? []).slice(1).map((line) => line.textContent)).toEqual([
+      "cart GET 127.0.0.1:3302",
+      "price POST pricing.example.com:8443 onError fail",
+      "notify POST {{request.query.hook}}"
+    ])
     expect(calls?.querySelector(".c-caution")?.textContent).toBe("onError fail")
     expect(answers[1]?.querySelector("[data-calls]")).toBeNull()
   })

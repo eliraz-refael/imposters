@@ -490,7 +490,7 @@ describe("outbound calls", () => {
     const d = detail({ entry: entry({ callbacks: records }) })
     expect(d.calls.map((c) => [c.name, c.phase, c.method, c.mark, c.tone, c.result, c.durationMs])).toEqual([
       ["cart", "before", "GET", "✓", "ok", "200 OK", 5],
-      ["price", "before", "POST", "✗", "error", "failed: timed out after 2000 ms", 2001],
+      ["price", "before", "POST", "✗", "error", "timed out after 2000 ms", 2001],
       ["notify", "after", "POST", "…", "muted", "pending", undefined],
       ["audit", "after", "PUT", "✗", "error", "503 Service Unavailable", 1],
       ["hook", "after", "POST", "–", "muted", "skipped: hop limit", undefined]
@@ -522,7 +522,7 @@ describe("outbound calls", () => {
     expect(page).toContain(`<div class="why-stub" data-call="notify" data-state="pending">`)
     expect(page).toContain(`<span class="c-muted">pending</span>`)
     expect(page).toContain(
-      `<span class="c-error">failed: timed out after 2000 ms</span><span class="label">2,001 ms</span>`
+      `<span class="c-error">timed out after 2000 ms</span><span class="label">2,001 ms</span>`
     )
     expect(page).toContain(
       `<details class="disclose"><summary class="label">response body</summary><pre class="code code-body">{`
@@ -557,6 +557,6 @@ describe("outbound calls", () => {
     expect(page).not.toContain("<script>alert")
     expect(page).not.toContain(`"x")`)
     expect(page).toContain(`data-call="&lt;/script&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&#39;&quot;"`)
-    expect(page).toContain(`failed: &lt;/script&gt;&lt;script&gt;alert(&quot;x&quot;)`)
+    expect(page).toContain(`<span class="c-error">&lt;/script&gt;&lt;script&gt;alert(&quot;x&quot;)`)
   })
 })
