@@ -11,6 +11,7 @@ A stub's `responses` is a non-empty list. Each response is:
 | `headers` | none | An object of header names to string values. Values are templated |
 | `body` | none | Any JSON value. A string is sent as-is; anything else is sent as JSON. Templated |
 | `delay` | none | Milliseconds to wait before answering, `0` to `60000`, or a range `{ "min", "max" }` to draw from (see [Delays](#delays)) |
+| `callbacks` | none | Calls to other services, before answering and after (see [Callbacks](../callbacks/)) |
 
 When `headers` has no `content-type`, a string body is sent as `text/plain` and any other body as `application/json`. A `204`, `205` or `304` is sent without a body.
 
@@ -20,7 +21,7 @@ Strings anywhere in `body`, and header values, can use two kinds of placeholder.
 
 ### `{{key}}`: substitution
 
-`{{key}}` is replaced with a value from the request:
+`{{key}}` is replaced with a value from the request, or from a [callback](../callbacks/#what-templates-see)'s answer:
 
 | Key | Value |
 |---|---|
@@ -29,8 +30,9 @@ Strings anywhere in `body`, and header values, can use two kinds of placeholder.
 | `request.headers.<name>` | A header; the name in lowercase |
 | `request.query.<name>` | A query parameter |
 | `request.body.<path>` | A field of a JSON body, by dotted path. Array elements by index: `request.body.items.0` |
+| `callbacks.<name>.<path>` | A `before` callback's result: `ok`, `status`, `headers.<name>`, `body.<path>`, `durationMs`, `error` |
 
-An object or array at a key is inserted as its JSON text. A key that the request does not have is left as written.
+An object or array at a key is inserted as its JSON text. A key that the request does not have is left as written. Only the value a key names is looked up and converted to text, so a large callback answer is not stringified unless a template uses it whole.
 
 ```json
 {
@@ -46,7 +48,7 @@ An object or array at a key is inserted as its JSON text. A key that the request
 
 ### `${expr}`: JSONata
 
-`${...}` evaluates a [JSONata](https://jsonata.org/) expression. Its input is `{ request: { method, path, headers, query, body } }`.
+`${...}` evaluates a [JSONata](https://jsonata.org/) expression. Its input is `{ request: { method, path, headers, query, body } }`, plus `callbacks` when the response has [callbacks](../callbacks/).
 
 ```json
 {

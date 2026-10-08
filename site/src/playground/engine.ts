@@ -3,13 +3,14 @@
  * imported from the library source, so the playground answers exactly as an imposter does.
  *
  * It mirrors ImposterServer's stub path: decode the stubs with the API's schema, find the
- * first stub whose predicates match, pick the response by responseMode, wait for its delay,
- * and build it with the same templating. Only the 404 body is restated here, because the
+ * first stub whose predicates match, pick the response by responseMode, then wait out its delay and
+ * build it with the server's own serveResponse. Only the 404 body is restated here, because the
  * server builds it inline.
  */
 import { Effect, Schema } from "effect"
 import { extractRequestContext, findMatchingStub } from "../../../src/matching/RequestMatcher"
-import { buildResponse, makeResponseState } from "../../../src/matching/ResponseGenerator"
+import { makeResponseState, serveResponse } from "../../../src/matching/ResponseGenerator"
+import { requestOnly } from "../../../src/matching/TemplateEngine"
 import { CreateStubRequest, Stub } from "../../../src/schemas/StubSchema"
 
 export interface PlaygroundRequest {
@@ -83,10 +84,9 @@ export const makePlayground = () => {
         state.getNextIndex(IMPOSTER_ID, stub.id, stub.responses.length, stub.responseMode)
       )
       const config = stub.responses[index] ?? stub.responses[0]
-      if (config.delay !== undefined && config.delay > 0) {
-        await Effect.runPromise(Effect.sleep(`${config.delay} millis`))
-      }
-      response = await buildResponse(config, ctx)
+      // The server's own delay (fixed or a range) and build. Callbacks never run here: the
+      // templates see the request only, as in preview
+      response = await Effect.runPromise(serveResponse(config, requestOnly(ctx)))
     }
 
     const headers: Array<readonly [string, string]> = []

@@ -56,6 +56,10 @@ The recorded stub matches method and path only, not the query string, headers or
 
 If the target cannot be reached or times out, the imposter answers `502` with `{"error": "Proxy failed", "target": ..., "reason": ...}`.
 
+## Loops
+
+A forward is a hop, as a [callback](../callbacks/#loops) is: it sends the incoming `x-imposters-hop` plus one (`1` when the client sent none), whatever the client's value or `addHeaders` say. A request that arrives at the limit, `8` by default ([`--max-hops`](../cli/#flags)), is answered `508` with `x-imposters-loop` instead of being forwarded, so a proxy pointed at itself ends in a `508` rather than recursing. Forwards count in the stats' [`outbound`](../requests-and-stats/#stats) edges.
+
 ## Changing the proxy
 
 `PATCH /imposters/:id` with a `proxy` object sets or replaces it, and `"proxy": null` removes it. On a running imposter the change takes effect on the next request. A proxy is for HTTP imposters only: setting one on an extension protocol such as S3 is a `400`.
