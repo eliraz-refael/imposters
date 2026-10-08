@@ -260,6 +260,13 @@ describe("a value from the request or a callback is inserted as data, never eval
     expect(await applyTemplates(withQuery("42"), "Total: ${{request.query.q}}")).toBe("Total: $42")
   })
 
+  it("a string is one expression only as written: an empty value beside it does not make it one", async () => {
+    // The old engine kept the object here, since the empty header left `${request.query}` alone
+    const tctx: TemplateContext = { request: makeCtx({ headers: { e: "" }, query: { a: "1" } }) }
+    expect(await applyTemplates(tctx, "${request.query}{{request.headers.e}}")).toBe("{\"a\":\"1\"}")
+    expect(await applyTemplates(tctx, "${request.query}")).toEqual({ a: "1" })
+  })
+
   it("an expression next to a key still runs", async () => {
     expect(await applyTemplates(withQuery("${request.method}"), "{{request.query.q}} ${request.method}"))
       .toBe("${request.method} GET")

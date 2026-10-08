@@ -18,7 +18,8 @@ import { describe, expect } from "vitest"
 //    rendered. That engine is copied below as the oracle, instrumented to say whether a value
 //    met an expression: whether any `${` it tried (closed or not) began in, ran over, or ended
 //    in a value it had inserted. Those are the cases the fix changes on purpose (a value's `${`,
-//    a `$` before a value's `{`, a value's `}` closing an open `${`, a `{{key}}` inside `${…}`),
+//    a `$` before a value's `{`, a value's `}` closing an open `${`, a `{{key}}` inside `${…}`, and
+//    an empty value beside an expression that the old engine then took for the whole string),
 //    pinned by the plain tests in TemplateEngine.test.ts. Generated values never hold `${`.
 // 2. A template whose own text has no `$` renders as plain `{{key}}` substitution, whatever the
 //    values hold: a value carrying `${…}` is never evaluated.
@@ -118,6 +119,9 @@ const oracleProcessString = async (
   const singleMatch = oracleExtract(str, 0)
   if (str.startsWith("${")) tried(0, singleMatch)
   if (singleMatch && singleMatch[1] === str.length) {
+    // An empty value beside the expression made the whole string one expression here; the
+    // template as written was not, so the new engine inserts the result as text
+    if (spans.length > 0) met = true
     const result = await oracleEvaluate(singleMatch[0], ctx)
     return { value: result === undefined ? str : result, met }
   }
@@ -293,7 +297,7 @@ describe("applyTemplates (property)", () => {
           list: [two.value, 1, null, true, { nested: one.value }]
         })
       }),
-    { arbitrary: { runs: 1000, size: 10 } }
+    { arbitrary: { runs: 3000, size: 10 } }
   )
 
   it.effect.prop(
@@ -306,6 +310,6 @@ describe("applyTemplates (property)", () => {
         expect(yield* Effect.promise(() => applyTemplates(tctx, template)))
           .toBe(substituteTemplateKeys(tctx, template))
       }),
-    { arbitrary: { runs: 1000, size: 10 } }
+    { arbitrary: { runs: 3000, size: 10 } }
   )
 })
