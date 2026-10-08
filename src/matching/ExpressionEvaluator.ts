@@ -127,6 +127,8 @@ const processString = (str: string, ctx: TemplateContext): Promise<unknown> =>
 
 /**
  * Recursively walk data structures, processing ${...} expressions in strings.
+ * Never run it over the output of substituteTemplateKeys: that evaluates a ${...} a request or
+ * callback value brought in. applyTemplates templates both kinds in one pass.
  */
 export const processExpressions = async (ctx: TemplateContext, data: unknown): Promise<unknown> => {
   if (typeof data === "string") return processString(data, ctx)

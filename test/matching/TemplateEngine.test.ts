@@ -267,6 +267,11 @@ describe("a value from the request or a callback is inserted as data, never eval
     expect(await applyTemplates(tctx, "${request.query}")).toEqual({ a: "1" })
   })
 
+  it("an empty value between a `$` and a brace does not join them into an expression", async () => {
+    // The old engine ran `${request.method}` here, once the empty value left `$` beside `{`
+    expect(await applyTemplates(withQuery(""), "${{request.query.q}}{request.method}")).toBe("${request.method}")
+  })
+
   it("an expression next to a key still runs", async () => {
     expect(await applyTemplates(withQuery("${request.method}"), "{{request.query.q}} ${request.method}"))
       .toBe("${request.method} GET")

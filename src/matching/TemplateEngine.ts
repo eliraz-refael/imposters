@@ -148,6 +148,8 @@ export const splitTemplateKeys = (tctx: TemplateContext, str: string): ReadonlyA
 const substituteInString = (tctx: TemplateContext, str: string): string =>
   str.includes("{{") ? joinPieces(splitTemplateKeys(tctx, str)) : str
 
+// `{{key}}` substitution through strings, arrays and objects. Its output is data: never pass it to
+// processExpressions (applyTemplates does both in one pass)
 /** `{{key}}` substitution through strings, arrays and objects */
 export const substituteTemplateKeys = (tctx: TemplateContext, data: unknown): unknown => {
   if (typeof data === "string") return substituteInString(tctx, data)

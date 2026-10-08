@@ -18,8 +18,10 @@ import { describe, expect } from "vitest"
 //    rendered. That engine is copied below as the oracle, instrumented to say whether a value
 //    met an expression: whether any `${` it tried (closed or not) began in, ran over, or ended
 //    in a value it had inserted. Those are the cases the fix changes on purpose (a value's `${`,
-//    a `$` before a value's `{`, a value's `}` closing an open `${`, a `{{key}}` inside `${…}`, and
-//    an empty value beside an expression that the old engine then took for the whole string),
+//    a `$` before a value's `{`, a value ending in `$` before the template's `{`, an empty value
+//    between a `$` and a `{`, a value's `}` closing an open `${`, a `{{key}}` inside `${…}` (and a
+//    failed one shown as written), and an empty value beside an expression that the old engine
+//    then took for the whole string),
 //    pinned by the plain tests in TemplateEngine.test.ts. Generated values never hold `${`.
 // 2. A template whose own text has no `$` renders as plain `{{key}}` substitution, whatever the
 //    values hold: a value carrying `${…}` is never evaluated.
