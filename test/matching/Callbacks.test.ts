@@ -17,6 +17,7 @@ interface Sent {
   readonly url: string
   readonly method: string
   readonly hop: string | null
+  readonly xq: string | null
   readonly body?: string
   readonly at: number
 }
@@ -42,6 +43,7 @@ const fake = (answer: (request: OutboundRequest) => Answer, maxHops = 8): Fake =
           url: request.url.href,
           method: request.method,
           hop: request.headers.get("x-imposters-hop"),
+          xq: request.headers.get("x-q"),
           ...(typeof request.body === "string" ? { body: request.body } : {}),
           at
         })
@@ -402,5 +404,53 @@ describe("a url template that throws", () => {
       expect(settled.map((r) => r.name)).toEqual(["uses", "next"])
       expect(settled[0]?.error).toMatch(/^the url template failed: /)
       expect(settled.every((r) => r.state !== "pending")).toBe(true)
+    }))
+})
+
+describe("a request value in a callback is never evaluated", () => {
+  // A client sends `${…}` in a query value that a callback's url, header or body echoes
+  const tctx = {
+    request: { ...request, query: { q: "${callbacks.token.body.token}" } },
+    callbacks: { token: { ok: true, status: 200, body: { token: "s3cret" }, durationMs: 1 } }
+  }
+  const after = (input: unknown) =>
+    Effect.gen(function*() {
+      const f = fake(() => ({ after: 1, response: jsonResponse({}) }))
+      const settled: Array<CallbackRecord> = []
+      const run = yield* makeRun()
+      const fiber = yield* Effect.forkChild(
+        runAfter(callbacks(input).after, tctx, run, (r) => Effect.sync(() => void settled.push(r))).pipe(
+          Effect.provide(f.layer)
+        ),
+        { startImmediately: true }
+      )
+      yield* TestClock.adjust(10)
+      yield* Fiber.join(fiber)
+      return { f, settled }
+    })
+
+  it.effect("in a header and a body, it is sent as written", () =>
+    Effect.gen(function*() {
+      const { f } = yield* after({
+        after: [{
+          name: "n",
+          method: "POST",
+          url: "http://h/e",
+          headers: { "x-q": "{{request.query.q}}" },
+          body: { q: "{{request.query.q}}", whole: "{{request.query.q}}!" }
+        }]
+      })
+      expect(f.sent.map((s) => [s.xq, s.body])).toEqual([[
+        "${callbacks.token.body.token}",
+        "{\"q\":\"${callbacks.token.body.token}\",\"whole\":\"${callbacks.token.body.token}!\"}"
+      ]])
+    }))
+
+  it.effect("in a url, it is refused as still holding a template, and nothing is sent", () =>
+    Effect.gen(function*() {
+      const { f, settled } = yield* after({ after: [{ name: "n", url: "http://h/e?q={{request.query.q}}" }] })
+      expect(f.sent).toEqual([])
+      expect(settled[0]).toMatchObject({ state: "failed", url: "http://h/e?q=${callbacks.token.body.token}" })
+      expect(settled[0]?.error).toContain("still holds a template")
     }))
 })

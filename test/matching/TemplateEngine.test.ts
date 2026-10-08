@@ -226,3 +226,59 @@ describe("current stubs render byte-identically", () => {
     expect(await response.text()).toBe(`{"echo":{"name":"Al"},"n":1}`)
   })
 })
+
+describe("a value from the request or a callback is inserted as data, never evaluated", () => {
+  const token: CallbackResult = { ok: true, status: 200, body: { token: "s3cret" }, durationMs: 1 }
+  const withQuery = (q: string): TemplateContext => ({
+    request: makeCtx({ query: { q, name: "Alice" } }),
+    callbacks: { token }
+  })
+
+  it("a query value holding ${…} is echoed as written", async () => {
+    expect(await applyTemplates(withQuery("${request.method}"), "{{request.query.q}}")).toBe("${request.method}")
+    expect(await applyTemplates(withQuery("${request.method}"), "q={{request.query.q}}!")).toBe("q=${request.method}!")
+  })
+
+  it("a client cannot read a callback's answer through a query value", async () => {
+    const tctx = withQuery("${callbacks.token.body.token}")
+    expect(await applyTemplates(tctx, { echo: "{{request.query.q}}", list: ["<{{request.query.q}}>"] }))
+      .toEqual({ echo: "${callbacks.token.body.token}", list: ["<${callbacks.token.body.token}>"] })
+    // The template's own expression still reads it
+    expect(await applyTemplates(tctx, "${callbacks.token.body.token}")).toBe("s3cret")
+  })
+
+  it("a value cannot run an expression however it is placed", async () => {
+    // A `$` written before a key, and a value that starts the expression's brace
+    expect(await applyTemplates(withQuery("{request.method}"), "${{request.query.q}}")).toBe("${request.method}")
+    // A value that would close an expression the template left open
+    expect(await applyTemplates(withQuery("}"), "${request.method {{request.query.q}}")).toBe("${request.method }")
+    // A value ending in `$` before a brace the template wrote
+    expect(await applyTemplates(withQuery("$"), "{{request.query.q}}{request.method}")).toBe("${request.method}")
+  })
+
+  it("a `$` before a key is still just a dollar sign", async () => {
+    expect(await applyTemplates(withQuery("42"), "Total: ${{request.query.q}}")).toBe("Total: $42")
+  })
+
+  it("an expression next to a key still runs", async () => {
+    expect(await applyTemplates(withQuery("${request.method}"), "{{request.query.q}} ${request.method}"))
+      .toBe("${request.method} GET")
+  })
+})
+
+describe("{{…}} inside ${…} is passed to JSONata as written", () => {
+  const tctx = requestOnly(makeCtx({ query: { name: "Alice" } }))
+
+  it("the expression sees the literal text", async () => {
+    expect(await applyTemplates(tctx, "${'{{request.query.name}}'}")).toBe("{{request.query.name}}")
+    expect(await applyTemplates(tctx, "${request.query.name & ' {{request.query.name}}'}"))
+      .toBe("Alice {{request.query.name}}")
+    expect(await applyTemplates(tctx, "<${'{{request.method}}'}> {{request.method}}")).toBe("<{{request.method}}> GET")
+  })
+
+  it("a failed expression holding a key stays as written", async () => {
+    expect(await applyTemplates(tctx, "${$$$bad {{request.method}}}")).toBe("${$$$bad {{request.method}}}")
+    expect(await applyTemplates(tctx, "a ${$$$bad {{request.method}}} {{request.method}}"))
+      .toBe("a ${$$$bad {{request.method}}} GET")
+  })
+})
