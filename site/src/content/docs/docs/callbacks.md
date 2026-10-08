@@ -81,6 +81,8 @@ Each `before` call's result is `callbacks.<name>`, for both [`{{key}}` and `${ex
 
 `${callbacks.cart.body.items}` on its own keeps its JSON type, here an array; `{{callbacks.cart.status}}` inserts `"200"`. A failed call has no `body`, so `${callbacks.price.body.total}` is left as written. Branch on `ok` instead: `"${callbacks.price.ok ? callbacks.price.body.total : 0}"`.
 
+Values from the request or a callback are inserted as data and never evaluated, in a url, headers and body alike: a `${` a client sends stays text (and in a url, fails the call as half-templated). Inside `${…}`, use `callbacks.cart.body.id` rather than `{{…}}`.
+
 - **In order** (the default), each call sees the request and every call before it, so one can fetch a token the next one sends.
 - **`parallel: true`**: the calls run at once, and each sees only the request.
 - **`after` calls** see the request and every `before` result.

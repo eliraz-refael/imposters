@@ -332,6 +332,8 @@ Use [JSONata](https://jsonata.org/) for computed values. The expression context 
 
 If an entire string is a single `${...}` expression, the raw result type is preserved (number, object, etc.). When mixed with other text, results are concatenated as strings.
 
+Both kinds are found in the template as written, in one pass. Values from the request or a callback are inserted as data and never evaluated, so `${…}` sent in a query parameter comes back as text. Inside `${…}`, use `request.query.x` rather than `{{…}}`: a `{{key}}` there is passed to JSONata as written.
+
 ## Delays
 
 A response's `delay` holds it back before it is sent. A number is a fixed delay in milliseconds; `{ "min", "max" }` waits a random whole number of milliseconds between the two, both included, drawn afresh each time the response is served:

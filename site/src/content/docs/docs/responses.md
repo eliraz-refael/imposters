@@ -17,7 +17,7 @@ When `headers` has no `content-type`, a string body is sent as `text/plain` and 
 
 ## Templating
 
-Strings anywhere in `body`, and header values, can use two kinds of placeholder. `{{key}}` substitution runs first, then `${expr}` JSONata expressions.
+Strings anywhere in `body`, and header values, can use two kinds of placeholder: `{{key}}` substitution and `${expr}` JSONata expressions. Both are found in the template as you wrote it, in one pass. Values from the request or a callback are inserted as data and never evaluated, so a client that sends `${…}` in a query parameter gets it back as text. Inside `${…}`, use `request.query.x` rather than `{{…}}`: a `{{key}}` there is passed to JSONata as written.
 
 ### `{{key}}`: substitution
 
