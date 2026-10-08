@@ -1,5 +1,5 @@
 import type { ImposterConfig } from "../domain/imposter.js"
-import type { Delay, Predicate, ResponseConfig } from "../schemas/StubSchema.js"
+import type { Callback, Callbacks, Delay, Predicate, ResponseConfig } from "../schemas/StubSchema.js"
 import { ago, count } from "./components/format.js"
 import { type LiveData, type StubHits, stubLabel } from "./LiveData.js"
 
@@ -33,6 +33,25 @@ export interface ResponseView {
   readonly delay: string | undefined
   // The body on one line, shortened; undefined when there is none
   readonly body: string | undefined
+  // The calls it makes to other services; absent when it makes none
+  readonly calls?: CallsView
+}
+
+/** One call a response makes, as its card names it */
+export interface CallView {
+  readonly name: string
+  readonly method: string
+  // The url's host as written: "127.0.0.1:3302", or a template such as "{{request.query.host}}"
+  readonly host: string
+  // A `before` call whose failure turns the answer into a 502 (`onError: "fail"`)
+  readonly failsAnswer: boolean
+}
+
+/** The calls of one response: "before (parallel) → cart, price · after → notify" */
+export interface CallsView {
+  readonly summary: string
+  // Every call, `before` first
+  readonly calls: ReadonlyArray<CallView>
 }
 
 export interface StubCard {
@@ -102,6 +121,39 @@ export const sentBodyPreview = (text: string, max = BODY_PREVIEW): string | unde
   }
 }
 
+// The host part of a callback's url, as written: after the literal scheme, up to the first
+// "/", "?" or "#" outside a {{…}} or ${…} template (a JSONata ternary has a "?"), without any
+// "user:password@". A templated host stays a template.
+export const callHost = (url: string): string => {
+  const rest = url.replace(/^https?:\/\//i, "")
+  const authority = /^(?:\{\{.*?\}\}|\$\{[^}]*\}|[^/?#])*/.exec(rest)?.[0] ?? ""
+  const host = authority.slice(authority.lastIndexOf("@") + 1)
+  return host.includes("{{") || host.includes("${") ? host : host.toLowerCase()
+}
+
+const callView = (callback: Callback): CallView => ({
+  name: callback.name,
+  method: callback.method,
+  host: callHost(callback.url),
+  failsAnswer: callback.onError === "fail"
+})
+
+const phaseSummary = (label: string, calls: ReadonlyArray<Callback>): string | undefined =>
+  calls.length === 0 ? undefined : `${label} → ${calls.map((c) => c.name).join(", ")}`
+
+/** "before (parallel) → cart, price · after → notify"; undefined for a response that makes no calls */
+export const callsView = (callbacks: Callbacks | undefined): CallsView | undefined => {
+  if (callbacks === undefined) return undefined
+  const { after, before, parallel } = callbacks
+  if (before.length === 0 && after.length === 0) return undefined
+  const parts = [
+    // Parallel only changes how the `before` calls run, so it shows only with them
+    phaseSummary(parallel ? "before (parallel)" : "before", before),
+    phaseSummary("after", after)
+  ].filter((part) => part !== undefined)
+  return { summary: parts.join(" · "), calls: [...before, ...after].map(callView) }
+}
+
 export const statusTone = (status: number): StatusTone => status >= 500 ? "error" : status >= 400 ? "caution" : "ok"
 
 export const predicateChip = (predicate: Predicate): PredicateChip => ({
@@ -113,13 +165,15 @@ export const predicateChip = (predicate: Predicate): PredicateChip => ({
 
 const responseView = (row: StubHits, response: ResponseConfig, index: number): ResponseView => {
   const several = row.stub.responses.length > 1
+  const calls = callsView(response.callbacks)
   return {
     status: response.status,
     tone: statusTone(response.status),
     hits: several ? (row.byResponse[index] ?? 0) : undefined,
     next: several && row.stub.responseMode !== "random" && row.nextIndex === index,
     delay: response.delay === undefined ? undefined : delayLabel(response.delay),
-    body: bodyPreview(response.body)
+    body: bodyPreview(response.body),
+    ...(calls !== undefined ? { calls } : {})
   }
 }
 

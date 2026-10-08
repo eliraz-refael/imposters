@@ -1416,6 +1416,11 @@ a.imp-name:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* A response's callbacks: a long host or name wraps rather than widening the card */
+.answer-calls {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 .stub-foot {
   display: flex;
   align-items: center;

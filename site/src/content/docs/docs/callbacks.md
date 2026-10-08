@@ -149,6 +149,8 @@ The [request log](../requests-and-stats/#request-log) entry of a response with c
 
 `url` is the templated url, or the template when templating failed or the call is still `pending`. `state` is `answered`, `failed`, `skipped` (never sent), or `pending`. Each body is kept up to its first 2 KiB; headers are not kept.
 
+In the [web UI](../web-ui/), a request's page lists these records in its **outbound calls** panel, and each stub card names its responses' calls and their hosts.
+
 The [stats](../requests-and-stats/#stats) count every call sent, and every call refused because 64 were in flight, as an `outbound` edge of its target host, with failures and latency.
 
 ## Preview, playground and replay

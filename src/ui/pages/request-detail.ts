@@ -1,5 +1,5 @@
 import type { ImposterConfig } from "../../domain/imposter.js"
-import { dateTime, ms } from "../components/format.js"
+import { count, dateTime, ms, plural } from "../components/format.js"
 import { linkButton, postButton } from "../components/primitives.js"
 import { shell } from "../components/shell.js"
 import { concat, html, type SafeHtml } from "../html.js"
@@ -7,7 +7,9 @@ import {
   type Answered,
   type BodyView,
   bytesText,
+  type CallBody,
   type KeyValue,
+  type OutboundCall,
   type RequestDetail,
   type StubRef,
   type StubVerdicts,
@@ -18,10 +20,10 @@ import { methodClass, statusClass } from "./live.js"
 import { LOG_SIZE, REQUESTS_URL, requestsHeader, requestUrl } from "./requests.js"
 
 /**
- * One logged request (`/_admin/requests/:id`): what was asked and what was answered, which stub
- * (and which of its responses) answered, why the current stubs match it or not, and the
- * request again as a curl command (copied with data-copy) or replayed (a POST answered with a
- * 303 to the replay's own page).
+ * One logged request (`/_admin/requests/:id`): what was asked and what was answered, the calls
+ * its response made to other services, which stub (and which of its responses) answered, why
+ * the current stubs match it or not, and the request again as a curl command (copied with
+ * data-copy) or replayed (a POST answered with a 303 to the replay's own page).
  */
 
 export const replayUrl = (id: string): string => `${requestUrl(id)}/replay`
@@ -142,6 +144,47 @@ const responsePanel = (d: RequestDetail): SafeHtml =>
   </div>
 </section>`
 
+// ---------------------------------------------------------------- outbound calls
+
+// A body the log kept, folded: it works without JS, and says when the log kept only its start
+const callBodyView = (label: string, body: CallBody | undefined): SafeHtml =>
+  body === undefined ?
+    html`` :
+    html`<details class="disclose"><summary class="label">${label}${
+      body.cut ? " · cut at 2 KiB" : ""
+    }</summary><pre class="code code-body">${body.text}</pre>${
+      body.cut ? html`<span class="label">the first 2 KiB: the log keeps no more</span>` : html``
+    }</details>`
+
+// name, phase, method and url, then the status (or why there is none) and how long it took
+const outboundRow = (call: OutboundCall): SafeHtml =>
+  html`<div class="why-stub" data-call="${call.name}" data-state="${call.state}">
+  <div class="why-stub-head"><span class="verdict-mark c-${call.tone}">${call.mark}</span><span class="c-heading">${call.name}</span><span class="label">${call.phase}</span><span class="${
+    methodClass(call.method)
+  }">${call.method}</span><span class="c-text-2">${call.url}</span><span class="c-${call.tone}">${call.result}</span>${
+    call.durationMs === undefined ? html`` : html`<span class="label">${ms(call.durationMs)}</span>`
+  }</div>
+  ${callBodyView("request body", call.requestBody)}${callBodyView("response body", call.responseBody)}
+</div>`
+
+// "5 calls", and with a pending one how to see it settle (this page has no live updates)
+const outboundNote = (calls: ReadonlyArray<OutboundCall>): string => {
+  const pending = calls.filter((call) => call.state === "pending").length
+  const total = plural(calls.length, "call")
+  return pending === 0
+    ? total
+    : `${total} · ${count(pending)} pending: reload to see ${pending === 1 ? "it" : "them"} settle`
+}
+
+/** The calls the response made, before first; only for a response that made some */
+const outboundPanel = (d: RequestDetail): SafeHtml =>
+  d.calls.length === 0 ? html`` : html`<section class="panel why" aria-labelledby="calls-title" data-outbound>
+  <div class="bar"><h2 class="title" id="calls-title">outbound calls</h2><span class="label">${
+    outboundNote(d.calls)
+  }</span></div>
+  <div class="why-body"><div class="why-list">${concat(d.calls.map(outboundRow))}</div></div>
+</section>`
+
 // ---------------------------------------------------------------- why it matched
 
 const verdict = (row: VerdictRow): SafeHtml =>
@@ -242,6 +285,7 @@ export const requestDetailPage = (d: RequestDetail, opts: RequestDetailOpts): Sa
     ${requestPanel(d)}
     ${responsePanel(d)}
   </div>
+  ${outboundPanel(d)}
   ${whyPanel(d)}
 </main>`
   return shell({ title: `${opts.config.name} · ${d.method} ${d.path}`, prefix: "/_admin", theme: opts.theme }, body)

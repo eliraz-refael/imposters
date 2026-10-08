@@ -1,9 +1,10 @@
 import * as DateTime from "effect/DateTime"
 import type { ImposterConfig } from "../domain/imposter.js"
+import { RECORD_BODY_BYTES } from "../matching/CallbackRules.js"
 import { contextFromCaptured, explainStubs } from "../matching/Explain.js"
 import { isNullBodyStatus } from "../matching/ResponseGenerator.js"
 import type { PredicateExplanation, StubExplanation } from "../schemas/ExplainSchema.js"
-import type { RequestLogEntry } from "../schemas/RequestLogSchema.js"
+import type { CallbackPhase, CallbackRecord, CallbackState, RequestLogEntry } from "../schemas/RequestLogSchema.js"
 import type { Stub } from "../schemas/StubSchema.js"
 import { LOG_BODY_LIMIT_BYTES } from "../server/ResponseCapture.js"
 import { count } from "./components/format.js"
@@ -122,6 +123,31 @@ export interface Explanation {
   readonly agrees: boolean
 }
 
+/** A callback's body as the log kept it */
+export interface CallBody {
+  readonly text: string
+  // Only its first 2 KiB were kept
+  readonly cut: boolean
+}
+
+/** One call the response made to another service, as the Outbound calls panel shows it */
+export interface OutboundCall {
+  readonly name: string
+  readonly phase: CallbackPhase
+  readonly method: string
+  readonly url: string
+  readonly state: CallbackState
+  // ✓ answered with a 2xx (the templates' `ok`), ✗ answered with anything else or not at all, – never sent,
+  // … not settled yet
+  readonly mark: string
+  readonly tone: "ok" | "caution" | "error" | "muted"
+  // "200 OK", the error of a failed call ("timed out after 5000 ms"), "skipped: …", "pending"
+  readonly result: string
+  readonly durationMs?: number
+  readonly requestBody?: CallBody
+  readonly responseBody?: CallBody
+}
+
 export interface RequestDetail {
   readonly id: string
   readonly method: string
@@ -144,6 +170,8 @@ export interface RequestDetail {
     readonly body: BodyView
   }
   readonly answered: Answered
+  // The calls its response made, `before` first; empty when it made none
+  readonly calls: ReadonlyArray<OutboundCall>
   // "sequential: answered #2 of 2, next is #1": when the logged stub answers now too and has a choice
   readonly responseLine?: string
   readonly explanation: Explanation
@@ -384,6 +412,66 @@ export const responseLine = (
 const fallbackOf = (config: ImposterConfig): string =>
   config.protocol !== "HTTP" ? `the ${config.protocol} extension` : config.proxy !== undefined ? "the proxy" : "404"
 
+// ---------------------------------------------------------------- outbound calls
+
+const utf8Bytes = (text: string): number => encoder.encode(text).byteLength
+
+/**
+ * A record's body. The log keeps a body of up to 2 KiB whole, and of a longer one its first
+ * 2 KiB (less a character the cut split) followed by "…", which is then 2 KiB or more. So a text
+ * that ends with "…" and is that long was cut. JSON is indented unless it was cut.
+ */
+export const callBody = (text: string | undefined): CallBody | undefined => {
+  if (text === undefined) return undefined
+  const cut = text.endsWith("…") && utf8Bytes(text) >= RECORD_BODY_BYTES
+  return { text: cut ? text : pretty(text), cut }
+}
+
+const callResult = (record: CallbackRecord): Pick<OutboundCall, "mark" | "tone" | "result"> => {
+  switch (record.state) {
+    case "answered": {
+      // The log always records an answered call's status; the schema only allows its absence
+      if (record.status === undefined) return { mark: "✓", tone: "ok", result: "answered" }
+      const status = record.status
+      const reason = reasonPhrase(status)
+      // The mark agrees with `callbacks.<name>.ok`, which only a 2xx sets
+      const ok = status >= 200 && status < 300
+      const tone = status >= 500 ? "error" : ok ? "ok" : "caution"
+      return { mark: ok ? "✓" : "✗", tone, result: reason === "" ? String(status) : `${status} ${reason}` }
+    }
+    case "failed":
+      // The ✗ says it failed; the error says why ("connection failed: …", "timed out after 2000 ms")
+      return { mark: "✗", tone: "error", result: record.error ?? "no answer" }
+    case "skipped":
+      return { mark: "–", tone: "muted", result: `skipped: ${record.error ?? "not sent"}` }
+    case "pending":
+      return { mark: "…", tone: "muted", result: "pending" }
+  }
+}
+
+export const outboundCall = (record: CallbackRecord): OutboundCall => {
+  const requestBody = callBody(record.requestBody)
+  const responseBody = callBody(record.responseBody)
+  return {
+    name: record.name,
+    phase: record.phase,
+    method: record.method.toUpperCase(),
+    url: record.url,
+    state: record.state,
+    ...callResult(record),
+    ...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
+    ...(requestBody !== undefined ? { requestBody } : {}),
+    ...(responseBody !== undefined ? { responseBody } : {})
+  }
+}
+
+const PHASE_ORDER: Readonly<Record<CallbackPhase, number>> = { before: 0, after: 1 }
+
+/** The entry's callback records, `before` first (the log keeps them so already), each in its own order */
+export const outboundCalls = (records: ReadonlyArray<CallbackRecord> | undefined): ReadonlyArray<OutboundCall> =>
+  // map makes a fresh array, so sorting it in place (a stable sort) changes nothing else
+  (records ?? []).map(outboundCall).sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase])
+
 export interface DetailInput {
   readonly entry: RequestLogEntry
   readonly config: ImposterConfig
@@ -422,6 +510,7 @@ export const buildRequestDetail = (input: DetailInput): RequestDetail => {
       body: responseBody(request.method, response)
     },
     answered,
+    calls: outboundCalls(entry.callbacks),
     ...(line !== undefined ? { responseLine: line } : {}),
     explanation,
     ...(differs !== undefined ? { differs } : {}),

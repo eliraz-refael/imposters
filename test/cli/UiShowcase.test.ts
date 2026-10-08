@@ -28,12 +28,18 @@ describe("examples/ui-showcase.json", () => {
       ["orders-api", "HTTP"],
       ["catalog-api", "HTTP"],
       ["media-s3", "S3"],
-      ["payments-sandbox", "HTTP"]
+      ["payments-sandbox", "HTTP"],
+      ["notifications", "HTTP"]
     ])
     const stubs = config.imposters.flatMap((i) => i.stubs)
     // A flaky stub, and a slow one with a delay range
     expect(stubs.some((s) => s.responseMode === "random" && s.responses.some((r) => r.status >= 500))).toBe(true)
     expect(stubs.some((s) => s.responses.some((r) => typeof r.delay === "object"))).toBe(true)
+    // Callbacks before (in parallel, one failing the answer) and after, for the stubs and request pages
+    const calls = stubs.flatMap((s) => s.responses).flatMap((r) => r.callbacks === undefined ? [] : [r.callbacks])
+    expect(calls.some((c) => c.parallel && c.before.some((b) => b.onError === "fail") && c.after.length > 0)).toBe(
+      true
+    )
   })
 
   it("loads through the CLI's config path, and its templates answer", async () => {
