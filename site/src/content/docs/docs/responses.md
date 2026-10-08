@@ -32,7 +32,7 @@ Strings anywhere in `body`, and header values, can use two kinds of placeholder.
 | `request.body.<path>` | A field of a JSON body, by dotted path. Array elements by index: `request.body.items.0` |
 | `callbacks.<name>.<path>` | A `before` callback's result: `ok`, `status`, `headers.<name>`, `body.<path>`, `durationMs`, `error` |
 
-An object or array at a key is inserted as its JSON text. A key that the request does not have is left as written. Only the value a key names is looked up and converted, so a large callback answer costs nothing unless a template uses it.
+An object or array at a key is inserted as its JSON text. A key that the request does not have is left as written. Only the value a key names is looked up and converted to text, so a large callback answer is not stringified unless a template uses it whole.
 
 ```json
 {

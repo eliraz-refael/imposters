@@ -60,9 +60,9 @@ curl -X POST "http://localhost:3301/checkout?cart=7"
 | `method` | `GET` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` or `OPTIONS`. A `GET` or `HEAD` cannot have a `body` |
 | `url` | *(required)* | Must start with a literal `http://` or `https://`. The rest is templated |
 | `headers` | none | Header names to string values. Templated |
-| `body` | none | Any JSON value, templated. A string is sent as `text/plain`, anything else as JSON, unless `headers` names a `content-type` |
+| `body` | none | Any JSON value, templated. If it is still a string after templating it is sent as `text/plain`, anything else as JSON, unless `headers` names a `content-type`. So `"${callbacks.cart.body.items}"` sends JSON |
 | `timeout` | `5000` | Milliseconds to wait for the answer, `100` to `60000` |
-| `onError` | `continue` | `before` calls only: `continue` or `fail` (see [Failures](#failures)). On an `after` call it is a `400` |
+| `onError` | `continue` | `before` calls only: `continue` or `fail` (see [Failures](#failures)). On an `after` call it is refused: a `400` from the API, a load failure in a config file |
 
 A call sends only its own `headers`, plus `x-imposters-hop` (see [Loops](#loops)). The incoming request's headers are never copied.
 
@@ -129,7 +129,7 @@ Every outbound call, callback or [proxy](../proxy/) forward, sends `x-imposters-
 ```
 
 - The limit is `8`, set process-wide with [`--max-hops`](../cli/#flags) or `IMPOSTERS_MAX_HOPS`.
-- A `before` call answered `508` with `x-imposters-loop` fails its own response with a `508` too, whatever `onError` says, so the loop reaches the original client. A stub's own `508`, without the header, is ordinary data.
+- A `before` call answered `508` with `x-imposters-loop` fails its own response with a `508` too, whatever `onError` says, so the loop reaches the original client. A stub's own `508`, without the header, is an ordinary `5xx`: data under `continue`, a `502` under `fail`.
 - A request that needs no call is served at any hop. An `after` call past the limit is recorded `skipped`, and the response is still sent.
 - An imposter may call itself: each level of the loop is its own request in the log.
 
@@ -147,14 +147,14 @@ The [request log](../requests-and-stats/#request-log) entry of a response with c
 ]
 ```
 
-`url` is the templated url, or the template when templating failed. `state` is `answered`, `failed`, `skipped` (never sent), or `pending`. Each body is kept up to its first 2 KiB; headers are not kept.
+`url` is the templated url, or the template when templating failed or the call is still `pending`. `state` is `answered`, `failed`, `skipped` (never sent), or `pending`. Each body is kept up to its first 2 KiB; headers are not kept.
 
-The [stats](../requests-and-stats/#stats) count every call sent as an `outbound` edge of its target host, with failures and latency.
+The [stats](../requests-and-stats/#stats) count every call sent, and every call refused because 64 were in flight, as an `outbound` edge of its target host, with failures and latency.
 
 ## Preview, playground and replay
 
-- The stub editor's preview and `POST /imposters/:id/stubs/preview` never call out: `${callbacks.…}` is shown as written, and the editor says so.
-- The [playground](../../#playground) on the home page does not run callbacks either: it accepts them, and leaves `${callbacks.…}` as written.
+- The stub editor's preview and `POST /imposters/:id/stubs/preview` never call out: the templates see no `callbacks`, so `{{callbacks.…}}` and a plain `${callbacks.…}` are shown as written, and the editor says so. An expression that handles a missing result, such as the `ok` branch above, gives its fallback.
+- The [playground](../../#playground) on the home page does not run callbacks either: it accepts them, and answers as the preview does.
 - A replay from the request page in the [web UI](../web-ui/) is a real request: it runs the callbacks again.
 
 The stub editor's form has no section for callbacks yet, so a stub with callbacks opens in the JSON view.

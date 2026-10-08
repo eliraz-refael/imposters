@@ -105,8 +105,8 @@ curl http://localhost:2525/imposters/2f334551/stats
 | `serverErrorRate` | The fraction with a status of `500` or more |
 | `requestsByMethod`, `requestsByStatusCode` | Counts |
 | `lastRequestAt` | When the latest request arrived |
-| `timeline`, `last15Minutes` | The last 15 minutes in 30 buckets of 30 seconds, oldest first, each with `requests`, `serverErrors` and `unmatched`; and their sum |
-| `stubs` | One row per stub, in matching order: `hits`, `byResponse`, `lastHitAt`, and `nextResponseIndex` (absent in `random` mode) |
+| `timeline`, `last15Minutes` | The last 15 minutes in 30 buckets of 30 seconds, oldest first, each with its `start`, `requests`, `serverErrors` and `unmatched`; and their sum |
+| `stubs` | One row per stub, in matching order: `stubId`, `hits`, `byResponse`, `lastHitAt`, and `nextResponseIndex` (absent in `random` mode) |
 | `unmatched` | Requests nothing answered, grouped by method and path, most recently seen first; up to 50 groups |
 | `outbound` | The calls the imposter made, its [callbacks](../callbacks/) and [proxy](../proxy/) forwards, one edge per target host; see below |
 
@@ -120,7 +120,7 @@ Each edge counts the calls sent to one host:
 ]
 ```
 
-`via` is `callback`, `proxy` or `both`. `failed` counts calls that got no answer (a timeout, a refused connection) and calls refused because 64 were already in flight; `serverErrors` counts `5xx` answers. `p50` and `p95` are in milliseconds, over the last 128 calls sent, and `timeline` has 30 buckets of `calls` and `failed`. A call refused at the [hop limit](../callbacks/#loops) was never sent and is not counted. Up to 50 hosts are kept, most recently called first.
+`via` is `callback`, `proxy` or `both`. `failed` counts calls that got no answer (a timeout, a refused connection), callback answers over 1 MiB, and calls refused because 64 were already in flight; `serverErrors` counts `5xx` answers. `p50` and `p95` are in milliseconds, over the last 128 calls sent, and `timeline` has 30 buckets of `calls` and `failed`. A call refused at the [hop limit](../callbacks/#loops) was never sent and is not counted. Up to 50 hosts are kept, most recently called first.
 
 `DELETE /imposters/:id/stats` resets them.
 
