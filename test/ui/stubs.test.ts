@@ -459,6 +459,8 @@ describe("callbacks on the cards", () => {
     expect(callHost("HTTPS://API.example.com?x=1")).toBe("api.example.com")
     expect(callHost("http://a:b@host#frag")).toBe("host")
     expect(callHost("http://${$lowercase(request.query.h)}/x")).toBe("${$lowercase(request.query.h)}")
+    expect(callHost("http://${request.query.a ? 'x' : 'y'}/p")).toBe("${request.query.a ? 'x' : 'y'}")
+    expect(callHost("http://{{request.query.a/b}}:80/p")).toBe("{{request.query.a/b}}:80")
   })
 
   it("the card shows the summary and each call, marks onError fail, and leaves other responses alone", () => {

@@ -486,6 +486,23 @@ describe("outbound calls", () => {
     }
   ]
 
+  it("an answered record without a status reads as answered, not as a 0", () => {
+    const { status: _status, ...noStatus } = cart
+    const d = detail({ entry: entry({ callbacks: [noStatus] }) })
+    expect(d.calls.map((c) => [c.mark, c.tone, c.result])).toEqual([["✓", "ok", "answered"]])
+  })
+
+  it("only a 2xx gets the check mark, as only a 2xx sets the templates' ok", () => {
+    const answered = (status: number) => ({ ...cart, status })
+    const d = detail({ entry: entry({ callbacks: [204, 302, 404, 502].map(answered) }) })
+    expect(d.calls.map((c) => [c.mark, c.tone])).toEqual([
+      ["✓", "ok"],
+      ["✗", "caution"],
+      ["✗", "caution"],
+      ["✗", "error"]
+    ])
+  })
+
   it("one row per record, before first: what it called, how it ended and how long it took", () => {
     const d = detail({ entry: entry({ callbacks: records }) })
     expect(d.calls.map((c) => [c.name, c.phase, c.method, c.mark, c.tone, c.result, c.durationMs])).toEqual([

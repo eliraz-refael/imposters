@@ -21,9 +21,9 @@ import { LOG_SIZE, REQUESTS_URL, requestsHeader, requestUrl } from "./requests.j
 
 /**
  * One logged request (`/_admin/requests/:id`): what was asked and what was answered, the calls
- * its response made to other services, which stub (and which of its responses) answered, why the current stubs match it or not, and the
- * request again as a curl command (copied with data-copy) or replayed (a POST answered with a
- * 303 to the replay's own page).
+ * its response made to other services, which stub (and which of its responses) answered, why
+ * the current stubs match it or not, and the request again as a curl command (copied with
+ * data-copy) or replayed (a POST answered with a 303 to the replay's own page).
  */
 
 export const replayUrl = (id: string): string => `${requestUrl(id)}/replay`

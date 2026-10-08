@@ -137,7 +137,8 @@ export interface OutboundCall {
   readonly method: string
   readonly url: string
   readonly state: CallbackState
-  // ✓ answered with a 2xx or 3xx, ✗ answered with a 4xx or 5xx or not at all, – never sent, … not settled yet
+  // ✓ answered with a 2xx (the templates' `ok`), ✗ answered with anything else or not at all, – never sent,
+  // … not settled yet
   readonly mark: string
   readonly tone: "ok" | "caution" | "error" | "muted"
   // "200 OK", the error of a failed call ("timed out after 5000 ms"), "skipped: …", "pending"
@@ -429,10 +430,14 @@ export const callBody = (text: string | undefined): CallBody | undefined => {
 const callResult = (record: CallbackRecord): Pick<OutboundCall, "mark" | "tone" | "result"> => {
   switch (record.state) {
     case "answered": {
-      const status = record.status ?? 0
+      // The log always records an answered call's status; the schema only allows its absence
+      if (record.status === undefined) return { mark: "✓", tone: "ok", result: "answered" }
+      const status = record.status
       const reason = reasonPhrase(status)
-      const tone = status >= 500 ? "error" : status >= 400 ? "caution" : "ok"
-      return { mark: status >= 400 ? "✗" : "✓", tone, result: reason === "" ? String(status) : `${status} ${reason}` }
+      // The mark agrees with `callbacks.<name>.ok`, which only a 2xx sets
+      const ok = status >= 200 && status < 300
+      const tone = status >= 500 ? "error" : ok ? "ok" : "caution"
+      return { mark: ok ? "✓" : "✗", tone, result: reason === "" ? String(status) : `${status} ${reason}` }
     }
     case "failed":
       // The ✗ says it failed; the error says why ("connection failed: …", "timed out after 2000 ms")

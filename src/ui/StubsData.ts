@@ -122,10 +122,11 @@ export const sentBodyPreview = (text: string, max = BODY_PREVIEW): string | unde
 }
 
 // The host part of a callback's url, as written: after the literal scheme, up to the first
-// "/", "?" or "#", without any "user:password@". A templated host stays a template.
+// "/", "?" or "#" outside a {{…}} or ${…} template (a JSONata ternary has a "?"), without any
+// "user:password@". A templated host stays a template.
 export const callHost = (url: string): string => {
   const rest = url.replace(/^https?:\/\//i, "")
-  const authority = /^[^/?#]*/.exec(rest)?.[0] ?? ""
+  const authority = /^(?:\{\{.*?\}\}|\$\{[^}]*\}|[^/?#])*/.exec(rest)?.[0] ?? ""
   const host = authority.slice(authority.lastIndexOf("@") + 1)
   return host.includes("{{") || host.includes("${") ? host : host.toLowerCase()
 }
