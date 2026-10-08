@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 1163 tests across 103 files.
+All three gates pass: `bun check`, `bun lint`, and 1180 tests across 105 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -21,7 +21,7 @@ All three gates pass: `bun check`, `bun lint`, and 1163 tests across 103 files.
 | Admin REST API (`HttpApi` + OpenAPI/Swagger) | ✅ |
 | Imposter runtime — per-imposter server as an Effect Fiber | ✅ |
 | Stub matching with predicates | ✅ |
-| Response templating — `{{key}}` substitution + `${expr}` JSONata | ✅ |
+| Response templating — `{{key}}` substitution + `${expr}` JSONata, in one pass | ✅ |
 | Response cycling — sequential / random / repeat | ✅ |
 | Hot-reload — stub changes apply with zero downtime | ✅ |
 | Proxy mode — passthrough and record-as-stub | ✅ |
@@ -74,7 +74,8 @@ Disk persistence (imposters are in-memory only and do not survive restart), Moun
 - **Hot-reload** — each imposter holds `Ref<ReadonlyArray<Stub>>` and `Ref<ProxyConfig | undefined>`. `updateStubs(id)` / `updateProxyConfig(id)` re-read from the repository and `Ref.set`. The fetch handler reads the `Ref` on every request, so changes take effect immediately with no restart.
 - **Runtime abstraction** — `ServerFactory` is a `Context.Service` with two implementations: `NodeServerFactoryLive` (`node:http`, the default) and `BunServerFactoryLive` (`Bun.serve`). This exists because **vitest workers run under Node.js even when invoked via Bun**, so tests could not use `Bun.serve` directly. It later became the user-facing `--runtime node|bun` flag.
 - **Callbacks and hops** — `matching/Callbacks.ts` runs a response's `before` calls (sequential, or `parallel`); the pure rules are `CallbackRules.ts`, the hop header logic `Hops.ts`. Every outbound call, callback or proxy, goes through `OutboundHttp`: it sends `x-imposters-hop` = incoming + 1, refuses past `MaxHops` (a `Context.Reference`, default 8, from `--max-hops` / `IMPOSTERS_MAX_HOPS`, passed as a trailing parameter of `makeMainLayer`), times out on the `Clock`, and records the outbound edge. `ImposterServer` builds one `OutboundHttp` per run whose recording checks `isCurrentRun`, so a stopped run's calls never count. A request at the limit that needs a call answers 508 with `x-imposters-loop`, and that 508 travels up whatever `onError` says; a call refused at the limit records no edge. `after` calls fork after logging into a per-run `FiberSet`, closed before `server.stop`, so a stopped run fires nothing; they settle their `pending` records with `RequestLogger.settleCallback`. A run allows 64 callback calls in flight and refuses rather than queues. Preview passes `requestOnly(ctx)` and never calls out.
-- **`{{key}}` resolves on demand** (`TemplateEngine.substituteInString` + `resolveTemplateKey`): nothing flattens the context, so a large or deep callback answer costs only the leaf a template names. An inserted value is never `{{key}}`-templated again, but the `${expr}` pass that follows still sees it (old behaviour, a known follow-up: a client's `${…}` in a query value is evaluated). `test/matching/TemplateEngine.prop.test.ts` keeps the old eager flatten + `replaceAll` as an oracle.
+- **`{{key}}` resolves on demand** (`TemplateEngine.substituteInString` + `resolveTemplateKey`): nothing flattens the context, so a large or deep callback answer costs only the leaf a template names. `test/matching/TemplateEngine.prop.test.ts` keeps the old eager flatten + `replaceAll` as an oracle.
+- **Templating is one pass over the template as written** (`applyTemplates` = `splitTemplateKeys` → `renderPieces`): `${…}` is found in a skeleton where each inserted value is one opaque mark, so no request or callback value is ever evaluated, and a `{{key}}` inside `${…}` reaches JSONata as written. Never chain `substituteTemplateKeys` then `processExpressions`: that rebuilds the injectable two-pass engine. `test/matching/TemplateInjection.prop.test.ts` keeps the two-pass engine as its oracle and lists the intended differences.
 - **Repository is pure storage** — `ImposterRepository` holds config + stubs in a `Ref<HashMap>`. No fiber refs, no server handles; those live in `FiberManager` and `ImposterServer`'s internal state map.
 
 ### Extensions — how a non-HTTP protocol plugs in
@@ -139,7 +140,7 @@ src/
     Explain.ts             # pure: why each stub did or didn't match; its verdict IS evaluatePredicate's
     Preview.ts             # previewStub: a candidate stub against the unmatched groups
     ResponseGenerator.ts   # response selection + buildResponse
-    TemplateEngine.ts      # {{key}} substitution, resolved on demand
+    TemplateEngine.ts      # {{key}} resolved on demand; applyTemplates = {{key}} + ${expr} in one pass
     Callbacks.ts           # runs before/after callbacks; CallbackRules.ts (pure rules), Hops.ts (hop header)
     ExpressionEvaluator.ts # ${expr} via JSONata
   repositories/
@@ -251,7 +252,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710, request detail/replay 9561–9569, callbacks 8901–8929 (8929 never bound: a refused target), callback loops 8931–8949, UI callbacks 8401–8429). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710, request detail/replay 9561–9569, callbacks 8901–8929 (8929 never bound: a refused target), callback loops 8931–8949, UI callbacks 8401–8429, template injection 8541–8549). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - **`ui-assets/ui.ts` is tested in happy-dom,** opted into per file with `// @vitest-environment happy-dom` (everything else stays on node), against a fake `EventSource` and `fetch`.
 - **`/_ui` POSTs and every non-GET `/_admin` request refuse cross-site requests** (403, `src/ui/crossSite.ts`): `Sec-Fetch-Site: cross-site`, or, when the header is `same-site` or absent, an `Origin` whose host differs from the request's. Every `/_admin` state change is behind it: the stub writes (`POST /_admin/stubs`, `/stubs/:id`, `/stubs/:id/delete`, `/stubs/preview`) and `/requests/clear`, `/requests/test`, `/requests/:id/replay`. Keep that guard on any new UI form endpoint: the admin API has no auth, and a form post needs no CORS preflight.
