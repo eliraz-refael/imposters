@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 1148 tests across 102 files.
+All three gates pass: `bun check`, `bun lint`, and 1163 tests across 103 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -25,10 +25,10 @@ All three gates pass: `bun check`, `bun lint`, and 1148 tests across 102 files.
 | Response cycling — sequential / random / repeat | ✅ |
 | Hot-reload — stub changes apply with zero downtime | ✅ |
 | Proxy mode — passthrough and record-as-stub | ✅ |
-| Stub callbacks — `before` calls feed the templates, `after` webhooks, hop limit + 508 | ✅ (PR 10; the UI for them and the service graph come next) |
+| Stub callbacks — `before` calls feed the templates, `after` webhooks, hop limit + 508 | ✅ (the service graph comes next) |
 | Request logging + inspector | ✅ |
 | Metrics / statistics per imposter | ✅ |
-| Web UIs — `/_ui` (admin, the self-hosted Disguise dashboard) and `/_admin` (per imposter: live view, stubs with a form editor, the request log and a page per request with explain, copy as curl and replay), all self-hosted with no CDN | ✅ |
+| Web UIs — `/_ui` (admin, the self-hosted Disguise dashboard) and `/_admin` (per imposter: live view, stubs with a form editor, the request log and a page per request with explain, copy as curl, replay and its outbound calls; stub cards name each response's callbacks), all self-hosted with no CDN | ✅ |
 | Typed client library + `withImposter` test helpers | ✅ |
 | CLI via `effect/unstable/cli`, JSON config file loading | ✅ |
 | Node **and** Bun runtimes (`--runtime` flag) | ✅ |
@@ -184,7 +184,7 @@ src/
 ui-assets/                 # UI sources: tokens.css, fonts.css, ui.css, ui.ts (runtime on every page; dispatches ui:init), editor-main.ts (editor.js, stubs page only) with editor.ts, form.ts, applyEdit.ts, textEdit.ts; own tsconfig, rootDir "." so it can bundle src/ui/editor/{draftText,formModel,formView}.ts
 scripts/ui-assets.ts       # the asset generator (gen-ui-assets.ts is its CLI)
 test/                      # mirrors src/, plus test/e2e/ and test/helpers/
-examples/                  # config files, e.g. s3.json (an S3 imposter on 7070), ui-showcase.json (the screenshots script's data), callbacks.json (four imposters calling each other, 3301–3304)
+examples/                  # config files, e.g. s3.json (an S3 imposter on 7070), ui-showcase.json (the screenshots script's data, incl. a `POST /checkout` with callbacks), callbacks.json (four imposters calling each other, 3301–3304)
 ```
 
 ## Development Commands
@@ -197,7 +197,7 @@ bun run test       # vitest --run (single run, NOT watch; ~3s — files run in p
 bun coverage
 bun run build      # codegen + esm + cjs + esbuild CLI bundle + postbuild
 bun run verify-dist  # after a build: import()/require() every dist export in plain Node, run the bin, GET /_ui and a hashed asset
-bun run screenshots  # needs Google Chrome: starts examples/ui-showcase.json (admin 2599, imposters 3201–3205), sends traffic, writes screenshots/ in both themes
+bun run screenshots  # needs Google Chrome: starts examples/ui-showcase.json (admin 2599, imposters 3201–3206), sends traffic, writes screenshots/ in both themes
 bun gen-ui-assets    # regenerate src/ui/assets/generated.ts from ui-assets/ (codegen and the build run it; a freshness test fails while it is stale)
 ```
 
@@ -251,7 +251,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710, request detail/replay 9561–9569, callbacks 8901–8929 (8929 never bound: a refused target), callback loops 8931–8949). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710, request detail/replay 9561–9569, callbacks 8901–8929 (8929 never bound: a refused target), callback loops 8931–8949, UI callbacks 8401–8429). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - **`ui-assets/ui.ts` is tested in happy-dom,** opted into per file with `// @vitest-environment happy-dom` (everything else stays on node), against a fake `EventSource` and `fetch`.
 - **`/_ui` POSTs and every non-GET `/_admin` request refuse cross-site requests** (403, `src/ui/crossSite.ts`): `Sec-Fetch-Site: cross-site`, or, when the header is `same-site` or absent, an `Origin` whose host differs from the request's. Every `/_admin` state change is behind it: the stub writes (`POST /_admin/stubs`, `/stubs/:id`, `/stubs/:id/delete`, `/stubs/preview`) and `/requests/clear`, `/requests/test`, `/requests/:id/replay`. Keep that guard on any new UI form endpoint: the admin API has no auth, and a form post needs no CORS preflight.
