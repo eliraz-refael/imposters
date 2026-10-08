@@ -63,7 +63,8 @@ const data = (input: {
       timeline: timelineAt(emptyTimeline, NOW),
       last15Minutes: { requests: 0, serverErrors: 0, unmatched: 0 },
       stubs: new Map(input.counters ?? []),
-      unmatched: []
+      unmatched: [],
+      outbound: []
     },
     unmatched: [],
     nextIndex: new Map(input.nextIndex ?? []),
@@ -313,6 +314,19 @@ describe("the templates", () => {
     expect(preview).not.toContain("<script>")
     expect(preview).not.toContain("<img")
     expect(preview).toContain("would answer 1 of the 2 unmatched requests")
+  })
+
+  it("says callbacks don't run in preview, only for a stub that has them", () => {
+    const preview = { matched: 0, total: 0 }
+    const withCallbacks = editorStatus({
+      check: run(checkStubText(JSON.stringify({
+        responses: [{ callbacks: { after: [{ name: "notify", method: "POST", url: "http://127.0.0.1:3004/e" }] } }]
+      }))),
+      preview
+    }).value
+    expect(withCallbacks).toContain("callbacks don't run in preview")
+    const without = editorStatus({ check: run(checkStubText(`{ "responses": [{}] }`)), preview }).value
+    expect(without).not.toContain("callbacks don't run in preview")
   })
 
   it("a problem names its place both ways: the JSON line (a link to it) and the form's control", () => {

@@ -1,5 +1,5 @@
 import jsonata from "jsonata"
-import type { RequestContext } from "./RequestMatcher.js"
+import type { TemplateContext } from "./TemplateEngine.js"
 
 const MAX_OUTPUT_SIZE = 1_048_576 // 1MB
 
@@ -23,13 +23,15 @@ const extractExpression = (str: string, startIndex: number): [string, number] | 
 }
 
 /**
- * Evaluate a single JSONata expression against the request context.
- * Returns the result or undefined on error.
+ * Evaluate a single JSONata expression against `{ request }`, plus `callbacks` when the template
+ * context has them. Returns the result or undefined on error.
  */
-export const evaluateExpression = async (expr: string, ctx: RequestContext): Promise<unknown> => {
+export const evaluateExpression = async (expr: string, ctx: TemplateContext): Promise<unknown> => {
   try {
     const expression = jsonata(expr)
-    const context = { request: ctx }
+    const context = ctx.callbacks === undefined
+      ? { request: ctx.request }
+      : { request: ctx.request, callbacks: ctx.callbacks }
     return await expression.evaluate(context)
   } catch {
     return undefined
@@ -39,7 +41,7 @@ export const evaluateExpression = async (expr: string, ctx: RequestContext): Pro
 /**
  * Process a string, replacing all ${...} patterns with evaluated JSONata results.
  */
-const processString = async (str: string, ctx: RequestContext): Promise<unknown> => {
+const processString = async (str: string, ctx: TemplateContext): Promise<unknown> => {
   // Quick check: if no ${, return as-is
   if (!str.includes("${")) return str
 
@@ -85,7 +87,7 @@ const processString = async (str: string, ctx: RequestContext): Promise<unknown>
 /**
  * Recursively walk data structures, processing ${...} expressions in strings.
  */
-export const processExpressions = async (ctx: RequestContext, data: unknown): Promise<unknown> => {
+export const processExpressions = async (ctx: TemplateContext, data: unknown): Promise<unknown> => {
   if (typeof data === "string") return processString(data, ctx)
   if (Array.isArray(data)) {
     const results = await Promise.all(data.map((item) => processExpressions(ctx, item)))

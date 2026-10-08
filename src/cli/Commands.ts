@@ -5,6 +5,7 @@ import { HandlerHttpClientLive } from "../client/HandlerHttpClient.js"
 import { ImpostersClientLive } from "../client/ImpostersClient.js"
 import { Extensions, type ImposterExtension } from "../extensions/Extension.js"
 import { S3Extension } from "../extensions/s3/S3Extension.js"
+import { DEFAULT_MAX_HOPS, resolveMaxHops } from "../matching/Hops.js"
 import { makeCompositeHandler } from "../server/AdminServer.js"
 import {
   DEFAULT_HOST,
@@ -43,6 +44,13 @@ const hostOption = Flag.String("host").pipe(
 const urlHostOf = (host: string): string =>
   host === "0.0.0.0" || host === "::" ? "localhost" : host.includes(":") ? `[${host}]` : host
 
+const maxHopsOption = Flag.Int("max-hops").pipe(
+  Flag.withDescription(
+    `How many hops a chain of callbacks and proxy forwards may take before an imposter answers 508 (default: ${DEFAULT_MAX_HOPS}, or IMPOSTERS_MAX_HOPS)`
+  ),
+  Flag.optional
+)
+
 const runtimeOption = Flag.Literals("runtime", ["node", "bun"]).pipe(
   Flag.withDescription("Server runtime: node (default) or bun"),
   Flag.withDefault("node" as const)
@@ -50,10 +58,15 @@ const runtimeOption = Flag.Literals("runtime", ["node", "bun"]).pipe(
 
 const startCommand = Command.make(
   "start",
-  { config: configOption, port: portOption, host: hostOption, runtime: runtimeOption },
-  ({ config, host: hostFlag, port, runtime }) => {
+  { config: configOption, port: portOption, host: hostOption, maxHops: maxHopsOption, runtime: runtimeOption },
+  ({ config, host: hostFlag, maxHops: maxHopsFlag, port, runtime }) => {
     const host = resolveHost(Option.getOrUndefined(hostFlag), process.env.IMPOSTERS_HOST)
     return Effect.gen(function*() {
+      const maxHops = resolveMaxHops(Option.getOrUndefined(maxHopsFlag), process.env.IMPOSTERS_MAX_HOPS)
+      if (!maxHops.ok) {
+        console.error(maxHops.error)
+        return process.exit(1)
+      }
       const adminPort = Option.isSome(port) ? port.value : Number(process.env.ADMIN_PORT ?? 2525)
 
       // A registration mistake is fatal. The admin handler builds its layers in the background,
@@ -67,7 +80,7 @@ const startCommand = Command.make(
         )
       )
 
-      const { dispose, handler } = makeCompositeHandler(adminPort, extensions, host)
+      const { dispose, handler } = makeCompositeHandler(adminPort, extensions, host, maxHops.value)
 
       // A config that does not load completely is fatal. It loads through the in-process handler
       // before the admin port binds, so once the admin server answers, every imposter is up.

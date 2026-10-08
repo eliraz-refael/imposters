@@ -160,13 +160,17 @@ export const updateRoute = (updates: Partial<typeof CreateRouteRequestSchema.Typ
 /**
  * Substitutes parameters in a string using Effect's String utilities
  */
-const substituteInString = (params: Record<string, string>) => (str: string): string =>
-  Object.entries(params).reduce((acc, [key, value]) => acc.replaceAll(`{{${key}}}`, value), str)
+// A string with no `{{` has nothing to substitute: skipping it spares a pass over every key
+// (legacy: templating resolves keys in TemplateEngine, which no longer calls this)
+const substituteInString = (params: Readonly<Record<string, string>>) => (str: string): string =>
+  str.includes("{{")
+    ? Object.entries(params).reduce((acc, [key, value]) => acc.replaceAll(`{{${key}}}`, value), str)
+    : str
 
 /**
  * Recursively substitutes parameters in unknown data structure
  */
-export const substituteParams = (params: Record<string, string>) => (body: unknown): unknown => {
+export const substituteParams = (params: Readonly<Record<string, string>>) => (body: unknown): unknown => {
   if (typeof body === "string") return substituteInString(params)(body)
   if (Array.isArray(body)) return body.map(substituteParams(params))
   // TypeScript narrows `typeof body === "object"` to `object | null`, but we've excluded null and Array above.

@@ -50,6 +50,10 @@ export * as ApiLayer from "./layers/ApiLayer.js"
 
 export * as MainLayer from "./layers/MainLayer.js"
 
+export * as CallbackRules from "./matching/CallbackRules.js"
+
+export * as Callbacks from "./matching/Callbacks.js"
+
 export * as Explain from "./matching/Explain.js"
 
 /**
@@ -57,6 +61,8 @@ export * as Explain from "./matching/Explain.js"
  * Returns [expressionContent, endIndex] or null if no valid expression found.
  */
 export * as ExpressionEvaluator from "./matching/ExpressionEvaluator.js"
+
+export * as Hops from "./matching/Hops.js"
 
 /**
  * What a candidate stub would catch of the given request groups: `matched` and `total` sum the
@@ -110,6 +116,8 @@ export * as FiberManager from "./server/FiberManager.js"
  */
 export * as ImposterServer from "./server/ImposterServer.js"
 
+export * as MaxHops from "./server/MaxHops.js"
+
 /**
  * Reads a response once for the request log, and hands back a fresh copy to send.
  * Bodies are handled as bytes, so binary responses (images, archives) pass through untouched.
@@ -137,6 +145,10 @@ export * as AppConfig from "./services/AppConfig.js"
 export * as MetricsAggregates from "./services/MetricsAggregates.js"
 
 export * as MetricsService from "./services/MetricsService.js"
+
+export * as OutboundEdges from "./services/OutboundEdges.js"
+
+export * as OutboundHttp from "./services/OutboundHttp.js"
 
 export * as PortAllocator from "./services/PortAllocator.js"
 

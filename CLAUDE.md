@@ -10,7 +10,7 @@
 
 The tool is functionally complete for its core use case: create an imposter, add stubs, start it, and it serves matched responses on its own port — with templating, proxying, request logging, stats, and a web UI.
 
-All three gates pass: `bun check`, `bun lint`, and 1050 tests across 94 files.
+All three gates pass: `bun check`, `bun lint`, and 1148 tests across 102 files.
 
 **Runs on Effect 4 release candidates** (`effect@4.0.0-rc.117`, `@effect/platform-node` and `@effect/vitest` at `4.0.0-rc.115`), pinned to exact versions because RCs still rename APIs between builds. `@effect/platform` and `@effect/cli` are gone; their modules live in `effect/unstable/{http,httpapi,cli}`.
 
@@ -25,6 +25,7 @@ All three gates pass: `bun check`, `bun lint`, and 1050 tests across 94 files.
 | Response cycling — sequential / random / repeat | ✅ |
 | Hot-reload — stub changes apply with zero downtime | ✅ |
 | Proxy mode — passthrough and record-as-stub | ✅ |
+| Stub callbacks — `before` calls feed the templates, `after` webhooks, hop limit + 508 | ✅ (PR 10; the UI for them and the service graph come next) |
 | Request logging + inspector | ✅ |
 | Metrics / statistics per imposter | ✅ |
 | Web UIs — `/_ui` (admin, the self-hosted Disguise dashboard) and `/_admin` (per imposter: live view, stubs with a form editor, the request log and a page per request with explain, copy as curl and replay), all self-hosted with no CDN | ✅ |
@@ -61,7 +62,7 @@ Disk persistence (imposters are in-memory only and do not survive restart), Moun
 ### Two different HTTP styles — this is deliberate
 
 - **Admin server** uses `HttpApi` / `HttpApiGroup` / `HttpApiEndpoint` — a statically typed, schema-derived API, registered with `HttpApiBuilder.layer` and served via `HttpRouter.toWebHandler`.
-- **Imposter servers do NOT use `HttpRouter` at all.** There is no router-building step. Each imposter's handler is a plain `async (request: Request) => Response` that: (1) offers the request to the `/_admin` UI router, (2) reads the current stubs from a `Ref`, (3) linearly finds the first stub whose predicates all match, (4) falls back to the imposter's extension, proxy or 404 (see Extensions below).
+- **Imposter servers do NOT use `HttpRouter` at all.** There is no router-building step. Each imposter's handler is a plain `async (request: Request) => Response` that: (1) offers the request to the `/_admin` UI router, (2) reads the current stubs from a `Ref`, (3) linearly finds the first stub whose predicates all match, runs its response's `before` callbacks, then its delay, then builds it, (4) falls back to the imposter's extension, proxy or 404 (see Extensions below).
 
   Imposter routes are user-configured at runtime, so a compile-time-typed router buys nothing. Linear matching over a `Ref<ReadonlyArray<Stub>>` is what makes hot-reload trivial.
 
@@ -72,6 +73,8 @@ Disk persistence (imposters are in-memory only and do not survive restart), Moun
 - **Bind address** — every server binds one host, `DEFAULT_HOST` (`127.0.0.1`) unless `--host` or `IMPOSTERS_HOST` says otherwise. It is a parameter of the factory (`makeNodeServerFactory(host)`), passed from the CLI through `makeCompositeHandler` → `makeFullLayer` → `makeMainLayer`, so the admin port and the imposter ports agree. On macOS a specific-address bind succeeds beside a wildcard one, so `test/helpers/net.ts`'s `occupyPort` holds `127.0.0.1`, and firewall stealth mode drops a SYN to a closed port rather than refusing it, which is why `reachability` times out to "unreachable".
 - **Hot-reload** — each imposter holds `Ref<ReadonlyArray<Stub>>` and `Ref<ProxyConfig | undefined>`. `updateStubs(id)` / `updateProxyConfig(id)` re-read from the repository and `Ref.set`. The fetch handler reads the `Ref` on every request, so changes take effect immediately with no restart.
 - **Runtime abstraction** — `ServerFactory` is a `Context.Service` with two implementations: `NodeServerFactoryLive` (`node:http`, the default) and `BunServerFactoryLive` (`Bun.serve`). This exists because **vitest workers run under Node.js even when invoked via Bun**, so tests could not use `Bun.serve` directly. It later became the user-facing `--runtime node|bun` flag.
+- **Callbacks and hops** — `matching/Callbacks.ts` runs a response's `before` calls (sequential, or `parallel`); the pure rules are `CallbackRules.ts`, the hop header logic `Hops.ts`. Every outbound call, callback or proxy, goes through `OutboundHttp`: it sends `x-imposters-hop` = incoming + 1, refuses past `MaxHops` (a `Context.Reference`, default 8, from `--max-hops` / `IMPOSTERS_MAX_HOPS`, passed as a trailing parameter of `makeMainLayer`), times out on the `Clock`, and records the outbound edge. `ImposterServer` builds one `OutboundHttp` per run whose recording checks `isCurrentRun`, so a stopped run's calls never count. A request at the limit that needs a call answers 508 with `x-imposters-loop`, and that 508 travels up whatever `onError` says; a call refused at the limit records no edge. `after` calls fork after logging into a per-run `FiberSet`, closed before `server.stop`, so a stopped run fires nothing; they settle their `pending` records with `RequestLogger.settleCallback`. A run allows 64 callback calls in flight and refuses rather than queues. Preview passes `requestOnly(ctx)` and never calls out.
+- **`{{key}}` resolves on demand** (`TemplateEngine.substituteInString` + `resolveTemplateKey`): nothing flattens the context, so a large or deep callback answer costs only the leaf a template names. An inserted value is never `{{key}}`-templated again, but the `${expr}` pass that follows still sees it (old behaviour, a known follow-up: a client's `${…}` in a query value is evaluated). `test/matching/TemplateEngine.prop.test.ts` keeps the old eager flatten + `replaceAll` as an oracle.
 - **Repository is pure storage** — `ImposterRepository` holds config + stubs in a `Ref<HashMap>`. No fiber refs, no server handles; those live in `FiberManager` and `ImposterServer`'s internal state map.
 
 ### Extensions — how a non-HTTP protocol plugs in
@@ -123,7 +126,7 @@ src/
     index.ts
   domain/
     imposter.ts            # ImposterConfig (incl. protocol), status, tagged errors
-    route.ts               # substituteParams — used only by TemplateEngine
+    route.ts               # substituteParams — legacy, no caller in src/ (DEVELOPMENT.md backlog)
   extensions/
     Extension.ts           # the extension point (core-owned)
     <name>/                # one folder per extension; imported only from src/cli/
@@ -136,7 +139,8 @@ src/
     Explain.ts             # pure: why each stub did or didn't match; its verdict IS evaluatePredicate's
     Preview.ts             # previewStub: a candidate stub against the unmatched groups
     ResponseGenerator.ts   # response selection + buildResponse
-    TemplateEngine.ts      # {{key}} substitution
+    TemplateEngine.ts      # {{key}} substitution, resolved on demand
+    Callbacks.ts           # runs before/after callbacks; CallbackRules.ts (pure rules), Hops.ts (hop header)
     ExpressionEvaluator.ts # ${expr} via JSONata
   repositories/
     ImposterRepository.ts  # Ref<HashMap<id, config + stubs>>
@@ -155,11 +159,14 @@ src/
     ImposterServer.ts      # the core: start/stop/updateStubs/updateProxyConfig
     FiberManager.ts        # FiberMap wrapper
     AdminPort.ts           # Context.Reference: the admin port, so /_admin can link back to /_ui
+    MaxHops.ts             # Context.Reference: the hop limit (default 8)
     ServerFactory.ts       # Node + Bun implementations
   services/
     AppConfig.ts           # Effect.Config, env-driven
     PortAllocator.ts       # Ref<HashSet<number>>, TOCTOU-safe
-    ProxyService.ts        # forward + recordAsStub
+    ProxyService.ts        # forward (through OutboundHttp from its context) + recordAsStub
+    OutboundHttp.ts        # every outbound call: hop header, limit, timeout, edge recording
+    OutboundEdges.ts       # pure: per-host outbound edges (50 hosts, p50/p95, timeline), beside MetricsAggregates
     RequestLogger.ts       # bounded per-imposter log + PubSub
     MetricsService.ts      # counts, percentiles, error rate
     Uuid.ts / UuidLive.ts
@@ -177,7 +184,7 @@ src/
 ui-assets/                 # UI sources: tokens.css, fonts.css, ui.css, ui.ts (runtime on every page; dispatches ui:init), editor-main.ts (editor.js, stubs page only) with editor.ts, form.ts, applyEdit.ts, textEdit.ts; own tsconfig, rootDir "." so it can bundle src/ui/editor/{draftText,formModel,formView}.ts
 scripts/ui-assets.ts       # the asset generator (gen-ui-assets.ts is its CLI)
 test/                      # mirrors src/, plus test/e2e/ and test/helpers/
-examples/                  # config files, e.g. s3.json (an S3 imposter on 7070), ui-showcase.json (the screenshots script's data)
+examples/                  # config files, e.g. s3.json (an S3 imposter on 7070), ui-showcase.json (the screenshots script's data), callbacks.json (four imposters calling each other, 3301–3304)
 ```
 
 ## Development Commands
@@ -244,7 +251,7 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - `@effect/vitest`'s `it.effect` runs on a `TestClock` that starts at 0. Anything compared against `Clock` must also come from `Clock` (`yield* DateTime.now`), never `DateTime.nowUnsafe()`.
 - Scoped layers (`FiberMap` etc.) in tests use `ManagedRuntime.make(layer)` + `afterAll(() => runtime.dispose())` + plain vitest `it()` with `await runtime.runPromise(...)`. On v3, `it.effect` with `Layer.scoped` hung forever; not re-verified on v4, so keep the pattern.
 - vitest workers are Node.js processes even under Bun — `Bun.serve` is unavailable. Use `NodeServerFactoryLive` (see `test/helpers/NodeServerFactory.ts`). vitest 5 needs Node `^22.12`; CI pins Node 22 in `.github/actions/setup`.
-- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710, request detail/replay 9561–9569). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
+- Test files run in parallel and bind real, fixed ports, so **each file owns its own port block** (e.g. `ImposterServer` 91xx, `stub-matching` 92xx, `ServerFactory` 97xx, S3 88xx, explain/preview 946x, UI assets 966x, delay ranges 867x, admin UI 9901–9929, UI showcase 8521–8529, live events 9021–9029, imposter UI 9601–9640, stub editor 8701–8710, request detail/replay 9561–9569, callbacks 8901–8929 (8929 never bound: a refused target), callback loops 8931–8949). Grep before picking one. Auto-allocated ports (3000+) are per-file and collide, so never start an imposter without an explicit port.
 - No sleeps after start/stop: they resolve once the port is bound/released. To assert on listener state use `test/helpers/net.ts` (`httpGet` opens a fresh connection, `probeConnect`, `occupyPort`), not `fetch`: undici's keep-alive pool can reuse a socket and mask the answer.
 - **`ui-assets/ui.ts` is tested in happy-dom,** opted into per file with `// @vitest-environment happy-dom` (everything else stays on node), against a fake `EventSource` and `fetch`.
 - **`/_ui` POSTs and every non-GET `/_admin` request refuse cross-site requests** (403, `src/ui/crossSite.ts`): `Sec-Fetch-Site: cross-site`, or, when the header is `same-site` or absent, an `Origin` whose host differs from the request's. Every `/_admin` state change is behind it: the stub writes (`POST /_admin/stubs`, `/stubs/:id`, `/stubs/:id/delete`, `/stubs/preview`) and `/requests/clear`, `/requests/test`, `/requests/:id/replay`. Keep that guard on any new UI form endpoint: the admin API has no auth, and a form post needs no CORS preflight.
@@ -255,6 +262,9 @@ The official v3→v4 guides are in `Effect-TS/effect-smol/migration/` (`v3-to-v4
 - **Property tests:** use `@effect/vitest`'s `it.prop` (sync) or `it.effect.prop` (returns an Effect; wrap async driving in `Effect.promise`). Inputs are Schemas or `effect/unstable/arbitrary/Arbitrary`s, so describe them as a Schema (e.g. a tagged union of steps). Options go in the 4th argument: `{ timeout, arbitrary: { runs, size, seed } }`; `size` bounds collection lengths. With `vi.useFakeTimers`, fake only `setTimeout`/`clearTimeout`/`setInterval`/`clearInterval`/`Date`: Effect's scheduler uses `setImmediate`, and faking it hangs the property. Pin each shrunk counterexample as a plain test. Reach for this for any state machine (see `test/ui/runtime-live.prop.test.ts`, `test/ui/runtime-editor.prop.test.ts` with `test/helpers/stubEditor.ts`, and `test/ui/{formModel,runtime-form}.prop.test.ts` with `test/helpers/formDrafts.ts`). Compare drafts with `shape()` from formDrafts, not `toStrictEqual`: it reads an own `"constructor"` key as the object's class, so two such objects never match.
 - **The modules editor.js bundles** (`src/ui/editor/{draftText,formModel,formView}.ts`) import nothing but each other: no Effect. formModel restates the schema's literals; `formModel.test.ts` checks they match.
 - **happy-dom quirks:** a select's value does not follow a `selected` attribute set after parsing (browsers do), so form.ts sets both; compare selects by `option[selected]`. It does not drop the newline after `<textarea>` either, and it flags valid number text like `1e3` as `badInput`.
+- **A test layer that builds `ProxyServiceLive` or `ImposterServerLive` by hand** must also provide `OutboundHttpLive.pipe(Layer.provide(MetricsServiceLive))`.
+- **`Effect.context<never>()` inside `ImposterServer.start` captures the caller's context, not the layer's,** so services the engine needs (`OutboundHttp`) are yielded at layer build and passed with `Effect.provideService`.
+- `fetch`'s body type wants `Uint8Array<ArrayBuffer>`, not `Uint8Array`. `Schema.optional(Schema.Never)` refuses a field (a 400) rather than stripping it.
 - `runPromise` wraps failures in `FiberFailure` — assert with `String(err).toContain(msg)`, not identity.
 - tsconfig needs `paths` for `imposters/*` in **both** `tsconfig.src.json` and `tsconfig.test.json`, plus `imposters/test/*` → `./test/*` in the test config.
 

@@ -189,9 +189,11 @@ const problemItem = (problem: LocatedProblem): SafeHtml => {
 export const editorStatus = (status: EditorStatus): SafeHtml => {
   const { check } = status
   if (check._tag === "Valid") {
+    // Preview never calls out: a response's callback results show as the templates wrote them
+    const callsOut = check.stub.responses.some((response) => response.callbacks !== undefined)
     return html`<span class="status-head c-ok" data-check="valid">✓ valid stub</span>${
       status.preview === undefined ? html`` : previewLines(status.preview)
-    }`
+    }${callsOut ? html`<span class="label c-text-2" data-preview-note>callbacks don't run in preview</span>` : html``}`
   }
   const head = check._tag === "Syntax" ? "✗ not JSON yet" : "✗ not a valid stub yet"
   const items = check._tag === "Syntax"

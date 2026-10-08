@@ -1,6 +1,13 @@
 import type * as Schema from "effect/Schema"
 import * as SchemaIssue from "effect/SchemaIssue"
-import { PredicateField, PredicateOperator, ResponseMode } from "./StubSchema.js"
+import {
+  CallbackMethod,
+  CallbackOnError,
+  MAX_CALLBACKS,
+  PredicateField,
+  PredicateOperator,
+  ResponseMode
+} from "./StubSchema.js"
 
 /**
  * Schema errors in plain English. The schema's own wording (`Expected number | undefined at
@@ -137,6 +144,63 @@ const describeDelay = (issue: ReportedIssue, at: string, response: unknown): str
   }`
 }
 
+const CALLBACK_EXAMPLE = `{ "name": "notify", "method": "POST", "url": "http://127.0.0.1:3004/events" }`
+const NAME_RULE = `letters, digits and _ (no hyphens), starting with a letter or _, up to 64 characters, like "cart"`
+
+const describeCallback = (issue: ReportedIssue, at: string, phase: string, rest: IssuePath): string => {
+  const [field] = rest
+  switch (field) {
+    case undefined:
+      return `${at} must be an object, like ${CALLBACK_EXAMPLE}${got(issue)}`
+    case "name":
+      if (!issue.present) return `${at} is missing: every callback needs a name, ${NAME_RULE}`
+      return issue.schemaMessage.includes("already used")
+        ? `${at} ${shown(issue.value)} is already used by another callback of this response: names must be unique`
+        : `${at} must be ${NAME_RULE}${got(issue)}`
+    case "method":
+      return `${at} must be one of ${oneOf(CallbackMethod.literals)}${got(issue)}`
+    case "url":
+      return issue.present
+        ? `${at} must start with http:// or https://${got(issue)}`
+        : `${at} is missing: a callback needs a url, like "http://127.0.0.1:3002/orders"`
+    case "headers":
+      return rest.length === 1
+        ? `${at} must be an object of header names and values, like { "authorization": "Bearer {{request.headers.token}}" }${
+          got(issue)
+        }`
+        : `${at} must be text${got(issue)}`
+    case "body":
+      return `${at}: ${issue.schemaMessage} (use POST, PUT or PATCH to send one)`
+    case "timeout":
+      return `${at} must be a whole number of milliseconds from 100 to 60000, like 2000${got(issue)}`
+    case "onError":
+      return phase === "after"
+        ? `${at}: onError is for before callbacks only, since an after callback cannot change an answer already sent`
+        : `${at} must be ${oneOf(CallbackOnError.literals)}${got(issue)}`
+    default:
+      return `${at}: ${issue.schemaMessage.toLowerCase()}`
+  }
+}
+
+const describeCallbacks = (issue: ReportedIssue, response: number, rest: IssuePath): string => {
+  const at = formatPath(["responses", response, "callbacks", ...rest])
+  const [phase, index, ...inner] = rest
+  if (phase === undefined) {
+    return isRecord(issue.value)
+      ? `${at}: ${issue.schemaMessage}`
+      : `${at} must be an object with before and after lists (at most ${MAX_CALLBACKS} callbacks in all), like { "after": [${CALLBACK_EXAMPLE}] }${
+        got(issue)
+      }`
+  }
+  if (phase === "parallel") return `${at} must be true or false${got(issue)}`
+  if (phase === "before" || phase === "after") {
+    return typeof index === "number"
+      ? describeCallback(issue, at, phase, inner)
+      : `${at} must be a list of callbacks, like [${CALLBACK_EXAMPLE}]${got(issue)}`
+  }
+  return `${at}: ${issue.schemaMessage.toLowerCase()}`
+}
+
 const describeResponse = (issue: ReportedIssue, input: unknown, index: number, rest: IssuePath): string => {
   const at = formatPath(["responses", index, ...rest])
   const response = valueAt(input, ["responses", index]).value
@@ -155,6 +219,8 @@ const describeResponse = (issue: ReportedIssue, input: unknown, index: number, r
         : `${at} must be text, like "application/json"${got(issue)}`
     case "delay":
       return describeDelay(issue, formatPath(["responses", index, "delay"]), response)
+    case "callbacks":
+      return describeCallbacks(issue, index, rest.slice(1))
     default:
       return `${at}: ${issue.schemaMessage.toLowerCase()}`
   }

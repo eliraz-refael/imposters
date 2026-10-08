@@ -134,6 +134,33 @@ export const UnmatchedStatistics = Schema.Struct({
 })
 export type UnmatchedStatistics = Schema.Schema.Type<typeof UnmatchedStatistics>
 
+// One 30-second bucket of an outbound edge's timeline
+export const OutboundTimelinePoint = Schema.Struct({
+  start: Schema.DateTimeUtc,
+  calls: NonNegativeInt,
+  failed: NonNegativeInt
+})
+export type OutboundTimelinePoint = Schema.Schema.Type<typeof OutboundTimelinePoint>
+
+// The calls this imposter made to one host, through callbacks, its proxy, or both
+export const OutboundEdge = Schema.Struct({
+  // The target's host (and port), lower-cased
+  host: Schema.String,
+  via: Schema.Literals(["callback", "proxy", "both"]),
+  calls: NonNegativeInt,
+  // Calls that got no response (a timeout, a refused connection, too many in flight). A call
+  // refused at the hop limit was never sent and is not counted
+  failed: NonNegativeInt,
+  // Calls answered 5xx
+  serverErrors: NonNegativeInt,
+  lastAt: Schema.DateTimeUtc,
+  // Over the last 128 calls sent (one refused for too many in flight is not), in milliseconds
+  p50: Schema.optional(Schema.Number),
+  p95: Schema.optional(Schema.Number),
+  timeline: Schema.Array(OutboundTimelinePoint)
+})
+export type OutboundEdge = Schema.Schema.Type<typeof OutboundEdge>
+
 // Counted since the imposter last started (or the last DELETE /stats)
 export const Statistics = Schema.Struct({
   totalRequests: NonNegativeInt,
@@ -156,7 +183,9 @@ export const Statistics = Schema.Struct({
   // Every current stub, in matching order
   stubs: Schema.Array(StubStatistics),
   // Most recently seen first; at most 50 groups, the least recently seen dropped first
-  unmatched: Schema.Array(UnmatchedStatistics)
+  unmatched: Schema.Array(UnmatchedStatistics),
+  // Outbound calls by target host, most recently called first; at most 50 hosts
+  outbound: Schema.Array(OutboundEdge).pipe(Schema.withDecodingDefault(Effect.sync(() => [])))
 })
 export type Statistics = Schema.Schema.Type<typeof Statistics>
 

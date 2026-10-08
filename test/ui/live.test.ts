@@ -80,6 +80,7 @@ const snapshot = (overrides: Partial<MetricsSnapshot> = {}): MetricsSnapshot => 
     last15Minutes: { requests: 0, serverErrors: 0, unmatched: 0 },
     stubs: new Map(),
     unmatched: [],
+    outbound: [],
     ...overrides
   }
 }

@@ -14,6 +14,7 @@ import { FiberManager, FiberManagerLive } from "imposters/server/FiberManager"
 import { ImposterServer, ImposterServerLive } from "imposters/server/ImposterServer"
 import { ServerFactory } from "imposters/server/ServerFactory"
 import { MetricsServiceLive } from "imposters/services/MetricsService"
+import { OutboundHttpLive } from "imposters/services/OutboundHttp"
 import { ProxyServiceLive } from "imposters/services/ProxyService"
 import { RequestLoggerLive } from "imposters/services/RequestLogger"
 import { UuidLive } from "imposters/services/UuidLive"
@@ -93,7 +94,10 @@ const runWith = async <A>(
         controlledFactory(options.beforeBind),
         RequestLoggerLive,
         MetricsServiceLive,
-        ProxyServiceLive.pipe(Layer.provide(UuidLive)),
+        ProxyServiceLive.pipe(
+          Layer.provide(Layer.mergeAll(UuidLive, OutboundHttpLive.pipe(Layer.provide(MetricsServiceLive))))
+        ),
+        OutboundHttpLive.pipe(Layer.provide(MetricsServiceLive)),
         Extensions.layer([])
       )
     )

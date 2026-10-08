@@ -1,8 +1,11 @@
 import { Context, Data, Effect, Layer } from "effect"
+import * as Result from "effect/Result"
 import type { ProxyConfigDomain } from "../domain/imposter.js"
+import { HOP_HEADER, nextHop, parseHop } from "../matching/Hops.js"
 import type { RequestContext } from "../matching/RequestMatcher.js"
 import { NonEmptyString } from "../schemas/common.js"
 import type { Stub } from "../schemas/StubSchema.js"
+import { callOut, type HopLimitError, type OutboundHttp } from "./OutboundHttp.js"
 import { Uuid } from "./Uuid.js"
 
 export class ProxyError extends Data.TaggedError("ProxyError")<{
@@ -24,11 +27,16 @@ const HOP_BY_HOP_HEADERS = new Set([
 ])
 
 export interface ProxyServiceShape {
+  // Forwards the request to the target, sending the incoming hop plus one. A request that
+  // arrived at the hop limit is refused with HopLimitError (the imposter answers 508).
+  // The call goes through the OutboundHttp it is given (the imposter run's own), which counts
+  // it into `imposterId`'s outbound edges.
   readonly forward: (
     ctx: RequestContext,
     config: ProxyConfigDomain,
-    originalUrl: URL
-  ) => Effect.Effect<Response, ProxyError>
+    originalUrl: URL,
+    imposterId: string
+  ) => Effect.Effect<Response, ProxyError | HopLimitError, OutboundHttp>
   readonly recordAsStub: (
     request: RequestContext,
     response: Response
@@ -45,8 +53,9 @@ export const ProxyServiceLive = Layer.effect(
     const forward = (
       ctx: RequestContext,
       config: ProxyConfigDomain,
-      originalUrl: URL
-    ): Effect.Effect<Response, ProxyError> =>
+      originalUrl: URL,
+      imposterId: string
+    ): Effect.Effect<Response, ProxyError | HopLimitError, OutboundHttp> =>
       Effect.gen(function*() {
         // Build target URL preserving path and query
         const targetBase = config.targetUrl.replace(/\/$/, "")
@@ -75,23 +84,37 @@ export const ProxyServiceLive = Layer.effect(
         // Forward the exact request bytes, so binary uploads survive and content-length still matches
         const body = ctx.rawBody.length > 0 ? ctx.rawBody : undefined
 
-        const response = yield* Effect.tryPromise({
-          try: (signal) =>
-            fetch(targetUrl, {
-              method: ctx.method,
-              headers,
-              ...(body !== undefined && ctx.method !== "GET" && ctx.method !== "HEAD" ? { body } : {}),
-              redirect: config.followRedirects ? "follow" : "manual",
-              signal
-            }),
-          catch: (err) => new ProxyError({ targetUrl, reason: `Failed to reach target: ${err}`, cause: err })
-        }).pipe(Effect.timeoutOrElse({
-          duration: `${config.timeout} millis`,
-          orElse: () =>
-            Effect.fail(new ProxyError({ targetUrl, reason: `Request timed out after ${config.timeout}ms` }))
-        }))
-
-        return response
+        if (!URL.canParse(targetUrl)) {
+          return yield* Effect.fail(new ProxyError({ targetUrl, reason: `Invalid target url: ${targetUrl}` }))
+        }
+        return yield* callOut({
+          imposterId,
+          via: "proxy",
+          request: {
+            url: new URL(targetUrl),
+            method: ctx.method,
+            headers,
+            ...(body !== undefined && ctx.method !== "GET" && ctx.method !== "HEAD" ? { body } : {}),
+            // The client's hop is not forwarded as is: callOut sends this one, a hop further
+            hop: nextHop(parseHop(ctx.headers[HOP_HEADER])),
+            redirect: config.followRedirects ? "follow" : "manual"
+          },
+          timeoutMs: config.timeout,
+          // The body streams to the client afterwards: the timeout covers the headers only
+          read: (response) => Promise.resolve(Result.succeed(response)),
+          statusOf: (response) => response.status
+        }).pipe(
+          Effect.catchTag("OutboundError", (err) =>
+            Effect.fail(
+              err.kind === "timeout"
+                ? new ProxyError({ targetUrl, reason: `Request timed out after ${config.timeout}ms` })
+                : new ProxyError({
+                  targetUrl,
+                  reason: `Failed to reach target: ${String(err.cause)}`,
+                  cause: err.cause
+                })
+            ))
+        )
       })
 
     const recordAsStub = (

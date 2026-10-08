@@ -7,26 +7,33 @@ import {
   Effect,
   Exit,
   Fiber,
+  FiberSet,
   HashMap,
   Layer,
   Option,
   Ref,
+  Scope,
   Semaphore
 } from "effect"
 import * as DateTime from "effect/DateTime"
 import { ImposterConfig, type ImposterNotFoundError, type ProxyConfigDomain } from "../domain/imposter.js"
 import { type ExtensionInstance, Extensions, findExtension } from "../extensions/Extension.js"
+import { pendingRecord, skippedRecord } from "../matching/CallbackRules.js"
+import { type CallbackRun, makeInFlight, runAfter, runBefore } from "../matching/Callbacks.js"
+import { HOP_HEADER, loopResponse, parseHop } from "../matching/Hops.js"
 import { extractRequestContext, findMatchingStub, type RequestContext } from "../matching/RequestMatcher.js"
 import { makeResponseState, peekIndex, type ResponseState, serveResponse } from "../matching/ResponseGenerator.js"
+import { requestOnly, type TemplateContext } from "../matching/TemplateEngine.js"
 import {
   ImposterRepository,
   type StubIndexOutOfRangeError,
   type StubNotFoundError
 } from "../repositories/ImposterRepository.js"
 import { HttpProtocol, NonEmptyString } from "../schemas/common.js"
-import type { RequestLogEntry, RequestOutcome } from "../schemas/RequestLogSchema.js"
-import type { Stub } from "../schemas/StubSchema.js"
+import type { CallbackRecord, RequestLogEntry, RequestOutcome } from "../schemas/RequestLogSchema.js"
+import type { AfterCallback, Stub } from "../schemas/StubSchema.js"
 import { MetricsService } from "../services/MetricsService.js"
+import { OutboundHttp, type OutboundHttpShape } from "../services/OutboundHttp.js"
 import { ProxyService } from "../services/ProxyService.js"
 import { RequestLogger } from "../services/RequestLogger.js"
 import { makeUiRouter } from "../ui/UiRouter.js"
@@ -82,6 +89,16 @@ interface Outcome {
   readonly kind: RequestOutcome
   readonly matchedStubId?: string
   readonly responseIndex?: number
+  // The response's callback records (`after` ones pending), when it has callbacks
+  readonly callbacks?: ReadonlyArray<CallbackRecord>
+  // The `after` calls to fire once the entry is logged, and what their templates see
+  readonly after?: {
+    readonly list: ReadonlyArray<AfterCallback>
+    readonly tctx: TemplateContext
+    readonly run: CallbackRun
+  }
+  // The run stopped during the `before` phase: the request is not logged
+  readonly stopped?: true
 }
 
 // Why the server fiber ended before its port was bound: stopped, or died during bind
@@ -99,6 +116,7 @@ export const ImposterServerLive = Layer.effect(
     const requestLogger = yield* RequestLogger
     const metricsService = yield* MetricsService
     const proxyService = yield* ProxyService
+    const outbound = yield* OutboundHttp
     const extensions = yield* Extensions
     const adminPort = yield* AdminPort
     const stateMapRef = yield* Ref.make<HashMap.HashMap<string, ImposterState>>(HashMap.empty())
@@ -132,6 +150,25 @@ export const ImposterServerLive = Layer.effect(
         // Completed as this run's server is released, so a stream a page holds open (server-sent
         // events) ends with the run, whatever the server does with its open connections
         const shutdown = yield* Deferred.make<void>()
+        // This run's `after` callbacks: a fiber per request, interrupted when the run ends, so a
+        // stopped run never fires a webhook. Closed by the server's release (or onError below).
+        const afterScope = yield* Scope.make()
+        const afterFibers = yield* FiberSet.make<void, never>().pipe(Scope.provide(afterScope))
+        const closeAfter = Scope.close(afterScope, Exit.void)
+        // Callback calls this run has in flight, before and after together
+        const inFlight = yield* makeInFlight()
+        // Whether this run is still the imposter's current one (it is not once stopped or restarted)
+        const isCurrentRun = Ref.get(stateMapRef).pipe(
+          Effect.map((map) => Option.exists(HashMap.get(map, id), (state) => state.stubsRef === stubsRef))
+        )
+        // This run's outbound calls (callbacks and proxy forwards) go through its own OutboundHttp,
+        // which records an edge only while the run is current: a call still in flight from a
+        // stopped run must not land in the next run's stats, as its request does not land in its log
+        const runOutbound: OutboundHttpShape = {
+          ...outbound,
+          record: (imposterId, sample) =>
+            Effect.flatMap(isCurrentRun, (current) => current ? outbound.record(imposterId, sample) : Effect.void)
+        }
 
         // Capture the current services for running effects inside the fetch handler
         const services = yield* Effect.context<never>()
@@ -160,8 +197,58 @@ export const ImposterServerLive = Layer.effect(
             const next = yield* responseState.getNextIndex(id, stub.id, stub.responses.length, stub.responseMode)
             const responseIndex = next < stub.responses.length ? next : 0
             const responseConfig = stub.responses[responseIndex] ?? stub.responses[0]
-            const response = yield* serveResponse(responseConfig, ctx)
-            return { response, kind: "stub", matchedStubId: stub.id, responseIndex }
+            const matched = { kind: "stub", matchedStubId: stub.id, responseIndex } as const
+            const callbacks = responseConfig.callbacks
+            // `callbacks: {}` makes no call: it is logged as a response without callbacks
+            if (callbacks === undefined || (callbacks.before.length === 0 && callbacks.after.length === 0)) {
+              return { ...matched, response: yield* serveResponse(responseConfig, requestOnly(ctx)) }
+            }
+            const run: CallbackRun = { imposterId: id, hop: parseHop(ctx.headers[HOP_HEADER]), inFlight }
+            // A stop does not wait out a slow call: the request then goes unlogged, as any in flight
+            const before = yield* Effect.raceFirst(
+              runBefore(callbacks, ctx, run).pipe(Effect.provideService(OutboundHttp, runOutbound)),
+              Deferred.await(shutdown).pipe(Effect.as("stopped" as const))
+            )
+            if (before === "stopped") {
+              return {
+                ...matched,
+                response: new Response(JSON.stringify({ error: "Imposter stopped" }), {
+                  status: 503,
+                  headers: { "content-type": "application/json" }
+                }),
+                stopped: true
+              }
+            }
+            if (before._tag === "Stop") {
+              const after = callbacks.after.map((callback) => skippedRecord(callback, "after", before.reason))
+              return { ...matched, response: before.response, callbacks: [...before.records, ...after] }
+            }
+            // The delay adds to the callbacks: it is this service's own think time
+            const tctx: TemplateContext = { request: ctx, callbacks: before.results }
+            // A callback's answer is outside data: a header templated from it can hold a line break,
+            // which Headers refuses. That answers a logged 500 that keeps the `before` records,
+            // rather than dying into an unlogged one, and the `after` calls are not sent.
+            const built = yield* serveResponse(responseConfig, tctx).pipe(
+              Effect.catchDefect((defect) => Effect.succeed(String(defect)))
+            )
+            if (typeof built === "string") {
+              const reason = "not sent: the response could not be built"
+              return {
+                ...matched,
+                response: new Response(JSON.stringify({ error: "Response template failed", reason: built }), {
+                  status: 500,
+                  headers: { "content-type": "application/json" }
+                }),
+                callbacks: [...before.records, ...callbacks.after.map((c) => skippedRecord(c, "after", reason))]
+              }
+            }
+            const response = built
+            return {
+              ...matched,
+              response,
+              callbacks: [...before.records, ...callbacks.after.map(pendingRecord)],
+              ...(callbacks.after.length > 0 ? { after: { list: callbacks.after, tctx, run } } : {})
+            }
           })
 
         // Record mode saves the proxied answer as a stub, so the next identical request is served locally
@@ -172,7 +259,9 @@ export const ImposterServerLive = Layer.effect(
           })
 
         const fromProxy = (proxyConfig: ProxyConfigDomain, ctx: RequestContext, url: URL): Effect.Effect<Outcome> =>
-          proxyService.forward(ctx, proxyConfig, url).pipe(
+          proxyService.forward(ctx, proxyConfig, url, id).pipe(
+            Effect.provideService(OutboundHttp, runOutbound),
+            Effect.catchTag("HopLimitError", (err) => Effect.succeed(loopResponse(err.hop, err.limit))),
             Effect.catchTag("ProxyError", (err) =>
               Effect.succeed(
                 new Response(
@@ -247,19 +336,17 @@ export const ImposterServerLive = Layer.effect(
                   ? { responseIndex: outcome.responseIndex }
                   : {})
               },
-              duration
+              duration,
+              ...(outcome.callbacks !== undefined ? { callbacks: outcome.callbacks } : {})
             }
             // Only this run counts: a request still in flight from a stopped run (or one that
             // finished after a restart) would otherwise land in the new run's log and stats.
             // Checked again before the stats, since the log also publishes to subscribers.
-            const isCurrentRun = Ref.get(stateMapRef).pipe(
-              Effect.map((map) => Option.exists(HashMap.get(map, id), (state) => state.stubsRef === stubsRef))
-            )
-            const logged = yield* isCurrentRun
+            const logged = outcome.stopped !== true && (yield* isCurrentRun)
             if (logged) {
               yield* requestLogger.log(logEntry).pipe(Effect.catch(() => Effect.void))
             }
-            if (yield* isCurrentRun) {
+            if (logged && (yield* isCurrentRun)) {
               // A stub removed, or whose answers changed, while this request was in flight has had
               // its counters restarted; this hit belongs to the old version, so it is not attributed
               const current = (yield* Ref.get(stubsRef)).find((s) => s.id === stub?.id)
@@ -267,6 +354,22 @@ export const ImposterServerLive = Layer.effect(
               const { matchedStubId: _matched, responseIndex: _index, ...unattributed } = logEntry.response
               const metricsEntry: RequestLogEntry = stale ? { ...logEntry, response: unattributed } : logEntry
               yield* metricsService.recordRequest(metricsEntry).pipe(Effect.catch(() => Effect.void))
+            }
+            // Fired once logged, just before the response goes back. A record settles only while
+            // this run is current; a set closed by a stop interrupts the fiber at once.
+            const after = outcome.after
+            if (logged && after !== undefined) {
+              const settle = (record: CallbackRecord) =>
+                Effect.flatMap(
+                  isCurrentRun,
+                  (current) => current ? requestLogger.settleCallback(id, logEntry.id, record) : Effect.void
+                )
+              yield* FiberSet.run(
+                afterFibers,
+                runAfter(after.list, after.tctx, after.run, settle).pipe(
+                  Effect.provideService(OutboundHttp, runOutbound)
+                )
+              )
             }
 
             return { response, entryId: logged ? logEntry.id : undefined }
@@ -323,7 +426,11 @@ export const ImposterServerLive = Layer.effect(
         // completes only after the port has been released.
         const fiberEffect = Effect.acquireRelease(
           acquireServer,
-          (server) => Deferred.succeed(shutdown, undefined).pipe(Effect.andThen(server.stop(true)))
+          (server) =>
+            Deferred.succeed(shutdown, undefined).pipe(
+              Effect.andThen(closeAfter),
+              Effect.andThen(server.stop(true))
+            )
         ).pipe(
           Effect.andThen(Effect.never),
           Effect.scoped
@@ -333,6 +440,7 @@ export const ImposterServerLive = Layer.effect(
           // Crash supervision: runs for bind failures, crashes after start, and stop()
           Effect.onError(() =>
             Effect.gen(function*() {
+              yield* closeAfter
               // Only this run's state: never one a later start registered under the same id
               yield* Ref.update(
                 stateMapRef,
@@ -367,7 +475,7 @@ export const ImposterServerLive = Layer.effect(
             ),
             Effect.andThen(Deferred.await(ready))
           )
-        ).pipe(Effect.tapError(() => Fiber.await(fiber)))
+        ).pipe(Effect.tapError(() => Effect.andThen(Fiber.await(fiber), closeAfter)))
 
         yield* repo.update(id, (r) => ({
           ...r,

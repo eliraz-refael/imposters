@@ -45,7 +45,7 @@ export const toStatistics = (
   stubs: ReadonlyArray<Stub>,
   nextResponseIndex: ReadonlyMap<string, number>
 ): Statistics => {
-  const { stubs: counters, timeline, unmatched, ...rest } = snapshot
+  const { outbound, stubs: counters, timeline, unmatched, ...rest } = snapshot
   const stubRow = (stub: Stub): StubStatistics => {
     const hit = counters.get(stub.id)
     const next = nextResponseIndex.get(stub.id)
@@ -61,6 +61,11 @@ export const toStatistics = (
     ...rest,
     timeline: timeline.map(({ start, ...counts }) => ({ start: DateTime.makeUnsafe(start), ...counts })),
     stubs: stubs.map(stubRow),
-    unmatched: unmatched.map(({ lastSeenAt, ...group }) => ({ ...group, lastSeenAt: DateTime.makeUnsafe(lastSeenAt) }))
+    unmatched: unmatched.map(({ lastSeenAt, ...group }) => ({ ...group, lastSeenAt: DateTime.makeUnsafe(lastSeenAt) })),
+    outbound: outbound.map(({ lastAt, timeline: points, ...edge }) => ({
+      ...edge,
+      lastAt: DateTime.makeUnsafe(lastAt),
+      timeline: points.map(({ start, ...counts }) => ({ start: DateTime.makeUnsafe(start), ...counts }))
+    }))
   }
 }

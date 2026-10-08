@@ -5,8 +5,7 @@ import * as Option from "effect/Option"
 import * as Random from "effect/Random"
 import * as Ref from "effect/Ref"
 import type { Delay, ResponseConfig, ResponseMode } from "../schemas/StubSchema.js"
-import type { RequestContext } from "./RequestMatcher.js"
-import { applyTemplates } from "./TemplateEngine.js"
+import { applyTemplates, type TemplateContext } from "./TemplateEngine.js"
 
 type CounterMap = HashMap.HashMap<string, number>
 type CounterResult = readonly [Effect.Effect<number, never>, CounterMap]
@@ -80,29 +79,41 @@ const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([204, 205, 304])
 
 export const isNullBodyStatus = (status: number): boolean => NULL_BODY_STATUSES.has(status)
 
-export const buildResponse = async (config: ResponseConfig, ctx: RequestContext): Promise<Response> => {
-  const headers = new Headers()
-  const responseHeaders = config.headers
-  if (responseHeaders !== undefined) {
-    for (const [key, val] of Object.entries(responseHeaders)) {
-      const templated = await applyTemplates(ctx, val)
-      headers.set(key, typeof templated === "string" ? templated : String(templated))
-    }
+// Templated header values, set on `headers`; a value a template turned into another type becomes its text
+export const renderHeaders = async (
+  tctx: TemplateContext,
+  source: Readonly<Record<string, string>> | undefined,
+  headers: Headers
+): Promise<void> => {
+  if (source === undefined) return
+  for (const [key, val] of Object.entries(source)) {
+    const templated = await applyTemplates(tctx, val)
+    headers.set(key, typeof templated === "string" ? templated : String(templated))
   }
+}
+
+// A templated body as it is sent: a string as text/plain, anything else as JSON. `contentType`
+// is what to send unless the headers already name one.
+export const renderBody = async (
+  tctx: TemplateContext,
+  body: unknown
+): Promise<{ readonly text: string; readonly contentType: string }> => {
+  const templated = await applyTemplates(tctx, body)
+  return typeof templated === "string"
+    ? { text: templated, contentType: "text/plain" }
+    : { text: JSON.stringify(templated), contentType: "application/json" }
+}
+
+export const buildResponse = async (config: ResponseConfig, tctx: TemplateContext): Promise<Response> => {
+  const headers = new Headers()
+  await renderHeaders(tctx, config.headers, headers)
 
   let bodyStr: string | null = null
   if (config.body !== undefined) {
-    const templated = await applyTemplates(ctx, config.body)
-    if (typeof templated === "string") {
-      bodyStr = templated
-      if (!headers.has("content-type")) {
-        headers.set("content-type", "text/plain")
-      }
-    } else {
-      bodyStr = JSON.stringify(templated)
-      if (!headers.has("content-type")) {
-        headers.set("content-type", "application/json")
-      }
+    const rendered = await renderBody(tctx, config.body)
+    bodyStr = rendered.text
+    if (!headers.has("content-type")) {
+      headers.set("content-type", rendered.contentType)
     }
   }
 
@@ -122,8 +133,8 @@ export const resolveDelay = (delay: Delay | undefined): Effect.Effect<number> =>
 }
 
 /** Waits out the response's delay on the `Clock`, then builds it: what a stub answers when it matches */
-export const serveResponse = (config: ResponseConfig, ctx: RequestContext): Effect.Effect<Response> =>
+export const serveResponse = (config: ResponseConfig, tctx: TemplateContext): Effect.Effect<Response> =>
   resolveDelay(config.delay).pipe(
     Effect.flatMap((ms) => ms > 0 ? Effect.sleep(Duration.millis(ms)) : Effect.void),
-    Effect.flatMap(() => Effect.promise(() => buildResponse(config, ctx)))
+    Effect.flatMap(() => Effect.promise(() => buildResponse(config, tctx)))
   )

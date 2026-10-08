@@ -24,11 +24,6 @@ export type Timeline = ReadonlyArray<TimelineBucket>
 
 export const zeroCounts: TimelineCounts = { requests: 0, serverErrors: 0, unmatched: 0 }
 
-// No real bucket starts here, so an empty slot never matches a lookup
-const EMPTY_SLOT: TimelineBucket = { start: Number.NEGATIVE_INFINITY, ...zeroCounts }
-
-export const emptyTimeline: Timeline = Array.from({ length: TIMELINE_BUCKETS }, () => EMPTY_SLOT)
-
 export const bucketStart = (ms: number): number => Math.floor(ms / TIMELINE_BUCKET_MS) * TIMELINE_BUCKET_MS
 
 const slotOf = (start: number): number => {
@@ -42,33 +37,58 @@ const addCounts = (a: TimelineCounts, b: TimelineCounts): TimelineCounts => ({
   unmatched: a.unmatched + b.unmatched
 })
 
+// A ring of TIMELINE_BUCKETS slots of any counts, keyed by bucket start (the timeline below,
+// and the outbound edges' { calls, failed } in OutboundEdges.ts)
+export type Ring<C> = ReadonlyArray<C & { readonly start: number }>
+
+export const emptyRing = <C>(zero: C): Ring<C> =>
+  Array.from({ length: TIMELINE_BUCKETS }, () => ({ start: Number.NEGATIVE_INFINITY, ...zero }))
+
+// No real bucket starts at -Infinity, so an empty slot never matches a lookup
+export const emptyTimeline: Timeline = emptyRing(zeroCounts)
+
+// Adds `delta` to the slot holding `atMs`. A stale slot is recycled; a record older than what
+// its slot now holds (it fell out of the window while in flight) is dropped.
+export const recordInRing = <C>(
+  ring: Ring<C>,
+  atMs: number,
+  delta: C,
+  zero: C,
+  add: (a: C, b: C) => C
+): Ring<C> => {
+  const start = bucketStart(atMs)
+  const slot = slotOf(start)
+  const current = ring[slot]
+  if (current !== undefined && current.start > start) return ring
+  const base: C = current !== undefined && current.start === start ? current : zero
+  const next = ring.slice()
+  next[slot] = { start, ...add(base, delta) }
+  return next
+}
+
+// The window ending at `nowMs`, oldest first; slots with no traffic (or stale) come back as zero
+export const ringAt = <C>(ring: Ring<C>, nowMs: number, zero: C): ReadonlyArray<C & { readonly start: number }> => {
+  const last = bucketStart(nowMs)
+  return Array.from({ length: TIMELINE_BUCKETS }, (_, i) => {
+    const start = last - (TIMELINE_BUCKETS - 1 - i) * TIMELINE_BUCKET_MS
+    const bucket = ring[slotOf(start)]
+    return bucket !== undefined && bucket.start === start ? bucket : { start, ...zero }
+  })
+}
+
 /**
  * Adds `delta` to the bucket holding `atMs`. A stale slot is recycled; a record older than
  * what its slot now holds (it fell out of the window while in flight) is dropped.
  */
-export const recordInTimeline = (timeline: Timeline, atMs: number, delta: TimelineCounts): Timeline => {
-  const start = bucketStart(atMs)
-  const slot = slotOf(start)
-  const current = timeline[slot] ?? EMPTY_SLOT
-  if (current.start > start) return timeline
-  const base = current.start === start ? current : { start, ...zeroCounts }
-  const next = timeline.slice()
-  next[slot] = { start, ...addCounts(base, delta) }
-  return next
-}
+export const recordInTimeline = (timeline: Timeline, atMs: number, delta: TimelineCounts): Timeline =>
+  recordInRing(timeline, atMs, delta, zeroCounts, addCounts)
 
 /**
  * The window ending at `nowMs`: TIMELINE_BUCKETS points, oldest first, the last one being the
  * bucket `nowMs` falls in. Buckets with no traffic (or stale slots) come back as zeros.
  */
-export const timelineAt = (timeline: Timeline, nowMs: number): ReadonlyArray<TimelineBucket> => {
-  const last = bucketStart(nowMs)
-  return Array.from({ length: TIMELINE_BUCKETS }, (_, i) => {
-    const start = last - (TIMELINE_BUCKETS - 1 - i) * TIMELINE_BUCKET_MS
-    const bucket = timeline[slotOf(start)]
-    return bucket !== undefined && bucket.start === start ? bucket : { start, ...zeroCounts }
-  })
-}
+export const timelineAt = (timeline: Timeline, nowMs: number): ReadonlyArray<TimelineBucket> =>
+  ringAt(timeline, nowMs, zeroCounts)
 
 export const sumCounts = (points: ReadonlyArray<TimelineCounts>): TimelineCounts => points.reduce(addCounts, zeroCounts)
 

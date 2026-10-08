@@ -1,0 +1,77 @@
+{
+  "imposters": [
+    {
+      "name": "checkout",
+      "port": 3301,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "POST" },
+            { "field": "path", "operator": "equals", "value": "/checkout" }
+          ],
+          "responses": [
+            {
+              "status": 201,
+              "callbacks": {
+                "before": [
+                  { "name": "cart", "url": "http://127.0.0.1:3302/carts/{{request.query.cart}}" },
+                  {
+                    "name": "price",
+                    "method": "POST",
+                    "url": "http://127.0.0.1:3303/quote",
+                    "body": { "items": "${callbacks.cart.body.items}" },
+                    "timeout": 2000,
+                    "onError": "fail"
+                  }
+                ],
+                "after": [
+                  {
+                    "name": "notify",
+                    "method": "POST",
+                    "url": "http://127.0.0.1:3304/events",
+                    "body": { "type": "checkout", "cart": "{{request.query.cart}}", "total": "${callbacks.price.body.total}" }
+                  }
+                ]
+              },
+              "body": {
+                "cart": "{{request.query.cart}}",
+                "items": "${callbacks.cart.body.items}",
+                "total": "${callbacks.price.body.total}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "carts",
+      "port": 3302,
+      "stubs": [
+        {
+          "predicates": [{ "field": "path", "operator": "startsWith", "value": "/carts/" }],
+          "responses": [{ "status": 200, "body": { "items": [{ "sku": "tea", "price": 4 }, { "sku": "cake", "price": 6 }] } }]
+        }
+      ]
+    },
+    {
+      "name": "pricing",
+      "port": 3303,
+      "stubs": [
+        {
+          "predicates": [{ "field": "path", "operator": "equals", "value": "/quote" }],
+          "responses": [{ "status": 200, "delay": { "min": 20, "max": 120 }, "body": { "total": "${$sum(request.body.items.price)}" } }]
+        }
+      ]
+    },
+    {
+      "name": "events",
+      "port": 3304,
+      "stubs": [
+        {
+          "predicates": [{ "field": "path", "operator": "equals", "value": "/events" }],
+          "responses": [{ "status": 202 }]
+        }
+      ]
+    }
+  ]
+}

@@ -279,3 +279,37 @@ describe("RequestLogger", () => {
     )
   })
 })
+
+describe("RequestLogger.settleCallback", () => {
+  const pendingNotify = { name: "notify", phase: "after", method: "POST", url: "http://h/e", state: "pending" } as const
+  const answered = { ...pendingNotify, state: "answered", status: 202, durationMs: 4 } as const
+
+  it("replaces the pending record, keeps the seq, and freezes it", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        yield* logger.log({ ...makeEntry({ id: "s1", imposterId: "i-settle" }), callbacks: [pendingNotify] })
+        const [before] = yield* logger.getRecent("i-settle", 1)
+        yield* logger.settleCallback("i-settle", "s1", answered)
+        yield* logger.settleCallback("i-settle", "s1", { ...pendingNotify, state: "failed", error: "late" })
+        const [after] = yield* logger.getRecent("i-settle", 1)
+        expect(after?.seq).toBe(before?.seq)
+        expect(after?.entry.callbacks).toEqual([answered])
+      })
+    )
+  })
+
+  it("is a no-op for a missing entry, an unknown name, or a pending record", async () => {
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        const logger = yield* RequestLogger
+        yield* logger.log({ ...makeEntry({ id: "s2", imposterId: "i-settle-2" }), callbacks: [pendingNotify] })
+        yield* logger.settleCallback("i-settle-2", "gone", answered)
+        yield* logger.settleCallback("i-settle-2", "s2", { ...answered, name: "other" })
+        yield* logger.settleCallback("i-settle-2", "s2", pendingNotify)
+        yield* logger.settleCallback("nobody", "s2", answered)
+        expect((yield* logger.getEntryById("i-settle-2", "s2"))?.callbacks).toEqual([pendingNotify])
+      })
+    )
+  })
+})
