@@ -2,12 +2,13 @@ import * as DateTime from "effect/DateTime"
 import * as Schema from "effect/Schema"
 import { ImposterConfig } from "imposters/domain/imposter"
 import { NonEmptyString } from "imposters/schemas/common"
-import type { RequestLogEntry } from "imposters/schemas/RequestLogSchema"
+import type { CallbackRecord, RequestLogEntry } from "imposters/schemas/RequestLogSchema"
 import { Stub } from "imposters/schemas/StubSchema"
 import { noticePage, requestDetailPage, requestNotFoundPage } from "imposters/ui/pages/request-detail"
 import { requestsPage } from "imposters/ui/pages/requests"
 import {
   buildRequestDetail,
+  callBody,
   type DetailInput,
   explainEntry,
   parseFilters,
@@ -52,6 +53,7 @@ interface EntryOpts {
   readonly outcome?: RequestLogEntry["response"]["outcome"]
   readonly matchedStubId?: string
   readonly responseIndex?: number
+  readonly callbacks?: ReadonlyArray<CallbackRecord>
 }
 
 const entry = (o: EntryOpts = {}): RequestLogEntry => ({
@@ -74,7 +76,8 @@ const entry = (o: EntryOpts = {}): RequestLogEntry => ({
     ...(o.matchedStubId !== undefined ? { matchedStubId: NonEmptyString.make(o.matchedStubId) } : {}),
     ...(o.responseIndex !== undefined ? { responseIndex: o.responseIndex } : {})
   },
-  duration: 3
+  duration: 3,
+  ...(o.callbacks !== undefined ? { callbacks: o.callbacks } : {})
 })
 
 const detail = (input: Partial<DetailInput> & { readonly entry: RequestLogEntry }) =>
@@ -430,5 +433,130 @@ describe("the requests list", () => {
     expect(page).toContain(`<option value="PUT" selected>PUT</option>`)
     expect(page).toContain(`<div class="alert" data-error-slot>Invalid test request: nope</div>`)
     expect(page).not.toContain("<script>alert")
+  })
+})
+
+describe("outbound calls", () => {
+  const cart: CallbackRecord = {
+    name: "cart",
+    phase: "before",
+    method: "GET",
+    url: "http://127.0.0.1:3302/carts/7",
+    state: "answered",
+    status: 200,
+    durationMs: 5,
+    responseBody: `{"items":[]}`
+  }
+  // Out of order on purpose: the panel lists before calls first whatever the log's order
+  const records: ReadonlyArray<CallbackRecord> = [
+    {
+      name: "notify",
+      phase: "after",
+      method: "POST",
+      url: "http://127.0.0.1:3304/events",
+      state: "pending"
+    },
+    cart,
+    {
+      name: "price",
+      phase: "before",
+      method: "post",
+      url: "http://127.0.0.1:3303/quote",
+      state: "failed",
+      error: "timed out after 2000 ms",
+      durationMs: 2001,
+      requestBody: "items=1"
+    },
+    {
+      name: "audit",
+      phase: "after",
+      method: "PUT",
+      url: "http://127.0.0.1:3305/audit",
+      state: "answered",
+      status: 503,
+      durationMs: 1
+    },
+    {
+      name: "hook",
+      phase: "after",
+      method: "POST",
+      url: "http://127.0.0.1:3306/x",
+      state: "skipped",
+      error: "hop limit"
+    }
+  ]
+
+  it("one row per record, before first: what it called, how it ended and how long it took", () => {
+    const d = detail({ entry: entry({ callbacks: records }) })
+    expect(d.calls.map((c) => [c.name, c.phase, c.method, c.mark, c.tone, c.result, c.durationMs])).toEqual([
+      ["cart", "before", "GET", "✓", "ok", "200 OK", 5],
+      ["price", "before", "POST", "✗", "error", "failed: timed out after 2000 ms", 2001],
+      ["notify", "after", "POST", "…", "muted", "pending", undefined],
+      ["audit", "after", "PUT", "✗", "error", "503 Service Unavailable", 1],
+      ["hook", "after", "POST", "–", "muted", "skipped: hop limit", undefined]
+    ])
+    expect(d.calls[0]?.responseBody).toEqual({ text: "{\n  \"items\": []\n}", cut: false })
+    expect(d.calls[1]?.requestBody).toEqual({ text: "items=1", cut: false })
+    expect(detail({ entry: entry() }).calls).toEqual([])
+  })
+
+  it("a body the log cut at 2 KiB is kept as it is and says so; a short one ending in … was not cut", () => {
+    const long = `${"x".repeat(2048)}…`
+    expect(callBody(long)).toEqual({ text: long, cut: true })
+    // The cut fell inside a 3-byte character, which was dropped: still 2 KiB with the "…"
+    const split = `${"x".repeat(2045)}…`
+    expect(callBody(split)).toEqual({ text: split, cut: true })
+    expect(callBody("wait…")).toEqual({ text: "wait…", cut: false })
+    expect(callBody(`{"a":1}`)).toEqual({ text: "{\n  \"a\": 1\n}", cut: false })
+    expect(callBody(undefined)).toBeUndefined()
+  })
+
+  it("the panel sits between the response and why it matched, and says how to see pending calls settle", () => {
+    const page = requestDetailPage(detail({ entry: entry({ callbacks: records }) }), pageOpts).value
+    const panel = page.indexOf("data-outbound")
+    expect(panel).toBeGreaterThan(page.indexOf(`aria-label="Response"`))
+    expect(panel).toBeLessThan(page.indexOf(`aria-labelledby="why-title"`))
+    expect(page).toContain(
+      `<h2 class="title" id="calls-title">outbound calls</h2><span class="label">5 calls · 1 pending: reload to see it settle</span>`
+    )
+    expect(page).toContain(`<div class="why-stub" data-call="notify" data-state="pending">`)
+    expect(page).toContain(`<span class="c-muted">pending</span>`)
+    expect(page).toContain(
+      `<span class="c-error">failed: timed out after 2000 ms</span><span class="label">2,001 ms</span>`
+    )
+    expect(page).toContain(
+      `<details class="disclose"><summary class="label">response body</summary><pre class="code code-body">{`
+    )
+    expect(page).toContain(`<details class="disclose"><summary class="label">request body</summary>`)
+
+    const cut = requestDetailPage(
+      detail({ entry: entry({ callbacks: [{ ...cart, responseBody: `${"x".repeat(2048)}…` }] }) }),
+      pageOpts
+    ).value
+    expect(cut).toContain(`<summary class="label">response body · cut at 2 KiB</summary>`)
+    expect(cut).toContain("the first 2 KiB: the log keeps no more")
+    expect(cut).toContain(`<span class="label">1 call</span>`)
+  })
+
+  it("no panel for a request whose response made no calls", () => {
+    expect(requestDetailPage(detail({ entry: entry() }), pageOpts).value).not.toContain("outbound calls")
+  })
+
+  it("escapes a hostile name, url, error and bodies", () => {
+    const hostile: CallbackRecord = {
+      name: HOSTILE,
+      phase: "before",
+      method: HOSTILE,
+      url: `http://x/${HOSTILE}`,
+      state: "failed",
+      error: HOSTILE,
+      requestBody: HOSTILE,
+      responseBody: HOSTILE
+    }
+    const page = requestDetailPage(detail({ entry: entry({ callbacks: [hostile] }) }), pageOpts).value
+    expect(page).not.toContain("<script>alert")
+    expect(page).not.toContain(`"x")`)
+    expect(page).toContain(`data-call="&lt;/script&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&#39;&quot;"`)
+    expect(page).toContain(`failed: &lt;/script&gt;&lt;script&gt;alert(&quot;x&quot;)`)
   })
 })

@@ -9,6 +9,8 @@ import { parseDraftText } from "../editor/draftText.js"
 import { fieldLabel, readForm, splitMessage } from "../editor/formModel.js"
 import { concat, html, type SafeHtml } from "../html.js"
 import {
+  type CallsView,
+  type CallView,
   type Fallback,
   type PredicateChip,
   type ResponseView,
@@ -48,13 +50,25 @@ const chips = (predicates: ReadonlyArray<PredicateChip>): SafeHtml =>
     ? html`<span class="tok"><span class="tok-op">any request</span></span>`
     : concat(predicates.map((p, i) => i === 0 ? chip(p) : html`<span class="label">and</span>${chip(p)}`))
 
+// "stock GET 127.0.0.1:3203", and "onError fail" for a call whose failure fails the answer
+const callLine = (call: CallView): SafeHtml =>
+  html`<span class="c-text-2">${call.name}</span> ${call.method} ${call.host}${
+    call.failsAnswer ? html` <span class="c-caution">onError fail</span>` : html``
+  }`
+
+// The calls a response makes: which run before and after it, then each one's method and host
+const callsBlock = (calls: CallsView): SafeHtml =>
+  html`<div class="stack answer-calls" data-calls><span class="label c-text-2">${calls.summary}</span><span class="label">${
+    concat(calls.calls.map((call, i) => i === 0 ? callLine(call) : html` · ${callLine(call)}`))
+  }</span></div>`
+
 const answer = (response: ResponseView): SafeHtml =>
   html`<div class="answer">
   <div class="answer-head"><span class="status-num c-${response.tone}">${response.status}</span>${
     response.next ? html`<span class="pill pill-next">next</span>` : html``
   }${response.hits === undefined ? html`` : html`<span class="label">× ${count(response.hits)}</span>`}${
     response.delay === undefined ? html`` : pill(response.delay, "warn")
-  }</div>
+  }</div>${response.calls === undefined ? html`` : callsBlock(response.calls)}
   ${
     response.body === undefined
       ? html`<span class="label">no body</span>`

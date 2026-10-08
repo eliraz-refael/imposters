@@ -14,6 +14,8 @@ import { draftFromStub } from "imposters/ui/stubDraft"
 import {
   bodyPreview,
   buildStubsData,
+  callHost,
+  callsView,
   delayLabel,
   hitsLine,
   sentBodyPreview,
@@ -407,5 +409,86 @@ describe("the templates", () => {
     expect(answer).toMatch(/id="stub-editor"[^>]* data-oob>/)
     expect(answer).toContain(`id="tab-stubs-count" data-oob>1<`)
     expect(answer.indexOf("Stub 1")).toBeLessThan(answer.indexOf("stub-editor"))
+  })
+})
+
+describe("callbacks on the cards", () => {
+  const checkout = stub({
+    id: "checkout",
+    responses: [
+      {
+        status: 201,
+        callbacks: {
+          parallel: true,
+          before: [
+            { name: "cart", url: "http://127.0.0.1:3302/carts/{{request.query.cart}}" },
+            { name: "price", method: "POST", url: "https://User:pw@Pricing.Example.com:8443/quote", onError: "fail" }
+          ],
+          after: [{ name: "notify", method: "POST", url: "http://{{request.query.hook}}/events" }]
+        }
+      },
+      { status: 200 }
+    ]
+  })
+
+  it("a response's calls: a summary line, then each call's method and host, before first", () => {
+    const [card] = data({ stubs: [checkout] }).cards
+    expect(card?.responses[0]?.calls).toEqual({
+      summary: "before (parallel) → cart, price · after → notify",
+      calls: [
+        { name: "cart", method: "GET", host: "127.0.0.1:3302", failsAnswer: false },
+        { name: "price", method: "POST", host: "pricing.example.com:8443", failsAnswer: true },
+        { name: "notify", method: "POST", host: "{{request.query.hook}}", failsAnswer: false }
+      ]
+    })
+    // A response without callbacks has no calls at all, so it renders as before
+    expect(card?.responses[1]).not.toHaveProperty("calls")
+  })
+
+  it("names only the phases a response uses, and parallel only with before calls", () => {
+    const decode = (callbacks: Record<string, unknown>) =>
+      callsView(stub({ responses: [{ callbacks }] }).responses[0]?.callbacks)
+    expect(decode({ after: [{ name: "hook", url: "http://h/x" }], parallel: true })?.summary).toBe("after → hook")
+    expect(decode({ before: [{ name: "a", url: "http://h/x" }] })?.summary).toBe("before → a")
+    expect(decode({})).toBeUndefined()
+    expect(callsView(undefined)).toBeUndefined()
+  })
+
+  it("the host is what comes after the scheme, without credentials, path, query or fragment", () => {
+    expect(callHost("http://127.0.0.1:3302/carts/7")).toBe("127.0.0.1:3302")
+    expect(callHost("HTTPS://API.example.com?x=1")).toBe("api.example.com")
+    expect(callHost("http://a:b@host#frag")).toBe("host")
+    expect(callHost("http://${$lowercase(request.query.h)}/x")).toBe("${$lowercase(request.query.h)}")
+  })
+
+  it("the card shows the summary and each call, marks onError fail, and leaves other responses alone", () => {
+    const page = stubsPage(data({ stubs: [checkout] }), { theme: null, editor: newEditor }).value
+    document.body.innerHTML = body(page)
+    const answers = document.querySelectorAll(".answer")
+    const calls = answers[0]?.querySelector("[data-calls]")
+    expect(calls?.children[0]?.textContent).toBe("before (parallel) → cart, price · after → notify")
+    expect(calls?.children[1]?.textContent).toBe(
+      "cart GET 127.0.0.1:3302 · price POST pricing.example.com:8443 onError fail · notify POST {{request.query.hook}}"
+    )
+    expect(calls?.querySelector(".c-caution")?.textContent).toBe("onError fail")
+    expect(answers[1]?.querySelector("[data-calls]")).toBeNull()
+  })
+
+  it("a stub without callbacks renders exactly as it did", () => {
+    const page = stubsPage(data({ stubs: [orders] }), { theme: null, editor: newEditor }).value
+    expect(page).not.toContain("data-calls")
+    expect(page).not.toContain("answer-calls")
+  })
+
+  it("escapes a hostile host", () => {
+    // No "/" in it, so all of it is the host
+    const host = "<img src=x onerror=alert(4)>"
+    const evil = stub({ id: "evil", responses: [{ callbacks: { after: [{ name: "x", url: `http://${host}?q` }] } }] })
+    const page = stubsPage(data({ stubs: [evil] }), { theme: null, editor: newEditor }).value
+    expect(page).not.toContain("<img src=x")
+    expect(page).toContain("&lt;img src=x onerror=alert(4)&gt;")
+    document.body.innerHTML = body(page)
+    expect(document.querySelectorAll("script, img, [onerror]")).toHaveLength(0)
+    expect(document.querySelector("[data-calls]")?.textContent).toContain(`x GET ${host}`)
   })
 })
