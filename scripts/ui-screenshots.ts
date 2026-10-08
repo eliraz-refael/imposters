@@ -32,6 +32,8 @@ interface Target {
   readonly requestId: string
   /** A logged request of the featured imposter that no stub answered (long path, query and headers) */
   readonly unmatchedId: string
+  /** A logged POST /checkout of the featured imposter: its callbacks, settled */
+  readonly checkoutId: string
   /** The featured imposter's first stub (GET /orders: three responses), for the editor */
   readonly stubId: string
 }
@@ -53,6 +55,7 @@ const DRAFT = new URLSearchParams({ draft: "GET", path: "/v2/orders" }).toString
 const editUrl = (t: Target): string => `${t.imposter}/_admin/stubs?edit=${encodeURIComponent(t.stubId)}`
 const requestUrl = (t: Target): string => `${t.imposter}/_admin/requests/${encodeURIComponent(t.requestId)}`
 const unmatchedUrl = (t: Target): string => `${t.imposter}/_admin/requests/${encodeURIComponent(t.unmatchedId)}`
+const checkoutUrl = (t: Target): string => `${t.imposter}/_admin/requests/${encodeURIComponent(t.checkoutId)}`
 
 // A request orders-api has no stub for, with a long path, query and header values, so the
 // request page shows how they wrap (on a phone too)
@@ -73,7 +76,9 @@ const SCREENS: ReadonlyArray<Screen> = [
   { name: "ui-dashboard-phone", url: (t) => `${t.admin}/_ui`, width: 390 },
   { name: "imposter-dashboard", url: (t) => `${t.imposter}/_admin` },
   { name: "imposter-dashboard-phone", url: (t) => `${t.imposter}/_admin`, width: 390 },
+  // The cards, POST /checkout's with its callbacks
   { name: "imposter-stubs", url: (t) => `${t.imposter}/_admin/stubs` },
+  { name: "imposter-stubs-phone", url: (t) => `${t.imposter}/_admin/stubs`, width: 390 },
   // "Stub it" on a route no stub answers: the editor opens on a draft, checked and previewed
   { name: "imposter-stubs-draft", url: (t) => `${t.imposter}/_admin/stubs?${DRAFT}` },
   { name: "imposter-stubs-draft-phone", url: (t) => `${t.imposter}/_admin/stubs?${DRAFT}`, width: 390 },
@@ -99,7 +104,10 @@ const SCREENS: ReadonlyArray<Screen> = [
   { name: "imposter-request-detail-phone", url: requestUrl, width: 390 },
   // A request no stub answered: every stub's verdicts, open, and "stub it"
   { name: "imposter-request-unmatched", url: unmatchedUrl },
-  { name: "imposter-request-unmatched-phone", url: unmatchedUrl, width: 390 }
+  { name: "imposter-request-unmatched-phone", url: unmatchedUrl, width: 390 },
+  // A checkout that called out: answered, failed (payments-sandbox is stopped) and an after call
+  { name: "imposter-request-callbacks", url: checkoutUrl },
+  { name: "imposter-request-callbacks-phone", url: checkoutUrl, width: 390 }
 ]
 
 const THEMES = ["dark", "light"] as const
@@ -230,6 +238,10 @@ const ImposterList = Schema.Struct({
   imposters: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, port: Schema.Number }))
 })
 const RequestList = Schema.Array(Schema.Struct({ id: Schema.String }))
+const CallbackStates = Schema.Array(Schema.Struct({
+  id: Schema.String,
+  callbacks: Schema.optional(Schema.Array(Schema.Struct({ state: Schema.String })))
+}))
 const StubList = Schema.Array(Schema.Struct({ id: Schema.String }))
 
 const api = async (method: string, url: string, body?: unknown): Promise<unknown> => {
@@ -337,6 +349,8 @@ const tick = (ports: Ports, t: number): void => {
   if (chance(0.35)) send(orders, { method: "POST", path: "/payments", json: { amount: 42.5 } })
   if (chance(0.15)) send(orders, { path: "/v2/orders" })
   if (chance(0.1)) send(orders, { path: `/orders/ord_${1000 + (t % 3)}` })
+  // A checkout calls catalog-api, payments-sandbox (stopped, so that call fails) and notifications
+  if (chance(0.3)) send(orders, { method: "POST", path: `/checkout?sku=${pick(SKUS, t)}` })
   // catalog-api: every answer is delayed, /products by 150-900 ms
   repeat(wave(2, t, 3), () => send(catalog, { path: "/products" }))
   if (chance(0.6)) send(catalog, { path: `/products/${pick(SKUS, t)}` })
@@ -465,6 +479,18 @@ const main = async (): Promise<void> => {
   )[0]
   if (unmatched === undefined) throw new Error(`orders-api logged no GET ${UNMATCHED.path}`)
 
+  // A checkout whose after call has settled (it may still be pending just after the traffic)
+  const checkoutQuery = `/imposters/${featured.id}/requests?method=POST&path=/checkout&limit=1`
+  send(featured.port, { method: "POST", path: `/checkout?sku=${pick(SKUS, 0)}` })
+  await drain()
+  const giveUpAt = Date.now() + 10_000
+  let checkout = Schema.decodeUnknownSync(CallbackStates)(await api("GET", checkoutQuery))[0]
+  while (checkout?.callbacks?.some((call) => call.state === "pending") === true && Date.now() < giveUpAt) {
+    await sleep(100)
+    checkout = Schema.decodeUnknownSync(CallbackStates)(await api("GET", checkoutQuery))[0]
+  }
+  if (checkout?.callbacks === undefined) throw new Error("orders-api logged no POST /checkout with callbacks")
+
   const stub = Schema.decodeUnknownSync(StubList)(await api("GET", `/imposters/${featured.id}/stubs`))[0]
   if (stub === undefined) throw new Error("orders-api has no stubs")
 
@@ -474,6 +500,7 @@ const main = async (): Promise<void> => {
     imposter: `http://${HOST}:${featured.port}`,
     requestId: request.id,
     unmatchedId: unmatched.id,
+    checkoutId: checkout.id,
     stubId: stub.id
   })
   console.log(`Wrote ${written.length} screenshots in ${Math.round((Date.now() - startedAt) / 1000)}s`)

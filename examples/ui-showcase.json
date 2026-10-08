@@ -97,6 +97,44 @@
             { "status": 202, "body": { "status": "accepted" } },
             { "status": 500, "body": { "error": "gateway_timeout" } }
           ]
+        },
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "POST" },
+            { "field": "path", "operator": "equals", "value": "/checkout" }
+          ],
+          "responses": [
+            {
+              "status": 201,
+              "headers": { "content-type": "application/json" },
+              "callbacks": {
+                "parallel": true,
+                "before": [
+                  { "name": "stock", "url": "http://127.0.0.1:3203/products/{{request.query.sku}}", "onError": "fail" },
+                  {
+                    "name": "charge",
+                    "method": "POST",
+                    "url": "http://127.0.0.1:3205/charges",
+                    "body": { "amount": 19, "currency": "usd" },
+                    "timeout": 1000
+                  }
+                ],
+                "after": [
+                  {
+                    "name": "notify",
+                    "method": "POST",
+                    "url": "http://127.0.0.1:3206/events",
+                    "body": { "type": "checkout", "sku": "{{request.query.sku}}", "charged": "${callbacks.charge.ok}" }
+                  }
+                ]
+              },
+              "body": {
+                "sku": "{{request.query.sku}}",
+                "stock": "${callbacks.stock.body.stock}",
+                "charged": "${callbacks.charge.ok}"
+              }
+            }
+          ]
         }
       ]
     },
@@ -169,6 +207,19 @@
             { "field": "path", "operator": "matches", "value": "^/charges/[^/]+/refund$" }
           ],
           "responses": [{ "status": 200, "body": { "status": "refunded" } }]
+        }
+      ]
+    },
+    {
+      "name": "notifications",
+      "port": 3206,
+      "stubs": [
+        {
+          "predicates": [
+            { "field": "method", "operator": "equals", "value": "POST" },
+            { "field": "path", "operator": "equals", "value": "/events" }
+          ],
+          "responses": [{ "status": 202, "delay": { "min": 20, "max": 80 }, "body": { "queued": true } }]
         }
       ]
     }
