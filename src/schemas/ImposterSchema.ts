@@ -154,7 +154,7 @@ export const OutboundEdge = Schema.Struct({
   // Calls answered 5xx
   serverErrors: NonNegativeInt,
   lastAt: Schema.DateTimeUtc,
-  // Over the last 128 calls, in milliseconds
+  // Over the last 128 calls sent (one refused for too many in flight is not), in milliseconds
   p50: Schema.optional(Schema.Number),
   p95: Schema.optional(Schema.Number),
   timeline: Schema.Array(OutboundTimelinePoint)

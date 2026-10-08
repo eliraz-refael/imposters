@@ -80,4 +80,16 @@ describe("recordOutbound", () => {
     const edges = fold([sample({ host: "x", atMs: 1 }), sample({ host: "y", atMs: 2 })])
     expect(snapshotEdges(edges, NOW).map((e) => e.host)).toEqual(["y", "x"])
   })
+
+  it("counts a refused call as failed but keeps it out of the percentiles", () => {
+    const edges = fold([
+      sample({ durationMs: 40 }),
+      sample({ status: null, durationMs: 0, refused: true }),
+      sample({ status: null, durationMs: 0, refused: true })
+    ])
+    const [edge] = snapshotEdges(edges, NOW)
+    expect(edge?.calls).toBe(3)
+    expect(edge?.failed).toBe(2)
+    expect(edge?.p50).toBe(40)
+  })
 })

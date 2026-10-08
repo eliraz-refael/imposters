@@ -175,7 +175,8 @@ const runCall = (
       host: checked.success.host.toLowerCase(),
       via: "callback",
       atMs: start,
-      durationMs: 0
+      durationMs: 0,
+      refused: true
     }).pipe(Effect.as(failed(TOO_MANY_IN_FLIGHT, 0)))
     const outcome = yield* Effect.acquireUseRelease(
       run.inFlight.acquire,
@@ -219,10 +220,13 @@ const runSequential = (
 ): Effect.Effect<BeforePhase, never, OutboundHttp> =>
   Effect.gen(function*() {
     const ran: Array<readonly [BeforeCallback, Ran]> = []
+    // Built up as the calls end, so each answer's body is decoded once, not once per later call
+    const results: Record<string, CallbackResult> = {}
     for (const [index, callback] of before.entries()) {
       // Each call sees the request and every call before it
-      const r = yield* runCall(callback, "before", { request, callbacks: resultsOf(ran) }, run)
+      const r = yield* runCall(callback, "before", { request, callbacks: { ...results } }, run)
       ran.push([callback, r])
+      results[callback.name] = resultOf(r.outcome)
       const verdict = verdictOf(callback, r.outcome)
       if (verdict._tag !== "Continue") {
         const reason = stopReason(verdict)
@@ -235,7 +239,7 @@ const runSequential = (
         }
       }
     }
-    return { _tag: "Continue", results: resultsOf(ran), records: ran.map(([, r]) => r.record) }
+    return { _tag: "Continue", results, records: ran.map(([, r]) => r.record) }
   })
 
 const runParallel = (

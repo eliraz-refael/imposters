@@ -228,7 +228,7 @@ Statistics count from the imposter's last start. They include:
 | `last15Minutes` | The timeline summed |
 | `stubs` | One row per stub, in matching order: `hits`, `byResponse` (hits per response), `lastHitAt`, and `nextResponseIndex` (absent in `random` mode) |
 | `unmatched` | Requests no stub, extension or proxy answered, grouped by `method` and `path` with a `count` and `lastSeenAt`. Most recently seen first. Up to 50 groups are kept; the least recently seen is dropped first |
-| `outbound` | The calls this imposter made (its [callbacks](#callbacks) and proxy forwards), one edge per target `host`: `via` (`callback`, `proxy` or `both`), `calls`, `failed` (no response, or refused for too many in flight), `serverErrors` (5xx), `lastAt`, `p50` / `p95` over the last 128 calls, and a `timeline` of `calls` and `failed` like the one above. Most recently called first, up to 50 hosts |
+| `outbound` | The calls this imposter made (its [callbacks](#callbacks) and proxy forwards), one edge per target `host`: `via` (`callback`, `proxy` or `both`), `calls`, `failed` (no response, or refused for too many in flight), `serverErrors` (5xx), `lastAt`, `p50` / `p95` over the last 128 calls sent, and a `timeline` of `calls` and `failed` like the one above. Most recently called first, up to 50 hosts |
 
 Starting an imposter and `DELETE /imposters/:id/stats` reset all of these. Deleting a stub drops its row. Changing a stub's `responses` or `responseMode` restarts its counters and its response cycle. A change to its predicates only keeps both.
 

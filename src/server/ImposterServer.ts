@@ -199,7 +199,8 @@ export const ImposterServerLive = Layer.effect(
             const responseConfig = stub.responses[responseIndex] ?? stub.responses[0]
             const matched = { kind: "stub", matchedStubId: stub.id, responseIndex } as const
             const callbacks = responseConfig.callbacks
-            if (callbacks === undefined) {
+            // `callbacks: {}` makes no call: it is logged as a response without callbacks
+            if (callbacks === undefined || (callbacks.before.length === 0 && callbacks.after.length === 0)) {
               return { ...matched, response: yield* serveResponse(responseConfig, requestOnly(ctx)) }
             }
             const run: CallbackRun = { imposterId: id, hop: parseHop(ctx.headers[HOP_HEADER]), inFlight }
@@ -224,7 +225,24 @@ export const ImposterServerLive = Layer.effect(
             }
             // The delay adds to the callbacks: it is this service's own think time
             const tctx: TemplateContext = { request: ctx, callbacks: before.results }
-            const response = yield* serveResponse(responseConfig, tctx)
+            // A callback's answer is outside data: a header templated from it can hold a line break,
+            // which Headers refuses. That answers a logged 500 that keeps the `before` records,
+            // rather than dying into an unlogged one, and the `after` calls are not sent.
+            const built = yield* serveResponse(responseConfig, tctx).pipe(
+              Effect.catchDefect((defect) => Effect.succeed(String(defect)))
+            )
+            if (typeof built === "string") {
+              const reason = "not sent: the response could not be built"
+              return {
+                ...matched,
+                response: new Response(JSON.stringify({ error: "Response template failed", reason: built }), {
+                  status: 500,
+                  headers: { "content-type": "application/json" }
+                }),
+                callbacks: [...before.records, ...callbacks.after.map((c) => skippedRecord(c, "after", reason))]
+              }
+            }
+            const response = built
             return {
               ...matched,
               response,

@@ -20,6 +20,8 @@ export interface OutboundSample {
   readonly durationMs: number
   // The answer's status; absent when no response came back (or the call was refused)
   readonly status?: number
+  // Refused before it was sent (too many in flight): counted as failed, kept out of the durations
+  readonly refused?: true
 }
 
 export interface OutboundCounts {
@@ -84,7 +86,8 @@ export const recordOutbound = (
     }
   }
   const noResponse = sample.status === undefined
-  const durations = [...(existing?.durations ?? []), sample.durationMs].slice(-OUTBOUND_DURATIONS)
+  const previous = existing?.durations ?? []
+  const durations = sample.refused === true ? previous : [...previous, sample.durationMs].slice(-OUTBOUND_DURATIONS)
   next.set(host, {
     host,
     via: viaOf(existing?.via, sample.via),

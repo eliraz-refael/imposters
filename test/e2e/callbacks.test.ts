@@ -361,4 +361,38 @@ describe("E2E: callbacks", () => {
       ])
     })
   }, 15_000)
+
+  it("a header templated from an answer that holds a line break answers a logged 500", async () => {
+    await withImposters([
+      { port: 8916, stubs: [on("/token", { status: 200, body: "a\nb" })] },
+      {
+        port: 8917,
+        stubs: [on("/go", {
+          status: 200,
+          headers: { "x-token": "{{callbacks.token.body}}" },
+          callbacks: {
+            before: [{ name: "token", url: url(8916, "/token") }],
+            after: [{ name: "notify", method: "POST", url: url(8916, "/token"), body: "x" }]
+          }
+        })]
+      }
+    ], async ([, caller = ""]) => {
+      const response = await fetch(url(8917, "/go"))
+      expect(response.status).toBe(500)
+      expect((await response.json()).error).toBe("Response template failed")
+      const [entry] = await logged(caller)
+      expect(entry?.response.status).toBe(500)
+      expect(entry?.callbacks?.map((c) => [c.name, c.state])).toEqual([["token", "answered"], ["notify", "skipped"]])
+    })
+  }, 15_000)
+
+  it("an empty callbacks object logs no callbacks", async () => {
+    await withImposters([
+      { port: 8918, stubs: [on("/plain", { status: 200, body: "ok", callbacks: {} })] }
+    ], async ([id = ""]) => {
+      expect((await fetch(url(8918, "/plain"))).status).toBe(200)
+      const [entry] = await logged(id)
+      expect(entry?.callbacks).toBeUndefined()
+    })
+  }, 15_000)
 })
