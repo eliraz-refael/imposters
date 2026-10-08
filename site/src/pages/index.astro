@@ -10,7 +10,7 @@ import { links, withBase } from "../lib/links"
 const steps = [
   { tag: "01 admin", text: "One server on 2525 creates imposters over REST, or loads them from a JSON file." },
   { tag: "02 port", text: "Each imposter answers on its own port with an ordered list of stubs." },
-  { tag: "03 match", text: "The first stub whose predicates fit method, path, headers, query and body replies." },
+  { tag: "03 match", text: "The first stub whose predicates fit method, path, headers, query and body replies, calling other services first if it has callbacks." },
   { tag: "04 fallback", text: "Otherwise an extension like S3 answers, a proxy forwards, or it is a 404." }
 ]
 
@@ -22,6 +22,7 @@ const features = [
   { flag: "--templates", href: docs("responses/#templating"), html: "<code>{{request.path}}</code> substitution and <code>${JSONata}</code> expressions." },
   { flag: "--cycle", href: docs("responses/#several-responses-responsemode"), text: "Several responses per stub: sequential, random or repeat." },
   { flag: "--proxy", href: docs("proxy/"), text: "Forward to the real service, or record its answers as stubs." },
+  { flag: "--callbacks", href: docs("callbacks/"), text: "Call other services before answering, or fire webhooks after; loops end in a 508." },
   { flag: "--inspect", href: docs("requests-and-stats/"), text: "Request log, error rate and latency percentiles per imposter." },
   { flag: "--ui", href: docs("web-ui/"), text: "/_ui for every imposter, /_admin inside each one." },
   { flag: "--test", href: docs("client/"), text: "Typed TypeScript client and withImposter for your test suite." }

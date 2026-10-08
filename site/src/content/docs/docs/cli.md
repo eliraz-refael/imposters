@@ -17,6 +17,7 @@ imposters start [flags]
 | `--config <path>` | `-c` | A JSON [config file](../config-file/) of imposters to create and start. |
 | `--host <address>` | | The address the admin server **and every imposter** bind to. Default `127.0.0.1`, or the `IMPOSTERS_HOST` environment variable. |
 | `--runtime <node\|bun>` | | The server runtime for the admin server. Default `node`. |
+| `--max-hops <number>` | | How many hops a chain of [callbacks](../callbacks/#loops) and proxy forwards may take before an imposter answers `508`, `1` to `100`. Default `8`, or the `IMPOSTERS_MAX_HOPS` environment variable. |
 
 `imposters --help` and `imposters start --help` list them, along with the global `--version` and `--log-level` flags.
 
@@ -36,7 +37,7 @@ Admin UI: http://localhost:2525/_ui
 `0.0.0.0` binds every interface. You need it inside a container, where the port is published from the container's own network interface.
 
 :::caution
-The admin API has no authentication, and it can create proxies that forward requests anywhere. Bind `0.0.0.0` only where the network is trusted, such as inside a container.
+The admin API has no authentication, and it can create proxies and [callbacks](../callbacks/) that send requests anywhere. Bind `0.0.0.0` only where the network is trusted, such as inside a container.
 :::
 
 The flag wins over `IMPOSTERS_HOST`, which wins over the default:
@@ -69,6 +70,7 @@ The flag applies to the admin server only. Imposters always use `node:http`, whi
 The server exits non-zero, with a one-line message, when:
 
 - the admin port cannot be bound (`Failed to start admin server on port 2525: ...`);
+- `--max-hops` or `IMPOSTERS_MAX_HOPS` is not a whole number from `1` to `100`;
 - the config file cannot be read, is not valid JSON, fails validation, or one of its imposters cannot be created, stubbed or started (`Failed to load config: ...`).
 
 When a config file loads, every imposter in it is running before the admin server starts answering.
@@ -79,6 +81,7 @@ When a config file loads, every imposter in it is running before the admin serve
 |---|---|---|
 | `ADMIN_PORT` | `2525` | Admin server port, when `--port` is not given. |
 | `IMPOSTERS_HOST` | `127.0.0.1` | Bind address, when `--host` is not given. |
+| `IMPOSTERS_MAX_HOPS` | `8` | Hop limit, when `--max-hops` is not given. |
 | `PORT_RANGE_MIN` | `3000` | Lowest port allocated to an imposter created without a `port`. |
 | `PORT_RANGE_MAX` | `4000` | Highest such port. |
 | `MAX_IMPOSTERS` | `100` | Creating more imposters than this fails. |

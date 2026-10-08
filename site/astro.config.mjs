@@ -76,6 +76,7 @@ export default defineConfig({
             { label: "Stubs and predicates", slug: "docs/stubs" },
             { label: "Responses", slug: "docs/responses" },
             { label: "Proxy and record", slug: "docs/proxy" },
+            { label: "Callbacks", slug: "docs/callbacks" },
             { label: "S3 emulator", slug: "docs/s3" }
           ]
         },
