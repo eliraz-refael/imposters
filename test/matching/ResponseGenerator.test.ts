@@ -295,3 +295,22 @@ describe("serveResponse", () => {
       expect(yield* Effect.promise(() => response.json())).toEqual({ ok: true })
     }))
 })
+
+describe("buildResponse: a request value is never evaluated", () => {
+  const ctx = makeCtx({ query: { q: "${request.method}" } })
+
+  it("in a string body", async () => {
+    const resp = await buildResponse(makeResponse({ body: "{{request.query.q}}" }), requestOnly(ctx))
+    expect(await resp.text()).toBe("${request.method}")
+  })
+
+  it("in a JSON body", async () => {
+    const resp = await buildResponse(makeResponse({ body: { echo: "{{request.query.q}}" } }), requestOnly(ctx))
+    expect(await resp.json()).toEqual({ echo: "${request.method}" })
+  })
+
+  it("in a header", async () => {
+    const resp = await buildResponse(makeResponse({ headers: { "x-echo": "{{request.query.q}}" } }), requestOnly(ctx))
+    expect(resp.headers.get("x-echo")).toBe("${request.method}")
+  })
+})

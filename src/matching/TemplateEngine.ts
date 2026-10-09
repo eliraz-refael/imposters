@@ -1,5 +1,5 @@
 import type { CallbackResult } from "./CallbackRules.js"
-import { processExpressions } from "./ExpressionEvaluator.js"
+import { joinPieces, renderPieces, type TemplatePiece } from "./ExpressionEvaluator.js"
 import type { RequestContext } from "./RequestMatcher.js"
 
 // What a response's templates see: the request, and the results of the `before` callbacks that
@@ -95,11 +95,12 @@ export const resolveTemplateKey = (tctx: TemplateContext, key: string): string |
   return undefined
 }
 
-// Every `{{key}}` in `str` that names something, replaced by its value; the rest left as written.
-// An inserted value is never scanned again.
-const substituteInString = (tctx: TemplateContext, str: string): string => {
-  if (!str.includes("{{")) return str
-  let out = ""
+// `str` cut at every `{{key}}` that names something: the text around them as written, and each
+// key's value. Nothing in a value is scanned again, for keys or for expressions.
+export const splitTemplateKeys = (tctx: TemplateContext, str: string): ReadonlyArray<TemplatePiece> => {
+  if (!str.includes("{{")) return [{ _tag: "Text", text: str }]
+  const pieces: Array<TemplatePiece> = []
+  let text = ""
   let at = 0
   // The first `}}` at or after the current `{{` plus two, kept while it still is, so a run of
   // `{{` with no key does not search the rest of the string once per brace
@@ -127,16 +128,28 @@ const substituteInString = (tctx: TemplateContext, str: string): string => {
     }
     if (value === undefined) {
       // Not a key: keep one brace and look again from the next, so `{{{a}}` still finds `{{a}}`
-      out += str.slice(at, open + 1)
+      text += str.slice(at, open + 1)
       at = open + 1
     } else {
-      out += str.slice(at, open) + value
+      text += str.slice(at, open)
+      if (text !== "") pieces.push({ _tag: "Text", text })
+      text = ""
+      pieces.push({ _tag: "Value", value, written: str.slice(open, end + 2) })
       at = end + 2
     }
   }
-  return out + str.slice(at)
+  text += str.slice(at)
+  if (text !== "") pieces.push({ _tag: "Text", text })
+  return pieces
 }
 
+// Every `{{key}}` in `str` that names something, replaced by its value; the rest left as written.
+// An inserted value is never scanned again.
+const substituteInString = (tctx: TemplateContext, str: string): string =>
+  str.includes("{{") ? joinPieces(splitTemplateKeys(tctx, str)) : str
+
+// `{{key}}` substitution through strings, arrays and objects. Its output is data: never pass it to
+// processExpressions (applyTemplates does both in one pass)
 /** `{{key}}` substitution through strings, arrays and objects */
 export const substituteTemplateKeys = (tctx: TemplateContext, data: unknown): unknown => {
   if (typeof data === "string") return substituteInString(tctx, data)
@@ -175,9 +188,19 @@ export const flattenRequestContext = (ctx: RequestContext): Record<string, strin
   return result
 }
 
+type Entry = readonly [string, unknown]
+
+// `{{key}}` and `${expr}` through strings, arrays and objects, in one pass over each string as
+// written: both are found in the template's own text, and what either inserts is never scanned
+// again. A `{{key}}` inside a `${…}` is not substituted; the expression reads request.* and
+// callbacks.* itself. (substituteTemplateKeys then processExpressions is the old two-pass
+// engine, which evaluates whatever a request value smuggles in: this is not that.)
 export const applyTemplates = async (tctx: TemplateContext, data: unknown): Promise<unknown> => {
-  // Step 1: Apply {{key}} substitution
-  const substituted = substituteTemplateKeys(tctx, data)
-  // Step 2: Apply ${expr} JSONata evaluation
-  return processExpressions(tctx, substituted)
+  if (typeof data === "string") return renderPieces(splitTemplateKeys(tctx, data), tctx)
+  if (Array.isArray(data)) return Promise.all(data.map((item) => applyTemplates(tctx, item)))
+  if (isRecord(data)) {
+    const render = async ([k, v]: Entry): Promise<Entry> => [k, await applyTemplates(tctx, v)]
+    return Object.fromEntries(await Promise.all(Object.entries(data).map(render)))
+  }
+  return data
 }
